@@ -44,7 +44,7 @@ class PostProcessor(object):
         translated_ground = rotated_ground + translation
 
         return np.floor(translated_ground / self.vis.res).astype('int32')
-        
+
 
     def compute_keypoint(self, inst_token):
         """
@@ -71,9 +71,10 @@ class PostProcessor(object):
 
         return label_pixel
 
-    def gen_label_heatmap(self, keypoint: np.ndarray, stride=4, sigma=2):
+    def gen_label(self, keypoint: np.ndarray, stride=4, sigma=2):
         """
-        generate a low-resolution keypoint heatmap as label
+        generate a 3d low-resolution label array with 3-channels: heatmap (1) and xy-offset (2,3)
+        range of values in the array: [0, 1]
 
         keypoint: 2-element np array
         stride: image stride from input size to output heatmap
@@ -81,39 +82,28 @@ class PostProcessor(object):
         height = np.floor(self.vis.inst_ctr_size*2 / stride).astype('int32')
         width = height
 
-        img = Image.new(mode='L', size=(width, height))
+        label = np.zeros((width, height, 3))
 
         p = np.floor(keypoint / stride).astype('int32')
+        offset = keypoint / stride - p
 
-        draw = ImageDraw.Draw(img)
+        for i in range(height):
+            for j in range(width):
+                label[i, j, 0] = np.exp( -((i-p[1])**2 + (j-p[0])**2) / 2 / sigma**2)
 
-        for i in range(width):
-            for j in range(height):
-                value = 255 * np.exp( -((i-p[0])**2 + (j-p[1])**2) / 2 / sigma**2)
+        label[p[1], p[0], 1] = offset[0]
+        label[p[1], p[0], 2] = offset[1]
 
-                draw.point((i, j), fill=int(value))
+        return label
 
-        return img, p
-
-    def gen_feature_label(self, inst_token, img_frame, stride=4, sigma=2, display=False):
+    def gen_feature_label(self, inst_token, img_frame, stride=4, sigma=2):
         """
         generate the feature and label pair
         """
         img_instance = self.vis.inst_centric(img_frame, inst_token)
 
         keypoint = self.compute_keypoint(inst_token)
-        label_heatmap, p_low_res = self.gen_label_heatmap(keypoint, stride=stride, sigma=sigma)
-        label_offset = keypoint / stride - p_low_res
+        label = self.gen_label(keypoint, stride=stride, sigma=sigma)
 
-        if display:
-            img_label = img_instance.copy()
-            draw = ImageDraw.Draw(img_label)
-
-            draw.ellipse((keypoint[0]-10, keypoint[1]-10, keypoint[0]+10, keypoint[1]+10), fill=(255, 128, 0))
-
-            img_label.show()
-
-            label_heatmap.show()
-
-        return img_instance, (label_heatmap, label_offset)
+        return img_instance, label
         

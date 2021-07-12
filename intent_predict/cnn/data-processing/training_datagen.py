@@ -43,9 +43,9 @@ def process(stride, path, name):
 
             if instance['mode']=='moving' and agent['type'] not in {'Pedestrian', 'Undefined'}:
                 try:
-                    feature, (label_img, label_offset) = processor.gen_feature_label(inst_token, img_frame, display=False)
+                    feature, label = processor.gen_feature_label(inst_token, img_frame, display=False)
                     features.append(np.asarray(feature))
-                    labels.append((np.asarray(label_img), label_offset))
+                    labels.append(label)
                 except:
                     pass
                     # print("Error occured for instance %s" % inst_token)
