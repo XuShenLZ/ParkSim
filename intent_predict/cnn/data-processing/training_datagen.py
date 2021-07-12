@@ -7,14 +7,13 @@ from dlp.dataset import Dataset
 from utils import PostProcessor
 
 _CURRENT = os.path.abspath(os.path.dirname(__file__))
+DATA_PATH = os.path.join(_CURRENT, '..', 'data')
 
-def process(stride, path, name):
+def process(stride, path, scene_name):
 
     # Load drone dataset
-    scene_name = 'DJI_0012'
-
     ds = Dataset()
-    ds.load(path + name)
+    ds.load(path + scene_name)
 
     features = []
     labels = []
@@ -43,7 +42,7 @@ def process(stride, path, name):
 
             if instance['mode']=='moving' and agent['type'] not in {'Pedestrian', 'Undefined'}:
                 try:
-                    feature, label = processor.gen_feature_label(inst_token, img_frame, display=False)
+                    feature, label = processor.gen_feature_label(inst_token, img_frame)
                     features.append(np.asarray(feature))
                     labels.append(label)
                 except:
@@ -53,8 +52,11 @@ def process(stride, path, name):
         
         frame_token = frame['next']
 
-    np.save(_CURRENT + '/../data/%s_feature.npy' % scene_name, features)
-    np.save(_CURRENT + '/../data/%s_label.npy' % scene_name, labels)
+    if not os.path.exists(DATA_PATH):
+        os.mkdir(DATA_PATH)
+
+    np.save(DATA_PATH + '/%s_feature.npy' % scene_name, features)
+    np.save(DATA_PATH + '/%s_label.npy' % scene_name, labels)
 
 if __name__ == '__main__':
 
