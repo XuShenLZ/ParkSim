@@ -10,7 +10,7 @@ class ImageDataset(Dataset):
         Instantiate the dataset
         """
         self.all_feature = np.load('%s_feature.npy' % file_path)
-        self.all_label = np.load('%s_label.npy' % file_path, allow_pickle=True)
+        self.all_label = np.load('%s_label.npy' % file_path)
 
         self.transform = transform
         self.target_transform = target_transform
@@ -26,13 +26,11 @@ class ImageDataset(Dataset):
         Overwrite the get item method for dataset
         """
         feature = self.all_feature[idx]
-        label_heatmap = self.all_label[idx][0]
-        label_offset = self.all_label[idx][1]
+        label = self.all_label[idx]
 
         if self.transform:
             feature = self.transform(feature)
         if self.target_transform:
-            label_heatmap = self.target_transform(label_heatmap)
-        
+            label = self.target_transform(label)
 
-        return feature, (label_heatmap, label_offset)
+        return feature, label

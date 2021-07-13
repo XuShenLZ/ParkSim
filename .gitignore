@@ -1,3 +1,9 @@
+# Pytorch model
+*.pth
+
+# IDE
+.vscode/
+
 # data files
 data/
 

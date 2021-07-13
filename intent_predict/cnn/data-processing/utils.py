@@ -3,8 +3,6 @@ import numpy as np
 from dlp.visualizer import SemanticVisualizer
 from dlp.dataset import Dataset
 
-from PIL import Image, ImageDraw
-
 class PostProcessor(object):
     """
     Post processing the data for learning

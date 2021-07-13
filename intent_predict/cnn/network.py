@@ -1,11 +1,59 @@
 import torch
 import torch.nn as nn
-import torch.optim as optim
 
-from torchvision import models, transforms
+from torchvision import models
 
 import numpy as np
 from torchvision.models import inception
+
+class SimpleCNN(nn.Module):
+    """
+    Simple CNN. No deconvolution
+    """
+    def __init__(self):
+        """
+        Instantiate the model
+        """
+        super(SimpleCNN, self).__init__()
+
+        self.layer1 = nn.Sequential(
+            nn.Conv2d(in_channels=3, out_channels=6, kernel_size=7, stride=2, padding=3),
+            nn.ReLU(inplace=True),
+            nn.BatchNorm2d(num_features=6)
+        )
+
+        self.layer2 = nn.Sequential(
+            nn.Conv2d(in_channels=6, out_channels=16, kernel_size=3, stride=1, padding=1),
+            nn.ReLU(inplace=True),
+            nn.BatchNorm2d(num_features=16)
+        )
+
+        self.layer3 = nn.Sequential(
+            nn.Conv2d(in_channels=16, out_channels=3, kernel_size=1, stride=1, padding=0),
+            nn.ReLU(inplace=True),
+            nn.BatchNorm2d(num_features=3)
+        )
+
+        self.maxpool = nn.MaxPool2d(kernel_size=2, stride=2)
+
+        self.sigmoid = nn.Sigmoid()
+
+    def forward(self, x):
+        """
+        forward method
+        """
+        x = self.layer1(x)
+
+        x = self.layer2(x)
+
+        x = self.layer3(x)
+
+        x = self.maxpool(x)
+
+        x = self.sigmoid(x)
+
+        return x
+
 
 class IntentNet(nn.Module):
     """
