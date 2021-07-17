@@ -13,37 +13,6 @@ class PostProcessor(object):
         """
         self.vis = SemanticVisualizer(dataset, steps=steps, stride=stride)
 
-    def _is_inside(self, current_state, target_state):
-        """
-        current_state: (x, y, heading, speed) of current instance state
-        target_state: (x, y, heading, speed) of the point to be tested
-        """
-        theta = current_state[2]
-        A = np.array([[ np.sin(theta), -np.cos(theta)], 
-                      [-np.sin(theta),  np.cos(theta)], 
-                      [ np.cos(theta),  np.sin(theta)], 
-                      [-np.cos(theta), -np.sin(theta)]])
-        b = self.vis.sensing_limit * np.ones(4)
-
-        offset = target_state[0:2] - current_state[0:2]
-
-        return all( A @ offset < b)
-
-    def global_ground_to_local_pixel(self, current_state, label_ground):
-        """
-        transform the label coordinate from global ground coordinates to instance-centric local crop
-        """
-        current_theta = current_state[2]
-        R = np.array([[np.cos(-current_theta), -np.sin(-current_theta)], 
-                      [np.sin(-current_theta),  np.cos(-current_theta)]])
-
-        rotated_ground = R @ (label_ground[:2] - current_state[:2])
-        translation = self.vis.sensing_limit * np.ones(2)
-        translated_ground = rotated_ground + translation
-
-        return np.floor(translated_ground / self.vis.res).astype('int32')
-
-
     def compute_keypoint(self, inst_token):
         """
         compute the intent keypoint for this instance. The keypoint will be a pixel location on the instance-centric crop image
@@ -52,20 +21,20 @@ class PostProcessor(object):
         current_state = traj[0]
 
         # Check whether the final point of the trajetory is inside the window
-        if self._is_inside(current_state, traj[-1]):
+        if self.vis._is_visible(current_state, traj[-1]):
             # If the final point is inside the window (instance-centric crop)
             label_ground = traj[-1, 0:2]
-            label_pixel = self.global_ground_to_local_pixel(current_state, label_ground)
+            label_pixel = self.vis.global_ground_to_local_pixel(current_state, label_ground)
         else:
             # If the final point is outside the window
             # Find the first index that goes outside the window
             first_outside_idx = 1
-            while self._is_inside(current_state, traj[first_outside_idx]):
+            while self.vis._is_visible(current_state, traj[first_outside_idx]):
                 first_outside_idx += 1
 
             # The label pixel is the pixel corresponds to the last inside point
             label_ground = traj[first_outside_idx-1, 0:2]
-            label_pixel = self.global_ground_to_local_pixel(current_state, label_ground)
+            label_pixel = self.vis.global_ground_to_local_pixel(current_state, label_ground)
 
         return label_pixel
 

@@ -1,6 +1,8 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
+from dlp.visualizer import Visualizer
+
 class Vertex(object):
     """
     Vertex class
@@ -157,3 +159,28 @@ class WaypointsGraph(object):
             ax.plot(x, y, **plt_ops)
 
         return ax
+
+    def setup_with_vis(self, vis: 'Visualizer'):
+        """
+        set up the graph with the dlp Visualizer object
+        """
+        for _, coords in vis.waypoints.items():
+            self.add_waypoint_list(coords)
+
+        # Connect sections
+        self.connect(vis.waypoints['C1'][0], vis.waypoints['R1L'][-1])
+        self.connect(vis.waypoints['C1'][1], vis.waypoints['R2L'][-1])
+        self.connect(vis.waypoints['C1'][2], vis.waypoints['R3L'][-1])
+        self.connect(vis.waypoints['C1'][3], vis.waypoints['R4L'][-1])
+
+        self.connect(vis.waypoints['C2'][0], vis.waypoints['R1L'][0])
+        self.connect(vis.waypoints['C2'][1], vis.waypoints['R2L'][0])
+        self.connect(vis.waypoints['C2'][2], vis.waypoints['R3L'][0])
+        self.connect(vis.waypoints['C2'][3], vis.waypoints['R4L'][0])
+
+        self.connect(vis.waypoints['C2'][0], vis.waypoints['R1R'][-1])
+        self.connect(vis.waypoints['C2'][1], vis.waypoints['R2R'][-1])
+        self.connect(vis.waypoints['C2'][2], vis.waypoints['R3R'][-1])
+        self.connect(vis.waypoints['C2'][3], vis.waypoints['R4R'][-1])
+
+        self.connect(vis.waypoints['EXT'][-1], vis.waypoints['R1L'][-3])

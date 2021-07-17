@@ -65,7 +65,7 @@ class AStarPlanner(object):
 
             if v == self.v_goal:
                 # the returned path is a list of edges
-                print("Solved")
+                # print("Solved")
                 return AStarGraph(path)
             
             if v not in self.closed:
