@@ -1,9 +1,9 @@
 from torch.utils.data import Dataset
 import numpy as np
 
-class ImageDataset(Dataset):
+class ImgDataset(Dataset):
     """
-    Dataset containing the instance-centric crop and the intent heatmap
+    Dataset containing the instance-centric crop and the label
     """
     def __init__(self, file_path, transform=None, target_transform=None):
         """

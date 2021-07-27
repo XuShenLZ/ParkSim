@@ -6,7 +6,7 @@ import torch.optim as optim
 import os
 from datetime import datetime
 
-from utils import ImageDataset
+from utils import ImgDataset
 from network import SimpleCNN
 from losses import FullyConvLoss
 
@@ -23,10 +23,10 @@ target_transform = transforms.ToTensor()
 
 batch_size = 10
 
-trainset = ImageDataset(_CURRENT + '/data/DJI_0012', transform=input_transform, target_transform=target_transform)
+trainset = ImgDataset(_CURRENT + '/data/DJI_0012', transform=input_transform, target_transform=target_transform)
 trainloader = DataLoader(trainset, batch_size=batch_size, shuffle=True)
 
-testset = ImageDataset(_CURRENT + '/data/DJI_0013', transform=input_transform, target_transform=target_transform)
+testset = ImgDataset(_CURRENT + '/data/DJI_0013', transform=input_transform, target_transform=target_transform)
 testloader = DataLoader(testset, batch_size=batch_size, shuffle=False)
 
 model = SimpleCNN().to(device)

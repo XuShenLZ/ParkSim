@@ -4,7 +4,7 @@ from tqdm import tqdm
 import os
 
 from dlp.dataset import Dataset
-from utils import PostProcessor
+from utils import ImgProcessor, KptProcessor
 
 _CURRENT = os.path.abspath(os.path.dirname(__file__))
 DATA_PATH = os.path.join(_CURRENT, '..', 'data')
@@ -18,7 +18,8 @@ def process(stride, path, scene_name):
     features = []
     labels = []
 
-    processor = PostProcessor(ds)
+    processor = KptProcessor(ds)
+    # processor = ImgProcessor(ds)
 
     scene = ds.get('scene', ds.list_scenes()[0])
 
@@ -43,7 +44,7 @@ def process(stride, path, scene_name):
             if instance['mode']=='moving' and agent['type'] not in {'Pedestrian', 'Undefined'}:
                 try:
                     feature, label = processor.gen_feature_label(inst_token, img_frame)
-                    features.append(np.asarray(feature))
+                    features.append(feature)
                     labels.append(label)
                 except:
                     pass

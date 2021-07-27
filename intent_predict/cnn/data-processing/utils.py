@@ -2,16 +2,14 @@ import numpy as np
 
 from dlp.visualizer import SemanticVisualizer
 from dlp.dataset import Dataset
+from torch.utils import data
 
-class PostProcessor(object):
+class KptProcessor(object):
     """
-    Post processing the data for learning
+    Compute keypoints from semantic image
     """
-    def __init__(self, dataset: Dataset, steps=10, stride=5):
-        """
-        instantiation
-        """
-        self.vis = SemanticVisualizer(dataset, steps=steps, stride=stride)
+    def __init__(self, dataset: Dataset, vis_steps=10, vis_stride=5):
+        self.vis = SemanticVisualizer(dataset, steps=vis_steps, stride=vis_stride)
 
     def compute_keypoint(self, inst_token):
         """
@@ -38,21 +36,41 @@ class PostProcessor(object):
 
         return label_pixel
 
-    def gen_label(self, keypoint: np.ndarray, stride=4, sigma=2):
+    def gen_feature_label(self, inst_token, img_frame):
+        """
+        generate the feature and label pair
+        """
+        img_instance = self.vis.inst_centric(img_frame, inst_token)
+
+        keypoint = self.compute_keypoint(inst_token)
+
+        return np.asarray(img_instance), keypoint
+
+class ImgProcessor(KptProcessor):
+    """
+    Generate image labels
+    """
+    def __init__(self, dataset: Dataset, vis_steps=10, vis_stride=5):
+        """
+        instantiation
+        """
+        super().__init__(dataset=dataset, vis_steps=vis_steps, vis_stride=vis_stride)
+
+    def gen_img_label(self, keypoint: np.ndarray, img_stride=4, sigma=2):
         """
         generate a 3d low-resolution label array with 3-channels: heatmap (1) and xy-offset (2,3)
         range of values in the array: [0, 1]
 
         keypoint: 2-element np array
-        stride: image stride from input size to output heatmap
+        img_stride: image stride from input size to output heatmap
         """
-        height = np.floor(self.vis.inst_ctr_size*2 / stride).astype('int32')
+        height = np.floor(self.vis.inst_ctr_size*2 / img_stride).astype('int32')
         width = height
 
         label = np.zeros((width, height, 3))
 
-        p = np.floor(keypoint / stride).astype('int32')
-        offset = keypoint / stride - p
+        p = np.floor(keypoint / img_stride).astype('int32')
+        offset = keypoint / img_stride - p
 
         for i in range(height):
             for j in range(width):
@@ -63,14 +81,14 @@ class PostProcessor(object):
 
         return label
 
-    def gen_feature_label(self, inst_token, img_frame, stride=4, sigma=2):
+    def gen_feature_label(self, inst_token, img_frame, img_stride=4, sigma=2):
         """
         generate the feature and label pair
         """
         img_instance = self.vis.inst_centric(img_frame, inst_token)
 
         keypoint = self.compute_keypoint(inst_token)
-        label = self.gen_label(keypoint, stride=stride, sigma=sigma)
+        img_label = self.gen_img_label(keypoint, img_stride=img_stride, sigma=sigma)
 
-        return img_instance, label
+        return np.asarray(img_instance), img_label
         

@@ -3,7 +3,6 @@ import torch.nn as nn
 
 from torchvision import models
 
-import numpy as np
 from torchvision.models import inception
 
 class SimpleCNN(nn.Module):
@@ -51,6 +50,65 @@ class SimpleCNN(nn.Module):
         x = self.maxpool(x)
 
         x = self.sigmoid(x)
+
+        return x
+
+class KeypointNet(nn.Module):
+    """
+    From Image to Keypoint location
+    """
+    def __init__(self):
+        super(KeypointNet, self).__init__()
+
+        self.layer1 = nn.Sequential(
+            nn.Conv2d(in_channels=3, out_channels=6, kernel_size=7, stride=2, padding=3),
+            nn.ReLU(inplace=True),
+            nn.BatchNorm2d(num_features=6),
+            nn.MaxPool2d(kernel_size=2, stride=2)
+        )
+
+        self.layer2 = nn.Sequential(
+            nn.Conv2d(in_channels=6, out_channels=12, kernel_size=3, stride=2, padding=1),
+            nn.ReLU(inplace=True),
+            nn.BatchNorm2d(num_features=12),
+            nn.MaxPool2d(kernel_size=2, stride=2)
+        )
+
+        self.layer3 = nn.Sequential(
+            nn.Conv2d(in_channels=12, out_channels=16, kernel_size=3, stride=2, padding=0),
+            nn.ReLU(inplace=True),
+            nn.BatchNorm2d(num_features=16),
+            nn.MaxPool2d(kernel_size=2, stride=2)
+        )
+
+        self.fc1 = nn.Sequential(
+            nn.Linear(in_features=6*6*16, out_features=120),
+            nn.ReLU(inplace=True)
+        )
+
+        self.fc2 = nn.Sequential(
+            nn.Linear(in_features=120, out_features=30),
+            nn.ReLU(inplace=True)
+        )
+
+        self.fc3 = nn.Sequential(
+            nn.Linear(in_features=30, out_features=2),
+            nn.Sigmoid()
+        )
+
+    def forward(self, x):
+        """
+        forward pass
+        """
+        x = self.layer1(x)
+        x = self.layer2(x)
+        x = self.layer3(x)
+        
+        x = torch.flatten(x, 1)
+
+        x = self.fc1(x)
+        x = self.fc2(x)
+        x = self.fc3(x)
 
         return x
 
