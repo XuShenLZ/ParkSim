@@ -1,3 +1,6 @@
+# Tensorboard Runs
+runs/
+
 # Pytorch model
 *.pth
 

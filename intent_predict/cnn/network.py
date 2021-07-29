@@ -9,7 +9,7 @@ class SimpleCNN(nn.Module):
     """
     Simple CNN. No deconvolution
     """
-    def __init__(self):
+    def __init__(self, dropout_p = 0.2):
         """
         Instantiate the model
         """
@@ -33,6 +33,8 @@ class SimpleCNN(nn.Module):
             nn.BatchNorm2d(num_features=3)
         )
 
+        self.dropout = nn.Dropout(p=dropout_p)
+
         self.maxpool = nn.MaxPool2d(kernel_size=2, stride=2)
 
         self.sigmoid = nn.Sigmoid()
@@ -42,10 +44,13 @@ class SimpleCNN(nn.Module):
         forward method
         """
         x = self.layer1(x)
+        x = self.dropout(x)
 
         x = self.layer2(x)
+        x = self.dropout(x)
 
         x = self.layer3(x)
+        x = self.dropout(x)
 
         x = self.maxpool(x)
 
@@ -57,7 +62,7 @@ class KeypointNet(nn.Module):
     """
     From Image to Keypoint location
     """
-    def __init__(self):
+    def __init__(self, dropout_p = 0.2):
         super(KeypointNet, self).__init__()
 
         self.layer1 = nn.Sequential(
@@ -95,19 +100,29 @@ class KeypointNet(nn.Module):
             nn.Linear(in_features=30, out_features=2),
             nn.Sigmoid()
         )
+        
+        self.dropout = nn.Dropout(p=dropout_p)
 
     def forward(self, x):
         """
         forward pass
         """
         x = self.layer1(x)
+        x = self.dropout(x)
+
         x = self.layer2(x)
+        x = self.dropout(x)
+
         x = self.layer3(x)
+        x = self.dropout(x)
         
         x = torch.flatten(x, 1)
 
         x = self.fc1(x)
+
         x = self.fc2(x)
+        x = self.dropout(x)
+
         x = self.fc3(x)
 
         return x

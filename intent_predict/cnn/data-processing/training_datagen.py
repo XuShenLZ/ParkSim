@@ -41,7 +41,7 @@ def process(stride, path, scene_name):
             instance = ds.get('instance', inst_token)
             agent = ds.get('agent', instance['agent_token'])
 
-            if instance['mode']=='moving' and agent['type'] not in {'Pedestrian', 'Undefined'}:
+            if instance['speed']>0.5 and agent['type'] not in {'Pedestrian', 'Undefined'}:
                 try:
                     feature, label = processor.gen_feature_label(inst_token, img_frame)
                     features.append(feature)
