@@ -184,3 +184,35 @@ class WaypointsGraph(object):
         self.connect(vis.waypoints['C2'][3], vis.waypoints['R4R'][-1])
 
         self.connect(vis.waypoints['EXT'][-1], vis.waypoints['R1L'][-3])
+
+    def _dist_to_edge(self, target_coords: np.ndarray, edge: 'Edge'):
+        """
+        calculate the distance from a target point to the specific edge
+        """
+        v1_coords = edge.v1.coords
+        v2_coords = edge.v2.coords
+
+        if (target_coords - v2_coords) @ (v2_coords - v1_coords) > 0:
+            # If target point is closer to point v2
+            dist = np.linalg.norm(target_coords - v2_coords)
+        elif (target_coords - v1_coords) @ (v2_coords - v1_coords) < 0:
+            # If target point is closer to point v1
+            dist = np.linalg.norm(target_coords - v1_coords)
+        else:
+            x2_x1, y2_y1 = v2_coords - v1_coords
+            x1_x0, y1_y0 = v1_coords - target_coords
+            dist = abs(x2_x1*y1_y0 - x1_x0*y2_y1) / np.linalg.norm(v2_coords - v1_coords)
+
+        return dist
+
+    def dist_to_graph(self, target_coords: np.ndarray):
+        """
+        calculate the minimal distance from a traget point to the entire graph
+        """
+        min_dist = np.inf
+        for e in self.edges:
+            dist = self._dist_to_edge(target_coords, e)
+            if dist < min_dist:
+                min_dist = dist
+
+        return min_dist

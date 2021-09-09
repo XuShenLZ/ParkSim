@@ -13,10 +13,14 @@ class AStarGraph(WaypointsGraph):
         docstring
         """
         self.edges = path
-        self.vertices = [self.edges[0].v1]
 
-        for e in self.edges:
-            self.vertices.append(e.v2)
+        if path == []:
+            self.vertices = []
+        else:
+            self.vertices = [self.edges[0].v1]
+
+            for e in self.edges:
+                self.vertices.append(e.v2)
 
     def path_cost(self):
         """

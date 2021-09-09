@@ -22,7 +22,7 @@ class LocalDetector(object):
 
         img: PIL image
         """
-        hsv_img = cv2.cvtColor(np.array(img), cv2.COLOR_BGR2HSV)
+        hsv_img = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2HSV)
         mask = cv2.inRange(hsv_img, self.hsv_lower, self.hsv_upper)
 
         res = cv2.bitwise_and(hsv_img, hsv_img, mask=mask)
