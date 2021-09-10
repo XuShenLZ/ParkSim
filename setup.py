@@ -17,7 +17,8 @@ setuptools.setup(
         "tqdm==4.60.0",
         "jupyterlab==3.0.16",
         "opencv-python==4.5.3.56",
-        "tensorboard==2.5.0"
+        "tensorboard==2.5.0",
+        "mosek==9.3.6"
     ]
     # Dragon Lake Parking (DLP) Dataset should be built with its own source
     # Pytorch installation should follow the instructions on the website

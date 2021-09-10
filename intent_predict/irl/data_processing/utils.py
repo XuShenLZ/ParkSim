@@ -1,5 +1,6 @@
 import numpy as np
 from typing import List
+import pickle
 
 from spot_detector.detector import LocalDetector
 from route_planner.graph import WaypointsGraph
@@ -7,6 +8,8 @@ from route_planner.a_star import AStarPlanner, AStarGraph
 
 from dlp.dataset import Dataset
 from dlp.visualizer import SemanticVisualizer
+
+np.random.seed(1)
 
 class IrlDataProcessor(object):
     """
@@ -136,3 +139,36 @@ class IrlDataProcessor(object):
                 label[idx] = 1.
 
         return label
+
+class IrlDataLoader(object):
+    """
+    Dataset Loader for Irl Data
+    """
+    def __init__(self, file_path, normalize=True, shuffle=True):
+        """
+        Load the generated IRL dataset
+        """
+        with open('%s_feature.pkl' % file_path, 'rb') as f:
+            self.features_raw = pickle.load(f)
+
+        with open('%s_label.pkl' % file_path, 'rb') as f:
+            self.labels = pickle.load(f)
+
+        if normalize:
+            concat_feature = np.concatenate(self.features_raw, axis=1)
+            norm_factor = np.linalg.norm(concat_feature, axis=1)
+
+            self.features = [x / norm_factor[:, None] for x in self.features_raw]
+        else:
+            self.features = self.features_raw
+
+        if shuffle:
+            idx = np.random.permutation(len(self.features))
+            self.features = [self.features[i] for i in idx]
+            self.labels = [self.labels[i] for i in idx]
+
+    def __getitem__(self, idx):
+        feature = self.features[idx]
+        label = self.labels[idx]
+
+        return feature, label

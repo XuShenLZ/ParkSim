@@ -1,8 +1,10 @@
 import argparse
 import numpy as np
+from numpy.core.fromnumeric import trace
 from tqdm import tqdm
 import os
 import pickle
+import traceback
 
 from dlp.dataset import Dataset
 from utils import IrlDataProcessor
@@ -10,7 +12,7 @@ from utils import IrlDataProcessor
 _CURRENT = os.path.abspath(os.path.dirname(__file__))
 DATA_PATH = os.path.join(_CURRENT, '..', 'data')
 
-NUM_FEATURE = 9
+NUM_FEATURE = 6
 
 def process(stride, path, scene_name):
 
@@ -65,17 +67,17 @@ def process(stride, path, scene_name):
 
                         nearby_agents = 0
 
-                        speed_list = []
+                        # speed_list = []
                         for center_agent in agent_centers:
                             dist = astar_graph.dist_to_graph(center_agent)
                             if dist < thres:
                                 nearby_agents += 1
-                                agent_speed = processor.get_agent_speed(inst_token, center_agent)
-                                speed_list.append(agent_speed)
+                                # agent_speed = processor.get_agent_speed(inst_token, center_agent)
+                                # speed_list.append(agent_speed)
 
-                        max_agent_speed = np.amax(speed_list)
-                        min_agent_speed = np.amin(speed_list)
-                        avg_agent_speed = np.mean(speed_list)
+                        # max_agent_speed = np.amax(speed_list)
+                        # min_agent_speed = np.amin(speed_list)
+                        # avg_agent_speed = np.mean(speed_list)
 
                         feature[0, center_idx] = local_offset[0]
                         feature[1, center_idx] = local_offset[1]
@@ -83,17 +85,21 @@ def process(stride, path, scene_name):
                         feature[3, center_idx] = astar_dir
                         feature[4, center_idx] = nearby_agents
                         feature[5, center_idx] = ego_speed
-                        feature[6, center_idx] = max_agent_speed
-                        feature[7, center_idx] = min_agent_speed
-                        feature[8, center_idx] = avg_agent_speed
+                        # feature[6, center_idx] = max_agent_speed
+                        # feature[7, center_idx] = min_agent_speed
+                        # feature[8, center_idx] = avg_agent_speed
 
                     label = processor.get_intent_label(inst_token, spot_centers)
 
                     features.append(feature)
                     labels.append(label)
-                except:
-                    pass
-                    # print("Error occured for instance %s" % inst_token)
+
+                except Exception as err:
+                    # pass
+                    print("==========\nError occured for instance %s" % inst_token)
+
+                    traceback.print_exc()
+
                 
         frame_token = frame['next']
 
