@@ -45,6 +45,8 @@ def process(stride, path, scene_name):
 
             if agent['type'] not in {'Pedestrian', 'Undefined'}:
                 try:
+                    if ds.get_inst_mode(inst_token) != 'incoming':
+                        continue
 
                     spot_centers = processor.detect_center(inst_token, 'spot')
                     if spot_centers == []:

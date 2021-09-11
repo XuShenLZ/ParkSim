@@ -167,6 +167,9 @@ class IrlDataLoader(object):
             self.features = [self.features[i] for i in idx]
             self.labels = [self.labels[i] for i in idx]
 
+    def __len__(self):
+        return len(self.labels)
+
     def __getitem__(self, idx):
         feature = self.features[idx]
         label = self.labels[idx]

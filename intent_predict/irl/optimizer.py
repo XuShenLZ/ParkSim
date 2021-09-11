@@ -37,5 +37,32 @@ class WeightOptimizer(object):
 
         return self.t.level(), self.w.level()
 
+class DecisionMaker(object):
+    """
+    Make a decision with the current weight vector
+    """
+    def __init__(self, beta=0):
+        """
+        instantiation
+        """
+        self.beta = beta
 
+    def solve(self, w: np.ndarray, phi: np.ndarray):
+        """
+        make decision
+        """
+        dim = phi.shape[1]
+
+        self.M = mf.Model()
+        self.p = self.M.variable('p', dim, mf.Domain.greaterThan(0.0))
+
+        self.M.constraint(mf.Expr.sum(self.p), mf.Domain.equalsTo(1.0))
+
+        obj = mf.Expr.dot(w, mf.Expr.mul(phi, self.p))
+
+        self.M.objective(mf.ObjectiveSense.Minimize, obj)
+
+        self.M.solve()
+
+        return self.p.level()
         
