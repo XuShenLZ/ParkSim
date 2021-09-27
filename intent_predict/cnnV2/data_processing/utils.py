@@ -11,7 +11,7 @@ from dlp.visualizer import SemanticVisualizer
 
 np.random.seed(1)
 
-class IrlDataProcessor(object):
+class CNNDataProcessor(object):
     """
     Extract features for IRL
     """
@@ -123,6 +123,10 @@ class IrlDataProcessor(object):
         """
         compute the intent label as the prob distribution over visible spots
 
+        (possible speed improvement: find the intended parking spot over the
+        full lot, not just the visible spots so that the computation is only
+        done once)
+
         r: The radius to determine whether the car is inside a spot or not
         """
         traj = self.vis.dataset.get_future_traj(inst_token)
@@ -135,10 +139,9 @@ class IrlDataProcessor(object):
             dist = np.linalg.norm(traj[:, 0:2] - center_coords, axis=1)
 
             if np.amin(dist) < r:
-                label = np.zeros(len(spot_centers))
-                label[idx] = 1.
+                return idx
 
-        return label
+        return len(spot_centers)
 
 class IrlDataLoader(object):
     """
