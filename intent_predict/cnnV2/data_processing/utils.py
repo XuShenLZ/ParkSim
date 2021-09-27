@@ -1,6 +1,8 @@
 import numpy as np
 from typing import List
 import pickle
+import cv2
+import PIL
 
 from spot_detector.detector import LocalDetector
 from route_planner.graph import WaypointsGraph
@@ -118,6 +120,23 @@ class CNNDataProcessor(object):
                 closet_inst_dist = dist
 
         return self.ds.get('instance', closet_inst_token)['speed']
+
+    def _get_corners(self, spot):
+        return cv2.boxPoints(spot)
+    
+    def get_parking_spots_from_instance(self, inst_token, frame):
+        img_frame = self.vis.plot_frame(frame['frame_token'])
+        img = self.vis.inst_centric(img_frame, inst_token)
+        return self.spot_detector.detect(img)
+
+    def label_spot(self, spot, inst_token, frame):
+        img_frame = self.vis.plot_frame(frame['frame_token'])
+        instance_view = self.vis.inst_centric(img_frame, inst_token)
+        instance_view_copy = instance_view.copy()
+        corners = self._get_corners(spot)
+        img_draw = PIL.ImageDraw.Draw(instance_view_copy)  
+        img_draw.polygon(corners, fill ="yellow", outline ="yellow")
+        return instance_view_copy
 
     def get_intent_label(self, inst_token, spot_centers: List[np.ndarray], r=1.25):
         """
