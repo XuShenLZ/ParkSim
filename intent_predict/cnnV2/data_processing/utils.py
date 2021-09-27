@@ -135,7 +135,7 @@ class CNNDataProcessor(object):
         instance_view_copy = instance_view.copy()
         corners = self._get_corners(spot)
         img_draw = PIL.ImageDraw.Draw(instance_view_copy)  
-        img_draw.polygon(corners, fill ="yellow", outline ="yellow")
+        img_draw.polygon(corners, fill ="purple", outline ="purple")
         return instance_view_copy
 
     def get_intent_label(self, inst_token, spot_centers: List[np.ndarray], r=1.25):
