@@ -20,7 +20,6 @@ class WeightOptimizer(object):
         solve the problem
         """
         self.M = mf.Model()
-        # self.opti = ca.Opti()
 
         self.t = self.M.variable('t', mf.Domain.unbounded())
         self.w = self.M.variable('w', self.dim, mf.Domain.unbounded())
@@ -45,6 +44,7 @@ class DecisionMaker(object):
         """
         instantiation
         """
+        # Regularization coefficient
         self.beta = beta
 
     def solve(self, w: np.ndarray, phi: np.ndarray):
@@ -56,13 +56,18 @@ class DecisionMaker(object):
         self.M = mf.Model()
         self.p = self.M.variable('p', dim, mf.Domain.greaterThan(0.0))
 
-        self.M.constraint(mf.Expr.sum(self.p), mf.Domain.equalsTo(1.0))
+        # Regularization
+        self.r = self.M.variable('r', mf.Domain.greaterThan(0.0))
+        self.M.constraint(mf.Var.vstack(self.r, self.p), mf.Domain.inQCone())
 
-        obj = mf.Expr.dot(w, mf.Expr.mul(phi, self.p))
+        # sum(p) = 1
+        cons = self.M.constraint(mf.Expr.sum(self.p), mf.Domain.equalsTo(1.0))
+
+        obj = mf.Expr.add(mf.Expr.dot(w, mf.Expr.mul(phi, self.p)), mf.Expr.mul(self.beta, self.r))
 
         self.M.objective(mf.ObjectiveSense.Minimize, obj)
 
         self.M.solve()
 
-        return self.p.level()
+        return self.p.level(), self.p.dual(), cons.dual()
         
