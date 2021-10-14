@@ -29,6 +29,13 @@ class CNNDataProcessor(object):
 
         self.waypoints_graph = WaypointsGraph()
         self.waypoints_graph.setup_with_vis(self.vis)
+        
+    def get_global_coords(self, inst_token):
+        instance = self.ds.get('instance', inst_token)
+        current_state = np.array([instance['coords'][0], instance['coords'][1], instance['heading'], instance['speed']])
+        current_local_coords = np.array([instance['coords'][0], instance['coords'][1]])
+        center_ground = self.vis.local_pixel_to_global_ground(current_state, current_local_coords)
+        return center_ground
 
     def detect_center(self, inst_token, obj_type):
         """

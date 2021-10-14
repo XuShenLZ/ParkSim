@@ -41,6 +41,12 @@ def get_data_for_instance(inst_token, frame, extractor, ds):
     selected_spot_index = extractor.get_intent_label(inst_token, spot_centers)
     instance = ds.get('instance', inst_token)
     agent_token = instance['agent_token']
+    ego_speed = instance['speed']
+    
+    ENTRANCE_TO_PARKING_LOT = np.array([20, 80])
+    current_global_coords = extractor.get_global_coords(inst_token)
+    distance_to_entrance = np.linalg.norm(current_global_coords - ENTRANCE_TO_PARKING_LOT)
+    
     
     
     for spot_idx, spot in enumerate(all_spots):
@@ -51,8 +57,8 @@ def get_data_for_instance(inst_token, frame, extractor, ds):
         
         marked_img = extractor.label_spot(spot, inst_token, frame)
         img_data = np.array(marked_img)
-        image_features.append(img_data)
-        non_spatial_features.append(np.array([[astar_dir, astar_dist, get_time_spent_in_lot(ds, agent_token, inst_token)]]))
+        image_features.append(img_data)    
+        non_spatial_features.append(np.array([[astar_dir, astar_dist, ego_speed, distance_to_entrance, get_time_spent_in_lot(ds, agent_token, inst_token)]]))
         labels.append(label)
     unmarked_img = extractor.vis.inst_centric(img_frame, inst_token)
     no_parking_spot_chosen_index = len(all_spots)
@@ -63,7 +69,7 @@ def get_data_for_instance(inst_token, frame, extractor, ds):
     
     unmarked_img_data = np.array(unmarked_img)
     image_features.append(unmarked_img_data)
-    non_spatial_features.append(np.array([[0, 0, get_time_spent_in_lot(ds, agent_token, inst_token)]]))
+    non_spatial_features.append(np.array([[0, 0, ego_speed, distance_to_entrance, get_time_spent_in_lot(ds, agent_token, inst_token)]]))
     labels.append(label)
     return image_features, non_spatial_features, labels
 
@@ -98,7 +104,7 @@ def create_dataset(stride, path, scene_name):
     image_features = []
     non_spatial_features = []
     labels = []
-    for frame_idx in tqdm(range(0, len(all_frames) // len(all_frames), stride)):
+    for frame_idx in tqdm(range(0, len(all_frames), stride)):
         frame_token = all_frames[frame_idx]
         frame = ds.get('frame', frame_token)
         all_instance_tokens = filter_instances(ds, frame['instances'])
