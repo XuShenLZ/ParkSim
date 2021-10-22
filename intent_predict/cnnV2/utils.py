@@ -30,7 +30,7 @@ class CNNDataset(Dataset):
         """
         img_feature = self.image_features[idx]
         non_spatial_feature = self.non_spatial_features[idx]
-        label = self.all_labels[idx]
+        label = self.all_labels[idx].astype(np.single)
         if self.input_transform:
             img_feature = self.input_transform(img_feature)
             non_spatial_feature = non_spatial_feature.astype(np.single)

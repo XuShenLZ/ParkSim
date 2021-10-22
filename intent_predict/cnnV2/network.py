@@ -18,28 +18,34 @@ class SimpleCNN(nn.Module):
         super(SimpleCNN, self).__init__()
 
         self.img_layer1 = nn.Sequential(
-            nn.Conv2d(in_channels=3, out_channels=6, kernel_size=7, stride=2, padding=3),
+            nn.Conv2d(in_channels=3, out_channels=20, kernel_size=7, stride=2, padding=3),
             nn.ReLU(inplace=True),
-            nn.BatchNorm2d(num_features=6)
+            nn.BatchNorm2d(num_features=20)
         )
 
         self.img_layer2 = nn.Sequential(
-            nn.Conv2d(in_channels=6, out_channels=16, kernel_size=3, stride=1, padding=1),
+            nn.Conv2d(in_channels=20, out_channels=15, kernel_size=5, stride=1, padding=1),
             nn.ReLU(inplace=True),
-            nn.BatchNorm2d(num_features=16)
+            nn.BatchNorm2d(num_features=15)
+        )
+        
+        self.img_layer3 = nn.Sequential(
+            nn.Conv2d(in_channels=15, out_channels=10, kernel_size=3, stride=1, padding=1),
+            nn.ReLU(inplace=True),
+            nn.BatchNorm2d(num_features=10)
         )
 
-        self.img_layer3 = nn.Sequential(
-            nn.Conv2d(in_channels=16, out_channels=3, kernel_size=1, stride=1, padding=0),
+        self.img_layer4 = nn.Sequential(
+            nn.Conv2d(in_channels=10, out_channels=5, kernel_size=1, stride=1, padding=0),
             nn.ReLU(inplace=True),
-            nn.BatchNorm2d(num_features=3)
+            nn.BatchNorm2d(num_features=5)
         )
         
         self.flatten_layer = nn.Sequential(
             nn.Flatten(),
         )
         
-        IMG_LAYER_OUTPUT_SIZE = 120000
+        IMG_LAYER_OUTPUT_SIZE = 196020
         NON_SPATIAL_FEATURE_SIZE = 5
         
         
@@ -72,6 +78,9 @@ class SimpleCNN(nn.Module):
         x = self.dropout(x)
 
         x = self.img_layer3(x)
+        x = self.dropout(x)
+        
+        x = self.img_layer4(x)
         x = self.dropout(x)
         
         x = self.flatten_layer(x)
