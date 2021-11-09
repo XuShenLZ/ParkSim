@@ -28,6 +28,7 @@ class SimpleCNN(nn.Module):
         self.image_layers.append(nn.Sequential(
             nn.Conv2d(in_channels=16, out_channels=32, kernel_size=5),
             nn.LeakyReLU(negative_slope=0.01, inplace=True),
+            nn.MaxPool2d(2),
             #nn.BatchNorm2d(num_features=15)
         ))
         
@@ -40,30 +41,32 @@ class SimpleCNN(nn.Module):
         self.image_layers.append(nn.Sequential(
             nn.Conv2d(in_channels=32, out_channels=16, kernel_size=3),
             nn.LeakyReLU(negative_slope=0.01, inplace=True),
+            nn.MaxPool2d(2),
             #nn.BatchNorm2d(num_features=15)
         ))
         
         self.image_layers.append(nn.Sequential(
             nn.Conv2d(in_channels=16, out_channels=5, kernel_size=3),
             nn.LeakyReLU(negative_slope=0.01, inplace=True),
+            nn.MaxPool2d(2),
             #nn.BatchNorm2d(num_features=15)
         ))
         self.flatten_layer = nn.Sequential(
             nn.Flatten(),
         )
         
-        IMG_LAYER_OUTPUT_SIZE = 196020
+        IMG_LAYER_OUTPUT_SIZE = 10580
         NON_SPATIAL_FEATURE_SIZE = 5
         
         
         self.linear_layer1 = nn.Sequential(
             nn.Linear(IMG_LAYER_OUTPUT_SIZE + NON_SPATIAL_FEATURE_SIZE, 1000),
-            nn.LeakyReLU(negative_slope=0.01, inplace=True),
+            #nn.LeakyReLU(negative_slope=0.01, inplace=True),
         )
         self.linear_layer2 = nn.Sequential(
             nn.Linear(1000, 1),
         )
-        self.sigmoid = nn.Sigmoid()
+        #self.sigmoid = nn.Sigmoid()
 
     def forward(self, img_feature, non_spatial_feature):
         """
@@ -87,6 +90,6 @@ class SimpleCNN(nn.Module):
         #x = self.linear_layer3(x)
         #x = self.dropout(x)
 
-        x = self.sigmoid(x)
+        #x = self.sigmoid(x)
 
         return x
