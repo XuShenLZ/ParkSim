@@ -16,7 +16,6 @@ from itertools import product
 #out1, out2, out3 = zip(*pool.map(calc_stuff, range(0, 10 * offset, offset)))
 
 
-
 _CURRENT = os.path.abspath(os.path.dirname(__file__))
 DATA_PATH = os.path.join(_CURRENT, '..', 'data')
 
