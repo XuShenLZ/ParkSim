@@ -111,7 +111,7 @@ def create_dataset(stride, path, scene_name):
         
         with multiprocessing.Pool(processes=os.cpu_count()) as pool:
             inputs = list(product(all_instance_tokens, [frame], [extractor], [ds]))
-            results = pool.starmap(get_data_for_instance, tqdm(inputs, total=len(inputs)))
+            results = pool.starmap(get_data_for_instance, inputs)
             [image_features.extend(feature) for feature, _, _ in results]
             [non_spatial_features.extend(feature) for _, feature, _ in results]
             [labels.extend(label) for _, _, label in results]

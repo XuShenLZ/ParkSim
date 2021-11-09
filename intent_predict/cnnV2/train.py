@@ -25,17 +25,21 @@ def train_network():
     
     
     dataset = CNNDataset("data/DJI_0012", input_transform = transforms.ToTensor())
-    trainloader = DataLoader(dataset, batch_size=256, shuffle=True)
+    trainloader = DataLoader(dataset, batch_size=512, shuffle=True)
 
 
 
     cnn = SimpleCNN()
+    state = torch.load("models/simpleCNN_L0.677_10-29-2021_10-05-24.pth")
+    cnn.load_state_dict(state)
+
     optimizer = optim.SGD(cnn.parameters(), lr=1e-4, momentum=1e-6)
     scheduler = optim.lr_scheduler.MultiStepLR(optimizer=optimizer, milestones=[30, 50, 80], gamma=0.1)
     loss_fn = torch.nn.BCELoss()
 
     for epoch in range(100):
         running_loss = 0.0
+        running_accuracy = 0.0
         for data in trainloader:
             img_feature, non_spatial_feature, labels = data
             cnn.forward(img_feature, non_spatial_feature)
@@ -51,11 +55,16 @@ def train_network():
             optimizer.step()
 
             running_loss += loss.item() / len(trainloader)
+            predictions = (preds > 0.5).float()
+            correct = (predictions == labels).float().sum() / labels.shape[0]
+            running_accuracy += correct / len(trainloader)
 
         scheduler.step()
 
         # print statistics
+        
         print('[%d] loss: %.3f' % (epoch + 1, running_loss ))
+        print('[%d] accuracy: %.3f' % (epoch + 1, running_accuracy ))
 
     print('Finished Training')
     if not os.path.exists(_CURRENT + '/models'):
