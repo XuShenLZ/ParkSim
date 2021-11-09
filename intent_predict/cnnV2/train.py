@@ -29,15 +29,18 @@ def train_network():
 
 
 
-    cnn = SimpleCNN()
-    optimizer = optim.SGD(cnn.parameters(), lr=1e-4, momentum=1e-6)
+    cnn = SimpleCNN().cuda()
+    optimizer = optim.AdamW(cnn.parameters(), lr=1e-4, momentum=1e-6)
     scheduler = optim.lr_scheduler.MultiStepLR(optimizer=optimizer, milestones=[30, 50, 80], gamma=0.1)
-    loss_fn = torch.nn.BCELoss()
+    loss_fn = torch.nn.BCELoss().cuda()
 
     for epoch in range(100):
         running_loss = 0.0
         for data in trainloader:
             img_feature, non_spatial_feature, labels = data
+            img_feature = img_feature.cuda()
+            non_spatial_feature = non_spatial_feature.cuda()
+            labels = labels.cuda()
             cnn.forward(img_feature, non_spatial_feature)
             #inputs, labels = data[0].to(device), data[1].to(device)
 
