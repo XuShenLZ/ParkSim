@@ -27,20 +27,10 @@ def train_network():
     dataset = CNNDataset("data/DJI_0012", input_transform = transforms.ToTensor())
     trainloader = DataLoader(dataset, batch_size=512, shuffle=True)
 
-
-
-<<<<<<< HEAD
-    cnn = SimpleCNN()
-    state = torch.load("models/simpleCNN_L0.677_10-29-2021_10-05-24.pth")
-    cnn.load_state_dict(state)
-
-    optimizer = optim.SGD(cnn.parameters(), lr=1e-4, momentum=1e-6)
-=======
     cnn = SimpleCNN().cuda()
     optimizer = optim.AdamW(cnn.parameters(), lr=1e-4, momentum=1e-6)
->>>>>>> 0912aa00004925690f6d9d0b1b6b0e1c1a72759b
     scheduler = optim.lr_scheduler.MultiStepLR(optimizer=optimizer, milestones=[30, 50, 80], gamma=0.1)
-    loss_fn = torch.nn.BCELoss().cuda()
+    loss_fn = torch.nn.BCEWithLogitsLoss().cuda()
 
     for epoch in range(100):
         running_loss = 0.0
