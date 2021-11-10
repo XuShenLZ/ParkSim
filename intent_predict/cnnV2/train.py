@@ -6,6 +6,7 @@ import torch
 from torch.utils.data import DataLoader
 from torchvision import transforms
 import torch.optim as optim
+from tqdm import tqdm
 
 import os
 from datetime import datetime
@@ -25,17 +26,18 @@ def train_network():
     
     
     dataset = CNNDataset("data/DJI_0012", input_transform = transforms.ToTensor())
-    trainloader = DataLoader(dataset, batch_size=512, shuffle=True)
+    trainloader = DataLoader(dataset, batch_size=64, shuffle=True, num_workers=12)
 
-    cnn = SimpleCNN().cuda()
+    cnn = SimpleCNN()
+    cnn = cnn.cuda()
     optimizer = optim.AdamW(cnn.parameters(), lr=1e-4)
     scheduler = optim.lr_scheduler.MultiStepLR(optimizer=optimizer, milestones=[30, 50, 80], gamma=0.1)
     loss_fn = torch.nn.BCEWithLogitsLoss().cuda()
 
-    for epoch in range(100):
+    for epoch in range(35):
         running_loss = 0.0
         running_accuracy = 0.0
-        for data in trainloader:
+        for data in tqdm(trainloader):
             img_feature, non_spatial_feature, labels = data
             img_feature = img_feature.cuda()
             non_spatial_feature = non_spatial_feature.cuda()

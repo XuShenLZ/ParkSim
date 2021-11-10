@@ -49,8 +49,11 @@ class SimpleCNN(nn.Module):
             nn.Conv2d(in_channels=16, out_channels=5, kernel_size=3),
             nn.LeakyReLU(negative_slope=0.01, inplace=True),
             nn.MaxPool2d(2),
-            #nn.BatchNorm2d(num_features=15)
+            #nn.BatchNorm2d(num_features=15)s
         ))
+
+        self.image_layer = nn.Sequential(*self.image_layers)
+
         self.flatten_layer = nn.Sequential(
             nn.Flatten(),
         )
@@ -72,11 +75,7 @@ class SimpleCNN(nn.Module):
         """
         forward method
         """
-        x = img_feature
-        
-        for img_layer in self.image_layers:
-            x = img_layer(x)
-        
+        x = self.image_layer(img_feature)
         x = self.flatten_layer(x)
         non_spatial_feature = self.flatten_layer(non_spatial_feature)
         
