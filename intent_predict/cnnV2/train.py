@@ -28,7 +28,7 @@ def train_network():
     trainloader = DataLoader(dataset, batch_size=512, shuffle=True)
 
     cnn = SimpleCNN().cuda()
-    optimizer = optim.AdamW(cnn.parameters(), lr=1e-4, momentum=1e-6)
+    optimizer = optim.AdamW(cnn.parameters(), lr=1e-4)
     scheduler = optim.lr_scheduler.MultiStepLR(optimizer=optimizer, milestones=[30, 50, 80], gamma=0.1)
     loss_fn = torch.nn.BCEWithLogitsLoss().cuda()
 
