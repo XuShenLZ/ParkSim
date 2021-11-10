@@ -32,47 +32,123 @@ def get_spot_id(local_coordinates, instance):
     in the instance centric view
     """
     # TODO 
-    pass
+    spot_id = None
+    return spot_id
 
-def get_data_for_agent(agent_token):
+def get_parking_spot_ids_in_frame(agent_token, frame):
     """
-    Goes through the agent's path in the parking lot, and construct an array
-    of time series data for each spot it encounters along that path.
+    For a given agent token and frame, returns a list of the unique IDs of each
+    parking spot in the agent's instance centric view.
+    """
+    # TODO
+    return []
+
+def get_timestamps_agent_is_in(frames, agent_token):
+    """
+    For agent token, we want to find the index of the frame in which
+    the agent first appears, and the index of the frame in which the
+    agent has parked. We then return these two indices.
+    """    
+    # TODO 
+    return 0, 0
+
+def get_data_for_agent(agent_token, frames, stride):
+    """
+    Goes through the agent's path in the parking lot, and construct an array of
+    time series data for each spot it encounters along that path.
     
+    Stride represents the step size to take when iterating over frames.
+
     We will represent the data as a dictionary with keys corresponding to the
-    unique IDs of the parking spots the agent sees, and values corresponding to 
-    np arrays whose elements along axis 0 are time-series data points. In our
-    case, each time series data point will have dimensions:
-    (num_time_series_samples, feature_dimension)
+    unique IDs of the parking spots the agent sees, and values corresponding to
+    another dictionary with keys 'image_feature', 'non_image_feature' and
+    'label'. The value for 'image_feature' and 'non_image_feature' is a numpy
+    array where axis 0 are time-series data points. In our case, each time
+    series data point will have dimensions: (num_time_series_samples,
+    feature_dimension).
+
+    Returns a dictionary of dictionaries.
     """
     # TODO 
-    pass
+    first_seen_index, parked_index = get_timestamps_agent_is_in(frames, agent_token)
+    agent_data = {}
+    for idx in range(first_seen_index, parked_index + 1, stride):
+        current_frame = frames[idx]
+        parking_spot_ids = get_parking_spot_ids_in_frame(agent_token, current_frame)
+        for parking_spot_id in parking_spot_ids:
+            if parking_spot_id not in agent_data:
+                agent_data[parking_spot_id] = {'image_feature' : [], 'non_image_feature' : [], 'label' : []}
+            image_feature, non_image_feature, label = get_data_for_agent_at_parking_spot_id(agent_token, parking_spot_id, current_frame)
+            agent_data[parking_spot_id]['image_feature'].append(image_feature)
+            agent_data[parking_spot_id]['non_image_feature'].append(non_image_feature)
+            agent_data[parking_spot_id]['label'].append(label)
+    return agent_data
+
+def get_data_for_agent_at_parking_spot_id(agent_token, parking_spot_id, frame):
+    """
+    Returns a tuple (image_feature, non_image_feature, label) where feature represents the feature for
+    the agent in the current frame where the parking spot given by
+    parking_spot_id is to be colored in. Label is 1 if the agent eventually
+    parks at the spot, and 0 otherwise.
+    """
+    # TODO 
+    image_feature = None
+    non_image_feature = None
+    label = None
+    return feature, non_image_feature, label
 
 def pad_feature_data(data):
     """
+    data: List of dictionaries. Each dictionary corresponds to the data for an
+    agent. The keys of this dictionary are the parking spot ids that the agent
+    sees over the course of its parking journey. The values are also
+    dictionaries of the form: {'image_feature': [ordered list of time series
+    image features], 'non_image_feature': [ordered list of time series non image
+    features], 'label': [ordered list of time series labels]}
+
     Will take all of the feature data and find the agent, parking spot
-    combination
-    with the maximum time series length.  It will then zero-pad all other 
-    agent, parking spot combinations so that the data can be represented by a
-    square
-    matrix.
+    combination with the maximum time series length.  It will then edit the data
+    dictionary in place by zero-padding all other agent, parking spot
+    combinations and reassigning the value of data[spot_id]['image_feature'] and
+    data[spot_id]['non_image_feature'] in the dictionary, so that later on the
+    data can be represented by a matrix/tensor.
+
+    The expected return type is None
     """
     max_time = max(data, key=lambda x: x.size).size
     for time_series in data:
         np.pad(time_series, (0, max_time - time_series.pad), 'constant')
     return np.vstack(max_time)
     
-    
-    
-"""
-For agent token, we want to find the index of the frame in which
-the agent first appears, and the index of the frame in which the
-agent has parked. We then return these two indices.
-"""    
-def get_timestamps_agent_is_in(frames, agent_token):
-    # TODO 
-    return 0, 0
-    
+def combine_agent_data(data):
+    """
+    data: List of dictionaries. Each dictionary corresponds to the data for an
+    agent. The keys of this dictionary are the parking spot ids that the agent
+    sees over the course of its parking journey. The values are also
+    dictionaries of the form: {'image_feature': [ordered list of time series
+    image features], 'non_image_feature': [ordered list of time series non image
+    features], 'label': [ordered list of time series labels]}
+
+    Will take all of the data in the dictionary, and concatenate it all into a
+    numpy array. Will then return a tuple of (image_features,
+    non_image_features, labels) where image_features and non_image_features are
+    numpy array of dimensions (sum of number of spots seen by each agent,
+    max_time_series_length, feature_shape). Moreover, labels is a numpy array
+    with shape (sum of number of spots seen by each agent,
+    max_time_series_length).
+
+    Returns (image_features, non_image_features, labels)
+    """
+    pad_feature_data(data)
+    image_features = []
+    non_image_features = []
+    labels = []
+    for spot_id in data:
+        data_point = data[spot_id]
+        image_features.append(data_point['image_feature'])
+        non_image_features.append(data_point['non_image_feature'])
+        labels.append(data_point['label'])
+    return np.array(image_features), np.array(non_image_features), np.array(labels)
     
     
     
@@ -83,10 +159,7 @@ def create_dataset(stride, path, scene_name):
     
     
     " Get all agents: "
-    
-    scene = ds.get('scene', ds.list_scenes()[0])
-    frame = ds.get_future_frames(scene['first_frame'],timesteps=300)[80]
-    all_instance_tokens = frame['instances']
+    all_instance_tokens = get_all_instance_tokens(ds)
     
     
     " Get all frames: "
@@ -99,38 +172,20 @@ def create_dataset(stride, path, scene_name):
         frame_token = frame['next']
         
     " Prepare Data Lists: "    
-        
-    image_features = []
-    non_spatial_features = []
-    labels = []
+    all_agent_data = []
     
     " Iterate over agents: "
+    for inst_token in all_instance_tokens:
+        agent_data = get_data_for_agent(inst_token, all_frames, stride)
+        all_agent_data.append(agent_data)
     
+    image_features, non_image_features, labels = combine_agent_data(all_agent_data)
     
-    
-    
-    for frame_idx in tqdm(range(0, len(all_frames), stride)):
-        frame_token = all_frames[frame_idx]
-        frame = ds.get('frame', frame_token)
-        all_instance_tokens = filter_instances(ds, frame['instances'])
-        
-        with multiprocessing.Pool(processes=os.cpu_count()) as pool:
-            inputs = list(product(all_instance_tokens, [frame], [extractor], [ds]))
-            results = pool.starmap(get_data_for_instance, tqdm(inputs, total=len(inputs)))
-            [image_features.extend(feature) for feature, _, _ in results]
-            [non_spatial_features.extend(feature) for _, feature, _ in results]
-            [labels.extend(label) for _, _, label in results]
     if not os.path.exists(DATA_PATH):
         os.mkdir(DATA_PATH)
         
-    image_features = np.array(image_features)
-    non_spatial_features = np.array(non_spatial_features)
-    labels = np.array(labels)
-    
-    
-    
     np.save(DATA_PATH + '/%s_image_feature.npy' % scene_name, image_features)
-    np.save(DATA_PATH + '/%s_non_spatial_feature.npy' % scene_name, non_spatial_features)
+    np.save(DATA_PATH + '/%s_non_image_feature.npy' % scene_name, non_image_features)
     np.save(DATA_PATH + '/%s_label.npy' % scene_name, labels)
 
 """
@@ -187,6 +242,17 @@ def get_data_for_instance(inst_token, frame, extractor, ds):
     non_spatial_features.append(np.array([[0, 0, ego_speed, distance_to_entrance, get_time_spent_in_lot(ds, agent_token, inst_token)]]))
     labels.append(label)
     return image_features, non_spatial_features, labels
+
+def get_all_instance_tokens(ds):
+    scene = ds.get('scene', ds.list_scenes()[0])
+    current_frame = ds.get_future_frames(scene['first_frame'],timesteps=1)[0]
+    instance_tokens = set()
+    while current_frame:
+        for inst_token in current_frame['instances']:
+            instance_tokens.add(inst_token)
+        current_frame = ds.get('frame', current_frame['next'])
+    instance_tokens = list(instance_tokens)
+    return filter_instances(ds, instance_tokens)
 
 def filter_instances(ds, instance_tokens):
     filtered_tokens = []
