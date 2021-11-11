@@ -34,7 +34,7 @@ def train_network():
     scheduler = optim.lr_scheduler.MultiStepLR(optimizer=optimizer, milestones=[30, 50, 80], gamma=0.1)
     loss_fn = torch.nn.BCEWithLogitsLoss().cuda()
 
-    for epoch in range(35):
+    for epoch in range(25):
         running_loss = 0.0
         running_accuracy = 0.0
         for data in tqdm(trainloader):
