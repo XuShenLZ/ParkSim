@@ -115,10 +115,22 @@ def pad_feature_data(data):
 
     The expected return type is None
     """
-    max_time = max(data, key=lambda x: x.size).size
-    for time_series in data:
-        np.pad(time_series, (0, max_time - time_series.pad), 'constant')
-    return np.vstack(max_time)
+    # max_time = max(data, key=lambda x: x.size).size
+    # for time_series in data:
+    #     np.pad(time_series, (0, max_time - time_series.pad), 'constant')
+    # return np.vstack(max_time)
+    max_time = max([len(max(agent.values(), lambda x:len(x['label']))['label'])] for agent in data)
+    for i in range(len(data)):
+        images_ext_len = max_time - len(data[i]['image_feature'])
+        feats_ext_len = max_time - len(data[i]['non_image_feature'])
+        labels_ext_len = max_time - len(data[i]['label'])
+        images_ext = [np.zeroes(data[i]['image_feature'].shape)]*images_ext_len
+        feats_ext = [np.zeroes(data[i]['non_image_feature'].shape)]*feats_ext_len
+        labels_ext = [np.zeroes(data[i]['label'].shape)]*labels_ext_len
+        data[i]['image_feature'].extend(images_ext)
+        data[i]['non_image_feature'].extend(feats_ext)
+        data[i]['label'].extend(labels_ext)
+
     
 def combine_agent_data(data):
     """
