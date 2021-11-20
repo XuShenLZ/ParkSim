@@ -1,5 +1,6 @@
 from pathlib import Path
 import os
+import math
 import numpy as np
 from IPython.display import display
 import matplotlib.pyplot as plt
@@ -26,22 +27,42 @@ def get_label_for_index(current_index, target_index):
 """
 TIME SERIES STUFF HERE
 """
-def get_spot_id(local_coordinates, instance):
+spot_coords_to_id = {}
+DISTANCE_THRESHOLD = 0.5
+
+def get_spot_distance(spot_coords, target_coords):
+    """
+    Returns distance between given spot coordinates and the spot we're checking
+    it against
+    """
+    return math.sqrt((spot_coords[0] - target_coords[0])**2 + (spot_coords[1] - target_coords[1])**2)
+def get_spot_id(local_coordinates):
     """
     Returns unique global id of the parking spot specified in local coordinates
     in the instance centric view
     """
-    # TODO 
     spot_id = None
+    for target_spot_coords in spot_coords_to_id:
+        if get_spot_distance(local_coordinates, target_spot_coords) < DISTANCE_THRESHOLD:
+            spot_id = spot_coords_to_id[target_spot_coords]
+            break
+    if not spot_id:
+        spot_id = len(spot_coords_to_id)
+        spot_coords_to_id[local_coordinates] = spot_id
     return spot_id
 
-def get_parking_spot_ids_in_frame(agent_token, frame):
+def get_parking_spot_ids_in_frame(agent_token, frame, extractor):
     """
     For a given agent token and frame, returns a list of the unique IDs of each
     parking spot in the agent's instance centric view.
     """
     # TODO
-    return []
+    spot_ids_in_frame = []
+    all_spots = extractor.get_parking_spots_from_instance(agent_token, frame)
+    spot_centers = extractor.detect_center(agent_token, 'spot')
+    for spot_center in spot_centers:
+        spot_ids_in_frame.append(get_spot_id((spot_center[0], spot_center[1])))
+    return spot_ids_in_frame
 
 def get_timestamps_agent_is_in(frames, agent_token):
     """
@@ -74,6 +95,7 @@ def get_data_for_agent(agent_token, frames, stride):
     agent_data = {}
     for idx in range(first_seen_index, parked_index + 1, stride):
         current_frame = frames[idx]
+        # TODO: need to pass in extractor to get parking spot id method
         parking_spot_ids = get_parking_spot_ids_in_frame(agent_token, current_frame)
         for parking_spot_id in parking_spot_ids:
             if parking_spot_id not in agent_data:
