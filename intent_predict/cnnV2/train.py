@@ -94,7 +94,8 @@ def train_network():
                     correct = (predictions == labels).float().sum() / labels.shape[0]
                     running_val_accuracy += correct / len(testloader)
         
-        early_stopping(running_val_accuracy, cnn)
+        # We subtract 1 because early stopping is based on validation loss decreasing.
+        early_stopping(1 - running_val_accuracy, cnn)
         
         if early_stopping.early_stop:
             print("Early stopping")
