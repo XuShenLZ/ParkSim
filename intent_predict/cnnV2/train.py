@@ -12,6 +12,7 @@ import os
 from datetime import datetime
 import numpy as np
 from network import SimpleCNN
+from sklearn.model_selection import KFold
 
 
 _CURRENT = os.path.abspath(os.path.dirname(__file__))
@@ -33,6 +34,7 @@ def train_network():
     optimizer = optim.AdamW(cnn.parameters(), lr=1e-4)
     scheduler = optim.lr_scheduler.MultiStepLR(optimizer=optimizer, milestones=[30, 50, 80], gamma=0.1)
     loss_fn = torch.nn.BCEWithLogitsLoss().cuda()
+    
 
     for epoch in range(25):
         running_loss = 0.0
