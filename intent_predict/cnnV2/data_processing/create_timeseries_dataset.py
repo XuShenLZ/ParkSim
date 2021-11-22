@@ -41,6 +41,9 @@ def get_spot_id(local_coordinates):
     Returns unique global id of the parking spot specified in local coordinates
     in the instance centric view
     """
+    #TODO Does this work across all agents? For example, what if two different
+    #spots show up at the same local coordinates for 2 different agents. Won't
+    #this fail to see the difference between the spots?
     spot_id = None
     for target_spot_coords in spot_coords_to_id:
         if get_spot_distance(local_coordinates, target_spot_coords) < DISTANCE_THRESHOLD:
@@ -70,8 +73,21 @@ def get_timestamps_agent_is_in(frames, agent_token):
     the agent first appears, and the index of the frame in which the
     agent has parked. We then return these two indices.
     """
-    # TODO
-    return 0, 0
+    
+    def frame_contains_agent(frame):
+        return agent_token in frame['instances']
+    
+    first_idx, last_idx = 0, 0
+    for i, frame in enumerate(frames):
+        if frame_contains_agent(frame):
+            first_idx = i
+            break
+    for i, frame in enumerate(frames[::-1]):
+        if frame_contains_agent(frame):
+            last_idx = i
+            break
+    assert first_idx < last_idx, "First index of agent appearance must be less than the last index of appearance."
+    return first_idx, last_idx
 
 def get_data_for_agent(agent_token, frames, ds, stride):
     """
@@ -92,21 +108,21 @@ def get_data_for_agent(agent_token, frames, ds, stride):
     """
     # TODO
     first_seen_index, parked_index = get_timestamps_agent_is_in(frames, agent_token)
+    extractor = CNNDataProcessor(ds = ds)
     agent_data = {}
     for idx in range(first_seen_index, parked_index + 1, stride):
         current_frame = frames[idx]
-        # TODO: need to pass in extractor to get parking spot id method
-        parking_spot_ids = get_parking_spot_ids_in_frame(agent_token, current_frame)
+        parking_spot_ids = get_parking_spot_ids_in_frame(agent_token, current_frame, extractor)
         for parking_spot_id in parking_spot_ids:
             if parking_spot_id not in agent_data:
                 agent_data[parking_spot_id] = {'image_feature' : [], 'non_image_feature' : [], 'label' : []}
-            image_feature, non_image_feature, label = get_data_for_agent_at_parking_spot_id(agent_token, parking_spot_id, current_frame)
+            image_feature, non_image_feature, label = get_data_for_agent_at_parking_spot_id(agent_token, parking_spot_id, current_frame, ds)
             agent_data[parking_spot_id]['image_feature'].append(image_feature)
             agent_data[parking_spot_id]['non_image_feature'].append(non_image_feature)
             agent_data[parking_spot_id]['label'].append(label)
     return agent_data
 
-def get_data_for_agent_at_parking_spot_id(agent_token, parking_spot_id, frame):
+def get_data_for_agent_at_parking_spot_id(agent_token, parking_spot_id, frame, ds):
     """
     Returns a tuple (image_feature, non_image_feature, label) where feature represents the feature for
     the agent in the current frame where the parking spot given by
@@ -114,9 +130,37 @@ def get_data_for_agent_at_parking_spot_id(agent_token, parking_spot_id, frame):
     parks at the spot, and 0 otherwise.
     """
     # TODO
-    image_feature = None
-    non_image_feature = None
-    label = None
+    extractor = CNNDataProcessor(ds = ds)
+    
+    def get_spot():
+        all_spots = extractor.get_parking_spots_from_instance(agent_token, frame)
+        for spot_idx, spot in enumerate(all_spots):
+            local_coords = spot[0]
+            if get_spot_id(local_coords) == parking_spot_id:
+                return spot_idx, spot
+        raise Exception("No spot with this ID was found.")
+    
+    
+    """Image Features"""
+    spot_idx, spot = get_spot()
+    spot_centers = extractor.detect_center(agent_token, 'spot')
+    selected_spot_index = extractor.get_intent_label(agent_token, spot_centers)
+    marked_img = extractor.label_spot(spot, agent_token, frame)
+    image_feature = np.array(marked_img)
+    
+    
+    """Non Image Features"""
+    instance = ds.get('instance', agent_token)
+    agent_token = instance['agent_token']
+    ego_speed = instance['speed']
+    
+    ENTRANCE_TO_PARKING_LOT = np.array([20, 80])
+    current_global_coords = extractor.get_global_coords(agent_token)
+    distance_to_entrance = np.linalg.norm(current_global_coords - ENTRANCE_TO_PARKING_LOT)
+    astar_dist, astar_dir, _ = extractor.compute_Astar_dist_dir(agent_token, spot_centers[spot_idx])
+    non_image_feature = np.array([[astar_dir, astar_dist, ego_speed, distance_to_entrance, get_time_spent_in_lot(ds, agent_token, agent_token)]])
+    
+    label = 1 if selected_spot_index == spot_idx else 0
     return image_feature, non_image_feature, label
 
 def pad_feature_data(data):
