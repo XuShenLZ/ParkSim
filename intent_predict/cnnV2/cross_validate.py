@@ -114,6 +114,7 @@ def main():
 
             # Evaluationfor this fold
             correct, total = 0, 0
+            running_accuracy = 0
             with torch.no_grad():
                 # Iterate over the test data and generate predictions
                 for i, data in enumerate(testloader, 0):
@@ -133,14 +134,14 @@ def main():
                     loss = loss_fn(preds, labels)
 
                     # Set total and correct
-                    _, predicted = torch.max(preds.data, 1)
-                    total += labels.size(0)
-                    correct += (predicted == labels).sum().item()
+                    predictions = (preds > 0.5).float()
+                    correct = (predictions == labels).float().sum() / labels.shape[0]
+                    running_accuracy += correct / len(trainloader)
 
             # Print accuracy
-            print('Accuracy for fold %d: %d %%' % (fold, 100.0 * correct / total))
+            print('Accuracy for fold %d: %d %%' % (fold, 100.0 * running_accuracy))
             print('--------------------------------')
-            results[fold] = 100.0 * (correct / total)
+            results[fold] = 100.0 * running_accuracy
             
         # Print fold results
         print(f'K-FOLD CROSS VALIDATION RESULTS FOR {num_folds} FOLDS')
