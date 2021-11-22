@@ -40,7 +40,8 @@ def train_network():
     cnn = cnn.cuda()
     optimizer = optim.AdamW(cnn.parameters(), lr=1e-3)
     loss_fn = torch.nn.BCEWithLogitsLoss().cuda()
-    early_stopping = EarlyStopping(patience=10, path= 'models/checkpoint.pt', verbose=True)
+    patience = 5
+    early_stopping = EarlyStopping(patience=patience, path= 'models/checkpoint.pt', verbose=True)
     
     num_epochs = 50
     
