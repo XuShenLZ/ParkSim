@@ -31,7 +31,7 @@ def main():
 
     results = {}
     num_folds = 5
-    num_epochs=25
+    num_epochs= 25
     learning_rates = [1e-5, 1e-4, 1e-3, 1e-2, 1e-1]
     kfold = KFold(n_splits=num_folds, shuffle=True)
     
