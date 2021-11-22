@@ -72,17 +72,19 @@ def main():
             # Iterate over the DataLoader for training data
             for i, data in enumerate(trainloader, 0):
                 
-                # Get inputs
-                inputs, targets = data
+                img_feature, non_spatial_feature, labels = data
+                img_feature = img_feature.cuda()
+                non_spatial_feature = non_spatial_feature.cuda()
+                labels = labels.cuda().unsqueeze(1)
                 
                 # Zero the gradients
                 optimizer.zero_grad()
                 
                 # Perform forward pass
-                outputs = network(inputs)
+                preds = network(img_feature, non_spatial_feature)
                 
                 # Compute loss
-                loss = loss_fn(outputs, targets)
+                loss = loss_fn(preds, labels)
                 
                 # Perform backward pass
                 loss.backward()
@@ -92,9 +94,9 @@ def main():
                 
                 # Print statistics
                 current_loss += loss.item()
-                if i % 500 == 499:
+                if i % 50 == 49:
                     print('Loss after mini-batch %5d: %.3f' %
-                        (i + 1, current_loss / 500))
+                        (i + 1, current_loss / 50))
                     current_loss = 0.0
                     
         # Process is complete.
@@ -113,16 +115,24 @@ def main():
             # Iterate over the test data and generate predictions
             for i, data in enumerate(testloader, 0):
 
-                # Get inputs
-                inputs, targets = data
-
-                # Generate outputs
-                outputs = network(inputs)
+                img_feature, non_spatial_feature, labels = data
+                img_feature = img_feature.cuda()
+                non_spatial_feature = non_spatial_feature.cuda()
+                labels = labels.cuda().unsqueeze(1)
+                
+                # Zero the gradients
+                optimizer.zero_grad()
+                
+                # Perform forward pass
+                preds = network(img_feature, non_spatial_feature)
+                
+                # Compute loss
+                loss = loss_fn(preds, labels)
 
                 # Set total and correct
-                _, predicted = torch.max(outputs.data, 1)
-                total += targets.size(0)
-                correct += (predicted == targets).sum().item()
+                _, predicted = torch.max(preds.data, 1)
+                total += labels.size(0)
+                correct += (predicted == labels).sum().item()
 
         # Print accuracy
         print('Accuracy for fold %d: %d %%' % (fold, 100.0 * correct / total))
