@@ -35,13 +35,15 @@ def get_spot_id(local_coordinates, instance):
     spot_id = None
     return spot_id
 
-def get_parking_spot_ids_in_frame(agent_token, frame):
+def get_parking_spot_ids_in_frame(agent_token, ds, frame):
     """
     For a given agent token and frame, returns a list of the unique IDs of each
     parking spot in the agent's instance centric view.
     """
     # TODO
-    return []
+    extractor = CNNDataProcessor(ds = ds)
+    all_spots = extractor.get_parking_spots_from_instance(agent_token, frame)
+    return [get_spot_id() for spot in all_spots]
 
 def get_timestamps_agent_is_in(frames, agent_token):
     """
@@ -52,7 +54,7 @@ def get_timestamps_agent_is_in(frames, agent_token):
     # TODO 
     return 0, 0
 
-def get_data_for_agent(agent_token, frames, stride):
+def get_data_for_agent(agent_token, frames, ds, stride):
     """
     Goes through the agent's path in the parking lot, and construct an array of
     time series data for each spot it encounters along that path.
@@ -74,7 +76,7 @@ def get_data_for_agent(agent_token, frames, stride):
     agent_data = {}
     for idx in range(first_seen_index, parked_index + 1, stride):
         current_frame = frames[idx]
-        parking_spot_ids = get_parking_spot_ids_in_frame(agent_token, current_frame)
+        parking_spot_ids = get_parking_spot_ids_in_frame(agent_token, ds, current_frame)
         for parking_spot_id in parking_spot_ids:
             if parking_spot_id not in agent_data:
                 agent_data[parking_spot_id] = {'image_feature' : [], 'non_image_feature' : [], 'label' : []}
@@ -95,10 +97,19 @@ def get_data_for_agent_at_parking_spot_id(agent_token, parking_spot_id, frame):
     image_feature = None
     non_image_feature = None
     label = None
-    return feature, non_image_feature, label
+    return image_feature, non_image_feature, label
 
 def pad_feature_data(data):
     """
+    List of dictionaries (one for each agent)
+        - Keys are the parking spot IDs that the agent saw
+        - Values are Dictionaries that correspond to all the time series data
+        for that agent
+        
+    
+    
+    
+    
     data: List of dictionaries. Each dictionary corresponds to the data for an
     agent. The keys of this dictionary are the parking spot ids that the agent
     sees over the course of its parking journey. The values are also
@@ -115,22 +126,13 @@ def pad_feature_data(data):
 
     The expected return type is None
     """
-    # max_time = max(data, key=lambda x: x.size).size
-    # for time_series in data:
-    #     np.pad(time_series, (0, max_time - time_series.pad), 'constant')
-    # return np.vstack(max_time)
-    max_time = max([len(max(agent.values(), lambda x:len(x['label']))['label'])] for agent in data)
-    for i in range(len(data)):
-        images_ext_len = max_time - len(data[i]['image_feature'])
-        feats_ext_len = max_time - len(data[i]['non_image_feature'])
-        labels_ext_len = max_time - len(data[i]['label'])
-        images_ext = [np.zeroes(data[i]['image_feature'].shape)]*images_ext_len
-        feats_ext = [np.zeroes(data[i]['non_image_feature'].shape)]*feats_ext_len
-        labels_ext = [np.zeroes(data[i]['label'].shape)]*labels_ext_len
-        data[i]['image_feature'].extend(images_ext)
-        data[i]['non_image_feature'].extend(feats_ext)
-        data[i]['label'].extend(labels_ext)
-
+    
+    #TODO 
+    
+    max_time = max(data, key=lambda x: x.size).size
+    for time_series in data:
+        np.pad(time_series, (0, max_time - time_series.pad), 'constant')
+    return np.vstack(max_time)
     
 def combine_agent_data(data):
     """
@@ -167,7 +169,7 @@ def combine_agent_data(data):
 def create_dataset(stride, path, scene_name):
     ds = Dataset()
     ds.load(path + scene_name)
-    extractor = CNNDataProcessor(ds = ds)
+    
     
     
     " Get all agents: "
@@ -177,6 +179,7 @@ def create_dataset(stride, path, scene_name):
     " Get all frames: "
     
     all_frames = []
+    scene = ds.get('scene', ds.list_scenes()[0])
     frame_token = scene['first_frame']
     while frame_token:
         all_frames.append(frame_token)
@@ -188,7 +191,7 @@ def create_dataset(stride, path, scene_name):
     
     " Iterate over agents: "
     for inst_token in all_instance_tokens:
-        agent_data = get_data_for_agent(inst_token, all_frames, stride)
+        agent_data = get_data_for_agent(inst_token, all_frames, ds, stride)
         all_agent_data.append(agent_data)
     
     image_features, non_image_features, labels = combine_agent_data(all_agent_data)
