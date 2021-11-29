@@ -173,6 +173,9 @@ class BodyLinearVelocity(PythonMsg):
     v_tran: float = field(default=0)
     v_n: float = field(default=0)
 
+    def mag(self):
+        return np.sqrt(self.v_long**2 + self.v_tran**2 + self.v_n**2)
+
 
 @dataclass
 class BodyAngularVelocity(PythonMsg):
@@ -384,6 +387,7 @@ class VehiclePrediction(PythonMsg):
     x: array.array = field(default = None)     # global x coordinate in meters
     y: array.array = field(default = None)     # global y coordinate in meters
 
+    v: array.array = field(default = None)
     v_x: array.array = field(default = None)   # global x velocity in m/s
     v_y: array.array = field(default = None)   # global y velocity in m/s
 
@@ -426,21 +430,3 @@ class VehiclePrediction(PythonMsg):
         self.a_y =  (np.multiply(self.a_long, np.sin(self.psi)) + np.multiply(self.a_tran, np.cos(self.psi))).tolist()
 
 
-def plot_tire_model(vehicle_config):
-    alpha = np.linspace(-np.pi,np.pi,1000)
-    fyf = vehicle_config.pacejka_d_front * np.sin( vehicle_config.pacejka_c * \
-            np.arctan(vehicle_config.pacejka_b * alpha))
-
-    plt.plot(alpha,fyf)
-    plt.xlabel('Slip angle (rad)')
-    plt.ylabel('Cornering Force')
-    plt.show()
-    return
-
-def main():
-    config = VehicleConfig()
-    plot_tire_model(config)
-
-
-if __name__ == '__main__':
-    main()

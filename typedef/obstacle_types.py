@@ -1,9 +1,23 @@
 import numpy as np
-import pdb
 from abc import abstractmethod
 from dataclasses import dataclass, field
+from matplotlib.patches import Polygon, Circle
 
-from mpclab_common.pytypes import PythonMsg
+from typedef.pytypes import PythonMsg
+
+@dataclass
+class GeofenceRegion():
+    x_max: float = field(default = 100)
+    x_min: float = field(default =-100)
+    y_max: float = field(default = 100)
+    y_min: float = field(default =-100)
+    
+    def xy(self):
+        return np.array([[self.x_max, self.y_max],
+                         [self.x_max, self.y_min],
+                         [self.x_min, self.y_min],
+                         [self.x_min, self.y_max],
+                         [self.x_max, self.y_max]])
 
 @dataclass
 class BaseObstacle(PythonMsg):
@@ -14,12 +28,28 @@ class BaseObstacle(PythonMsg):
     
     this is used for plotting the obstacle as a matplotlib Polygon patch.
     '''
-    xy: float = field(default = None)
+    xy: np.ndarray = field(default = None)
 
-    
-    
+
 @dataclass
-class BaseConvexObstacle(BaseObstacle):
+class CircleObstacle(BaseObstacle):
+    '''
+    a circular obstacle; the field "xy" should not be used, most software has tools for plotting nice circles
+    '''
+    xc: float = field(default = None)
+    yc: float = field(default = None)
+    r:  float = field(default = None)
+    
+    
+    def plot_pyplot(self, ax):
+        p = Circle((self.xc, self.yc), radius = self.r, color = 'red')
+        ax.add_patch(p)
+        return
+        
+        
+        
+@dataclass
+class BasePolytopeObstacle(BaseObstacle):
     '''
     Base class for 2D convex obstacles, intended for use with representation of an obstacle as 2D hyperplanes.
     
@@ -28,24 +58,21 @@ class BaseConvexObstacle(BaseObstacle):
     R = {x : l <= A*x <= u}   (OSQP)
     '''
     
-    V: float = field(default = None)   # vertices - N x 2 shape np.array
-    Ab: float = field(default = None)  # single ended constraints
-    b: float = field(default = None)
-    l: float = field(default = None)
-    A: float = field(default = None)
-    u: float = field(default = None)
+    V: np.ndarray = field(default = None)   # vertices - N x 2 shape np.array
+    A: np.ndarray = field(default = None)  # single ended constraints
+    b: np.ndarray = field(default = None)
+    
     def __setattr__(self,key,value):
         '''
-        Reuse PythonMsg checks however update internal representations afterwards. 
+        Reuse PythonMsg checks however update internal representations afterwards.
         
         Internal updates must use object.__setattr__(self,key,value) to avoid recursive infinite loops.
         '''
         PythonMsg.__setattr__(self,key,value)
         
-        # now update V,Ab,b,l,A,u
-        #self.__calc_V__()
-        #self.__calc_Ab_b__()
-        #self.__calc_l_A_u__()
+        # now update dependent fields
+        self.__calc_V__()
+        self.__calc_A_b__()
         return
         
     @abstractmethod
@@ -59,31 +86,29 @@ class BaseConvexObstacle(BaseObstacle):
         return
         
     @abstractmethod
-    def __calc_Ab_b__(self):
+    def __calc_A_b__(self):
         '''
         Compute single-sided hyperplane form of the polytope:
         
-        P = {x : Ab @ x <= b}
+        P = {x : A @ x <= b}
         '''
         return
         
-    @abstractmethod
-    def __calc_l_A_u__(self):
-        '''
-        Compute single-sided hyperplane form of the polytope:
-        
-        P = {x : l <= A @ x <= u}
-        '''
+
+    def plot_pyplot(self, ax):
+        p = Polygon(self.xy, color = 'red')
+        ax.add_patch(p)
         return
-
-
+    
 
 @dataclass
-class RectangleObstacle(BaseConvexObstacle):
+class RectangleObstacle(BasePolytopeObstacle):
     '''
     Stores a rectangle and computes polytope representations from it
     
-    it is intended that xc,yc,w,h,psi are changed. The rest are computed from these fields. 
+    it is intended that xc,yc,w,h,psi are changed. The rest are computed from these fields and are updated whenever a field is set.
+    
+    This is not suitable for a vehicle, where it is important to reference the rear axle, see vehicle_types.py
     '''
     xc: float = field(default = 0)
     yc: float = field(default = 0)
@@ -94,8 +119,7 @@ class RectangleObstacle(BaseConvexObstacle):
     
     def __post_init__(self):
         self.__calc_V__()
-        self.__calc_Ab_b__()
-        self.__calc_l_A_u__()
+        self.__calc_A_b__()
         return
         
     def R(self):
@@ -110,57 +134,23 @@ class RectangleObstacle(BaseConvexObstacle):
         object.__setattr__(self,'V',V  )
         return
         
-    def __calc_Ab_b__(self):
-        Ab = np.array([[1,0],
-                            [0,1],
-                            [-1,0],
-                            [0,-1]])  @ self.R()
-                            
-        A = np.eye(2) @ self.R()
-        l = (np.linalg.inv(A.T) @ np.array([[-self.xc],[-self.yc]])).squeeze() + np.array([self.w/2, self.h/2])  
-        u = (np.linalg.inv(A.T) @ np.array([[ self.xc],[ self.yc]])).squeeze() + np.array([self.w/2, self.h/2])    
+    def __calc_A_b__(self):
+        A = np.array([[1,0],
+                      [0,1],
+                      [-1,0],
+                      [0,-1]])  @ self.R()
+        
+        #TODO: there is probably a more efficient version of this.                    
+        R = self.R()
+        l = np.linalg.solve(R.T, np.array([[-self.xc], [-self.yc]])).squeeze() + np.array([self.w/2, self.h/2])
+        u = np.linalg.solve(R.T, np.array([[self.xc], [self.yc]])).squeeze() + np.array([self.w/2, self.h/2])
         b = np.concatenate([u,l])
         
-        object.__setattr__(self,'Ab',Ab)
+        object.__setattr__(self,'A',A)
         object.__setattr__(self,'b',b)
         return
-    
-    def __calc_l_A_u__(self):
-        A = np.eye(2) @ self.R()
-        l = (np.linalg.inv(A.T) @ np.array([[self.xc],[self.yc]])).squeeze() - np.array([self.w/2, self.h/2])
-        u = (np.linalg.inv(A.T) @ np.array([[self.xc],[self.yc]])).squeeze() + np.array([self.w/2, self.h/2])
-        
-        object.__setattr__(self,'A',A)
-        object.__setattr__(self,'l',l)
-        object.__setattr__(self,'u',u)
-        return
-    
-    def circumscribed_ellipse(self):
-        '''
-        places a rotated ellipse at the rectangle's position with identical aspect ratio that contains it entirely
-        
-        this should really have a type of its own
-        '''
-        xc = self.xc
-        yc = self.yc
-        psi = self.psi
-        
-        a = self.w/2
-        b = self.h/2
-        
-        return xc,yc,a,b,psi
-        
-    
-    def circumscribed_circle(self):
-        '''
-        places a circle at the rectangle's position that contains it in entirety
-        
-        this shouldreally have a type of its own for returning
-        '''
-        xc = self.xc
-        yc = self.yc
-        R  = np.sqrt(self.w **2 + self.h **2) / 4
-        return xc,yc,R
+
+
         
 
 def demo_rectangle_obstacle():
@@ -168,14 +158,14 @@ def demo_rectangle_obstacle():
     from matplotlib.patches import Polygon
     
     r = RectangleObstacle(xc = 5, yc = 10, w = 4, h = 2, psi = 0.4)
+    r.xc = 8
     patch = Polygon(r.xy)
     
     fig = plt.figure()
     ax = fig.add_subplot(1,1,1)
     print(r.xy)
     print(r.A)
-    print(r.l)
-    print(r.u)
+    print(r.b)
     ax.add_patch(patch)
     ax.relim()
     ax.autoscale_view()
@@ -196,17 +186,14 @@ def test_rectangle_obstacle():
         
         r = RectangleObstacle(xc = xc, yc = yc, w = w, h = h, psi = psi)
         for vertex in range(4):
-            assert     np.all(r.Ab @ r.xy[vertex, :] <= r.b + eps)
-            assert not np.all(r.Ab @ r.xy[vertex, :] <= r.b - eps)
+            assert     np.all(r.A @ r.xy[vertex, :] <= r.b + eps)
+            assert not np.all(r.A @ r.xy[vertex, :] <= r.b - eps)
             
-            assert     np.all(r.A  @ r.xy[vertex, :] <= r.u + eps)
-            assert     np.all(r.A  @ r.xy[vertex, :] >= r.l - eps)
-            assert not np.all(r.A  @ r.xy[vertex, :] <= r.u - eps) or not np.all(r.A  @ r.xy[vertex, :] >= r.l + eps)
     return  
 
 def main():
     demo_rectangle_obstacle()
-    #test_rectangle_obstacle()
+    test_rectangle_obstacle()
     return
 
 if __name__ == '__main__':
