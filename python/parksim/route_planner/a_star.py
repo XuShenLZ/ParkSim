@@ -2,7 +2,7 @@ from itertools import count
 from typing import List
 from queue import PriorityQueue
 
-from route_planner.graph import Vertex, Edge, WaypointsGraph
+from parksim.route_planner.graph import Vertex, Edge, WaypointsGraph
 
 class AStarGraph(WaypointsGraph):
     """

@@ -5,9 +5,9 @@ import matplotlib.pyplot as plt
 
 from matplotlib.animation import FuncAnimation, PillowWriter
 
-from typedef.pytypes import VehiclePrediction
-from typedef.obstacle_types import GeofenceRegion
-from typedef.vehicle_types import VehicleBody
+from parksim.pytypes import VehiclePrediction
+from parksim.obstacle_types import GeofenceRegion
+from parksim.vehicle_types import VehicleBody
 
 def plot_vehicle(ax, state, steer, vehicle_body: VehicleBody):
     """

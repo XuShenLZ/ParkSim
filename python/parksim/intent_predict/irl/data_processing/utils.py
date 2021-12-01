@@ -2,9 +2,9 @@ import numpy as np
 from typing import List
 import pickle
 
-from spot_detector.detector import LocalDetector
-from route_planner.graph import WaypointsGraph
-from route_planner.a_star import AStarPlanner, AStarGraph
+from parksim.spot_detector.detector import LocalDetector
+from parksim.route_planner.graph import WaypointsGraph
+from parksim.route_planner.a_star import AStarPlanner, AStarGraph
 
 from dlp.dataset import Dataset
 from dlp.visualizer import SemanticVisualizer

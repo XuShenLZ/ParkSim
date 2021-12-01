@@ -2,18 +2,12 @@ import setuptools
 
 setuptools.setup(
     name="parksim", 
-    version="0.1.3",
+    version="0.2.0",
     description='Parking Simulation',
     author='Xu Shen',
     author_email='xu_shen@berkeley.edu',
     packages=[
-        'intent_predict',
-        'spot_detector',
-        'route_planner',
-        'path_planner',
-        'typedef',
-        'visualizer',
-        'utils'
+        'parksim'
     ],
     install_requires=[
         "pillow==8.3.1",

@@ -1,8 +1,8 @@
 from dataclasses import dataclass, field
 import numpy as np
 
-from typedef.pytypes import *
-from typedef.obstacle_types import BasePolytopeObstacle
+from parksim.pytypes import *
+from parksim.obstacle_types import BasePolytopeObstacle
 
 @dataclass
 class VehicleBody(BasePolytopeObstacle):

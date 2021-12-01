@@ -2,7 +2,7 @@ import numpy as np
 from scipy.spatial.transform import Rotation as R
 from scipy.spatial.transform import Slerp
 
-from typedef.pytypes import VehiclePrediction
+from parksim.pytypes import VehiclePrediction
 
 def interpolate_states_inputs(states: VehiclePrediction, new_t: np.ndarray):
     result = states.copy()

@@ -3,7 +3,7 @@ from abc import abstractmethod
 from dataclasses import dataclass, field
 from matplotlib.patches import Polygon, Circle
 
-from typedef.pytypes import PythonMsg
+from parksim.pytypes import PythonMsg
 
 @dataclass
 class GeofenceRegion():

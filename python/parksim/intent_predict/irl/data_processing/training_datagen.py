@@ -7,7 +7,7 @@ import pickle
 import traceback
 
 from dlp.dataset import Dataset
-from utils import IrlDataProcessor
+from parksim.intent_predict.irl.data_processing.utils import IrlDataProcessor
 
 _CURRENT = os.path.abspath(os.path.dirname(__file__))
 DATA_PATH = os.path.join(_CURRENT, '..', 'data')
