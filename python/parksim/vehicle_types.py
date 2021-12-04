@@ -64,5 +64,21 @@ class VehicleBody(BasePolytopeObstacle):
         object.__setattr__(self,'b',b)
         return
     
-    
+
+@dataclass
+class VehicleConfig(PythonMsg):
+    '''
+    vehicle configuration class
+    for dt and all vehicle limits
+    '''
+    dt: float = field(default=0.01)  # vehicle simulation time step (applies to rest of vehicle as well)
+
+    v_max: float = field(default=2)  # maximum velocity
+    v_min: float = field(default=-1)  # minimum velocity
+    a_max: float = field(default=2)  # maximum acceleration
+    a_min: float = field(default=-2)  # minimum acceleration
+    delta_max: float = field(default=np.deg2rad(40.0))  # maximum steering angle
+    delta_min: float = field(default=-np.deg2rad(40.0))  # minimum steering angle
+    d_delta_max: float = field(default=1.5)  # maximum change in steering angle over dt
+    d_delta_min: float = field(default=-1.5)  # minimum change in steering angle over dt
     
