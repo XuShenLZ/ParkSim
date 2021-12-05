@@ -292,11 +292,12 @@ def main():
     config = PlannerConfig()
     vehicle_body = VehicleBody(vehicle_flag=0)
     vehicle_config = VehicleConfig()
-    region = GeofenceRegion(x_max=8, x_min=-8, y_max=11, y_min=-3)
+    region = GeofenceRegion(x_max=8, x_min=-8, y_max=11, y_min=-11)
     
-    obstacles = [RectangleObstacle(xc = -3.8,   yc = 0, w = 5, h = 5.22),
-                 RectangleObstacle(xc = 3.8, yc = 0, w = 5, h = 5.22),
-                 RectangleObstacle(xc = 0,   yc = 10, w = 12, h = 0.8)]
+    obstacles = [RectangleObstacle(xc = -3.8,   yc = -6.11, w = 5, h = 5.22),
+                 RectangleObstacle(xc = 3.8, yc = -6.11, w = 5, h = 5.22),
+                 RectangleObstacle(xc = -3.8, yc = 6.11, w = 5, h = 5.22),
+                 RectangleObstacle(xc = 3.8, yc = 6.11, w = 5, h = 5.22)]
     
     planner = HobcaPlanner(config=config, vehicle_body=vehicle_body, vehicle_config=vehicle_config, region=region)
     
@@ -304,12 +305,12 @@ def main():
     final_state = VehicleState()
     
     init_state.x.x = -4.
-    init_state.x.y = 4.35
+    init_state.x.y = -1.75 # 4.35 or 7.85
     init_state.q.from_yaw(0)
     
     final_state.x.x = 0.
-    final_state.x.y = 0.
-    final_state.q.from_yaw(np.pi/2)
+    final_state.x.y = 6.11
+    final_state.q.from_yaw(-np.pi/2)
 
     N, ws_traj = planner.warm_start_state(x0=init_state, xf=final_state, obstacles=obstacles)
 
@@ -322,5 +323,68 @@ def main():
     vis.plot_solution(step=50)
     vis.animate_solution(interval=int(1000 * vehicle_config.dt))
 
+from itertools import product
+import pickle
+def datagen():
+    config = PlannerConfig()
+    vehicle_body = VehicleBody(vehicle_flag=0)
+    vehicle_config = VehicleConfig()
+    region = GeofenceRegion(x_max=8, x_min=-8, y_max=11, y_min=-11)
+    
+    obstacles = [RectangleObstacle(xc = -3.8,   yc = -6.11, w = 5, h = 5.22),
+                 RectangleObstacle(xc = 3.8, yc = -6.11, w = 5, h = 5.22),
+                 RectangleObstacle(xc = -3.8, yc = 6.11, w = 5, h = 5.22),
+                 RectangleObstacle(xc = 3.8, yc = 6.11, w = 5, h = 5.22)]
+    
+    planner = HobcaPlanner(config=config, vehicle_body=vehicle_body, vehicle_config=vehicle_config, region=region)
+
+    start_x = {'left': -4., 'right': 4.}
+    end_y = {'north': 6.11, 'south': -6.11}
+    end_psi = {'up': np.pi/2, 'down': -np.pi/2}
+
+    result = {}
+
+    for sx, ey, ep in product(start_x, end_y, end_psi):
+        init_state = VehicleState()
+        final_state = VehicleState()
+        
+        init_state.x.x = start_x[sx]
+        init_state.x.y = -1.75
+        init_state.q.from_yaw(0)
+        
+        final_state.x.x = 0.
+        final_state.x.y = end_y[ey]
+        final_state.q.from_yaw(end_psi[ep])
+
+        N, ws_traj = planner.warm_start_state(x0=init_state, xf=final_state, obstacles=obstacles)
+
+        ws_l, ws_m = planner.solve_ws(N=N, obstacles=obstacles, ws_traj=ws_traj)
+
+        opt_traj = planner.solve(N=N, x0=init_state, xf=final_state, obstacles=obstacles, ws_traj=ws_traj, ws_l=ws_l, ws_m=ws_m)
+
+        vis = OfflineVisualizer(sol=opt_traj, obstacles=obstacles, map=None, vehicle_body=vehicle_body, region=region)
+
+        vis.plot_solution(step=50, fig_path='%s_%s_%s.png' %(sx,ey,ep), show=False)
+        vis.animate_solution(interval=int(1000 * vehicle_config.dt), gif_path='%s_%s_%s.gif' %(sx,ey,ep), show=False)
+
+        key = ('east', sx, ey, ep)
+        result[key] = np.array([opt_traj.t, opt_traj.x, opt_traj.y, opt_traj.psi, opt_traj.v, opt_traj.u_a, opt_traj.u_steer])
+        print(key, result[key].shape)
+
+    # Mirror the direction
+    m_x = {'left': 'right', 'right': 'left'}
+    m_y = {'north': 'south', 'south': 'north'}
+    m_p = {'up': 'down', 'down': 'up'}
+
+    for sx, ey, ep in product(start_x, end_y, end_psi):
+        original = result[('east', sx, ey, ep)].copy()
+        original[1:3, :] *= -1
+        original[3, :] = (original[3, :] + 2*np.pi) % (2*np.pi) - np.pi
+        result[('west', m_x[sx], m_y[ey], m_p[ep])] = original
+
+    with open('parking_maneuvers.pickle', 'wb') as f:
+        pickle.dump(result, f)
+
 if __name__ == "__main__":
     main()
+    # datagen()
