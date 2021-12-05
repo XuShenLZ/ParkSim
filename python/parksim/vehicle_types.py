@@ -71,10 +71,11 @@ class VehicleConfig(PythonMsg):
     vehicle configuration class
     for dt and all vehicle limits
     '''
-    dt: float = field(default=0.01)  # vehicle simulation time step (applies to rest of vehicle as well)
+    dt: float = field(default=0.1)  # vehicle simulation time step (applies to rest of vehicle as well)
+    M: int = field(default = 4) # RK4 steps per interval
 
-    v_max: float = field(default=2)  # maximum velocity
-    v_min: float = field(default=-1)  # minimum velocity
+    v_max: float = field(default=3)  # maximum velocity
+    v_min: float = field(default=-3)  # minimum velocity
     a_max: float = field(default=2)  # maximum acceleration
     a_min: float = field(default=-2)  # minimum acceleration
     delta_max: float = field(default=np.deg2rad(40.0))  # maximum steering angle

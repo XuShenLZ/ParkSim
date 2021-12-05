@@ -383,6 +383,32 @@ def calc_index(node, c):
 
     return ind
 
+def hybrid_a_star_plotting(start, goal, path: Path, ox, oy, show_animation=False):
+    plt.figure()
+
+    plt.plot(ox, oy, ".k")
+    rs.plot_arrow(start[0], start[1], start[2], fc='g')
+    rs.plot_arrow(goal[0], goal[1], goal[2])
+
+    plt.grid(True)
+    plt.axis("equal")
+
+    if isinstance(path, Path):
+        x = path.x_list
+        y = path.y_list
+        yaw = path.yaw_list
+
+        plt.plot(x, y, "-r", label="Hybrid A* path")
+
+        if show_animation:
+            for i_x, i_y, i_yaw in zip(x, y, yaw):
+                plt.cla()
+                plt.plot(ox, oy, ".k")
+                plt.plot(x, y, "-r", label="Hybrid A* path")
+                plt.grid(True)
+                plt.axis("equal")
+                plot_car(i_x, i_y, i_yaw)
+                plt.pause(0.01)
 
 def main():
     print("Start Hybrid A* planning")
@@ -432,10 +458,10 @@ def main():
     #     oy.append(60.0 - i)
 
     # Set Initial parameters
-    start = [5.0, 4.35, 0]
+    start = [-5.0, 4.35, 0]
     # goal = [0.0, 0.0, np.deg2rad(-90.0)]
-    goal = [0, 0, np.deg2rad(-90.0)]
-    # goal = [0, 0, np.deg2rad(90)]
+    # goal = [0, 0, np.deg2rad(-90.0)]
+    goal = [0, 0, np.deg2rad(90)]
     # start = [10.0, 10.0, np.deg2rad(90.0)]
     # goal = [50.0, 50.0, np.deg2rad(-90.0)]
 
