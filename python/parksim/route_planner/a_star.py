@@ -77,7 +77,7 @@ class AStarPlanner(object):
 
                 for child, edge in zip(*v.get_children()):
                     new_cost = cost + edge.c
-                    aStar_cost = new_cost + v.dist(self.v_goal)
+                    aStar_cost = new_cost + child.dist(self.v_goal)
                     new_node = (child, path + [edge], new_cost)
                     self.fringe.put((aStar_cost, next(self.counter), new_node))
 
