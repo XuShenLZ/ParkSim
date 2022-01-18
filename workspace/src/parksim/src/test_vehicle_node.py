@@ -2,10 +2,19 @@
 
 import rclpy
 
+import numpy as np
+
 from parksim.msg import VehicleStateMsg
-from parksim.pytypes import VehicleState
+from parksim.pytypes import VehicleState, NodeParamTemplate
 from parksim.vehicle_types import VehicleBody
 from parksim.base_node import MPClabNode
+
+class VehicleNodeParams(NodeParamTemplate):
+    """
+    template that stores all parameters needed for the node as well as default values
+    """
+    def __init__(self):
+        self.timer_period = 0.05
 
 class VehiclePublisher(MPClabNode):
     """
@@ -16,19 +25,24 @@ class VehiclePublisher(MPClabNode):
         init
         """
         super().__init__('vehicle')
+        self.get_logger().info('Initializing Vehicle')
+        namespace = self.get_namespace()
+
+        param_template = VehicleNodeParams()
+        self.autodeclare_parameters(param_template, namespace)
+        self.autoload_parameters(param_template, namespace)
 
         self.pub = self.create_publisher(VehicleStateMsg, 'state', 10)
 
-        timer_period = 0.05
-        self.timer = self.create_timer(timer_period, self.timer_callback)
+        self.timer = self.create_timer(self.timer_period, self.timer_callback)
 
         self.i = 0
 
     def timer_callback(self):
         msg = VehicleStateMsg()
 
-        msg.x.x = 10. + self.i
-        msg.x.y = 20.
+        msg.x.x = 10. + 10*np.sin(self.i)
+        msg.x.y = 20. + 10*np.cos(self.i)
 
         self.i += 1
 

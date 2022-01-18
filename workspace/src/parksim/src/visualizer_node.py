@@ -12,27 +12,47 @@ import dearpygui.dearpygui as dpg
 from dlp.dataset import Dataset
 
 from parksim.msg import VehicleStateMsg
-from parksim.pytypes import VehicleState
+from parksim.pytypes import VehicleState, NodeParamTemplate
 from parksim.vehicle_types import VehicleBody
 from parksim.base_node import MPClabNode
 
 from parksim.visualizer.realtime_visualizer import RealtimeVisualizer
 
+class VisualizerNodeParams(NodeParamTemplate):
+    """
+    template that stores all parameters needed for the node as well as default values
+    """
+    def __init__(self):
+        self.dlp_path = '/dlp-dataset/data/DJI_0012'
+        self.timer_period = 0.05
+
 class VisualizerNode(MPClabNode):
     """
     Node class for visualizing everything
     """
-    def __init__(self, dataset: Dataset, vehicle_body: VehicleBody):
+    def __init__(self):
         super().__init__('visualizer')
+        self.get_logger().info('Initializing Visualization Node')
+        namespace = self.get_namespace()
+
+        param_template = VisualizerNodeParams()
+        self.autodeclare_parameters(param_template, namespace)
+        self.autoload_parameters(param_template, namespace)
 
         self.subs = {}
         self.states: Dict[int, VehicleState] = {}
 
-        self.vis = RealtimeVisualizer(dataset, vehicle_body)
+        # Load dataset
+        ds = Dataset()
+        home_path = str(Path.home())
+        ds.load(home_path + self.dlp_path)
 
-        timer_period = 0.1
+        # Load Vehicle Body
+        vehicle_body = VehicleBody()
 
-        self.timer = self.create_timer(timer_period, self.timer_callback)
+        self.vis = RealtimeVisualizer(ds, vehicle_body)
+
+        self.timer = self.create_timer(self.timer_period, self.timer_callback)
 
     def vehicle_state_cb(self, vehicle_id, msg):
         """
@@ -47,7 +67,6 @@ class VisualizerNode(MPClabNode):
         update the list of subscribers and plot
         """
         topic_list_types = self.get_topic_names_and_types()
-        print(topic_list_types)
 
         states_list = []
 
@@ -75,15 +94,7 @@ class VisualizerNode(MPClabNode):
 def main(args=None):
     rclpy.init(args=args)
 
-    # Load dataset
-    ds = Dataset()
-
-    home_path = str(Path.home())
-    ds.load(home_path + '/dlp-dataset/data/DJI_0012')
-
-    vehicle_body = VehicleBody()
-
-    visualizer = VisualizerNode(ds, vehicle_body)
+    visualizer = VisualizerNode()
 
     rclpy.spin(visualizer)
 
