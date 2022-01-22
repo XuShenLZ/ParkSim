@@ -172,6 +172,7 @@ class BodyLinearVelocity(PythonMsg):
     v_long: float = field(default=0)
     v_tran: float = field(default=0)
     v_n: float = field(default=0)
+    v: float = field(default=0) # Speed for bicycle model
 
     def mag(self):
         return np.sqrt(self.v_long**2 + self.v_tran**2 + self.v_n**2)

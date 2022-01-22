@@ -18,6 +18,7 @@ class VehicleBody(BasePolytopeObstacle):
     # Wheelbase
     lf: float = field(default = 0)
     lr: float = field(default = 0)
+    wb: float = field(default = 0)
     # Total Length and width
     l: float = field(default = 0)
     w : float = field(default = 0)
@@ -31,6 +32,7 @@ class VehicleBody(BasePolytopeObstacle):
         if self.vehicle_flag == 0:
             self.lr = 1.35
             self.lf = 1.35
+            self.wb = self.lr + self.lf
             self.w = 1.85
             self.l = 4.6
         else:
