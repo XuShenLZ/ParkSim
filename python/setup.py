@@ -20,7 +20,8 @@ setuptools.setup(
         "casadi~=3.5.5",
         "catkin_pkg",
         "empy",
-        "lark"
+        "lark",
+        "dearpygui"
     ]
     # Dragon Lake Parking (DLP) Dataset should be built with its own source
     # Pytorch installation should follow the instructions on the website
