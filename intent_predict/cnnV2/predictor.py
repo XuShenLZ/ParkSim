@@ -1,6 +1,8 @@
+from cv2 import norm
 from network import RegularizedCNN
 from spot_detector.detector import LocalDetector
 import torch
+from torchvision import transforms
 import numpy as np
 from data_processing.create_dataset import ENTRANCE_TO_PARKING_LOT
 from route_planner.a_star import WaypointsGraph
@@ -9,9 +11,19 @@ import PIL
 import cv2
 
 class PredictionResponse:
-    def __init__(self, spot_chosen: bool, spot_coords: np.ndarray):
-        self.spot_chosen = spot_chosen
-        self.spot_coords = spot_coords
+    def __init__(self, all_spot_centers, distribution):
+        self.all_spot_centers = all_spot_centers
+        self.distribution = distribution
+        
+    def get_spot_prediction(self):
+        index_list = list(range(len(self.distribution)))
+        chosen_index = np.random.choice(index_list, p=self.distribution)
+
+        if chosen_index == len(self.all_spot_centers):
+            return None
+        else: 
+            return self.all_spot_centers[chosen_index]
+        
 
 
 class Predictor:
@@ -48,23 +60,31 @@ class Predictor:
         image_features, non_spatial_features, spot_coordinates = self.get_features(instance_centric_view, global_position, heading, speed, time_spent_in_lot)
         scores = []
         for img_feature, non_spatial_feature in zip(image_features, non_spatial_features):
-            img_feature = torch.Tensor(img_feature)[None, :, :, :].permute(0, 3, 1, 2)
-            non_spatial_feature = torch.Tensor(non_spatial_feature)[None, :]
+            img_feature = transforms.ToTensor()(img_feature)[None, :, :, :]
+            non_spatial_feature = torch.Tensor(non_spatial_feature.astype(np.single))[None, :]
             if self.use_cuda:
                 img_feature.cuda()
                 non_spatial_feature.cuda()
             pred = self.model(img_feature, non_spatial_feature)
-            scores.append(pred.float().item())
+            pred_score = torch.nn.functional.sigmoid(pred.float()).item()
+            scores.append(pred_score)
+        scores = np.array(scores)
+        #exponentiated_scores = np.exp(scores)
         total_score = sum(scores)
         normalized_scores = [score / total_score for score in scores]
+        
+        response = PredictionResponse(spot_coordinates, normalized_scores)
+        return response
+        
+        
         index_list = list(range(len(scores)))
         chosen_index = np.random.choice(index_list, p=normalized_scores)
 
         if chosen_index == len(spot_coordinates):
-            response = PredictionResponse(False, None)
+            response = PredictionResponse(False, None, normalized_scores, spot_coordinates)
         else: 
-            response = PredictionResponse(True, spot_coordinates[chosen_index])
-        return response  
+            response = PredictionResponse(True, spot_coordinates[chosen_index], normalized_scores, spot_coordinates)
+        return response
         
     def get_features(self, instance_centric_view, global_position, heading, speed, time_spent_in_lot):
         "Creates (feature list, label) for every spot within sight of the specified agent in the specified frame"

@@ -26,7 +26,7 @@ def main():
         img_feature = img_feature.cuda()
         non_spatial_feature = non_spatial_feature.cuda()
         labels = labels.cuda()
-        model.forward(img_feature, non_spatial_feature)
+        #model.forward(img_feature, non_spatial_feature)
         #inputs, labels = data[0].to(device), data[1].to(device)
 
         #optimizer.zero_grad()
@@ -39,6 +39,7 @@ def main():
         #optimizer.step()
 
         #running_loss += loss.item() / len(trainloader)
+        preds = torch.nn.functional.sigmoid(preds)
         predictions = (preds > 0.5).float()
         correct = (predictions == labels).float().sum() / labels.shape[0]
         running_accuracy += correct / len(dataloader)
