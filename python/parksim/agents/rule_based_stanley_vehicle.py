@@ -1,5 +1,6 @@
 from typing import List, Set
 import numpy as np
+from parksim.path_planner.offline_maneuver import OfflineManeuver
 from pytope import Polytope
 from enum import Enum
 
@@ -18,30 +19,37 @@ class BrakeState(Enum):
     WAITING = 2
 
 class RuleBasedStanleyVehicle(AbstractAgent):
-    def __init__(self, x_waypoints, y_waypoints, yaw_waypoints, initial_state: VehicleState, vehicle_body: VehicleBody, spot_index, should_overshoot, offline_maneuver, target_speed=0, visual_metadata=0, controller: StanleyController = StanleyController()):
+    def __init__(self, initial_state: VehicleState, vehicle_body: VehicleBody, offline_maneuver: OfflineManeuver, visual_metadata=0, controller: StanleyController = StanleyController(), predictor: StanleyController = StanleyController()):
 
-        self.x_waypoints = x_waypoints # x coordinates for waypoints
-        self.y_waypoints = y_waypoints # y coordinates for waypoints
-        self.yaw_waypoints = yaw_waypoints # yaws for waypoints
+        # State and Reference Waypoints
         self.state = initial_state # state
 
-        self.controller = controller
+        self.x_ref = [] # x coordinates for waypoints
+        self.y_ref = [] # y coordinates for waypoints
+        self.yaw_ref = [] # yaws for waypoints
+        self.v_ref = 0 # target speed
 
-        self.target_idx = self.controller.calc_target_index(self.state, self.x_waypoints, self.y_waypoints)[0] # waypoint the vehicle is targeting
-        self.last_idx = len(self.x_waypoints) - 1 # terminal waypoint
+        # Dimensions
+        self.vehicle_body = vehicle_body
+
+        # Controller and Predictor
+        self.controller = controller
+        self.predictor = predictor
+
+        self.controller.set_ref_pose(self.x_ref, self.y_ref, self.yaw_ref)
+        # self.target_idx = self.controller.calc_target_index(self.state)[0] # waypoint the vehicle is targeting
+        self.target_idx = 0
+
+        self.last_idx = len(self.x_ref) - 1 # terminal waypoint
         self.visited_indices = [] # waypoints the vehicle has targeted
         self.visited_speed = [] # speed the vehical has gone
-
-        self.vehicle_body = vehicle_body # dimensions
-
-        self.target_speed = target_speed # target speed
         
         self.reached_tgt = False
         
         # parking stuff
-        self.going_to_anchor = spot_index > 0 # going to anchor if parking, not if exiting
-        self.spot_index = spot_index
-        self.should_overshoot = should_overshoot # overshooting or undershooting the spot?
+        self.going_to_anchor = True # going to anchor if parking, not if exiting
+        self.spot_index = 0
+        self.should_overshoot = False # overshooting or undershooting the spot?
         self.park_start_coords = None
         self.offline_maneuver = offline_maneuver
         self.parking = False # this is True after we have started parking, including when we're done
@@ -73,15 +81,34 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         self.visited_braking = [False] # were we braking at this time?
         self.visited_parking = [self.parking or self.unparking] # were we parking or unparking at this time?
 
+    def set_ref_pose(self, x_ref: List[float], y_ref: List[float], yaw_ref: List[float]):
+        self.x_ref = x_ref
+        self.y_ref = y_ref
+        self.yaw_ref = yaw_ref
+
+        self.controller.set_ref_pose(self.x_ref, self.y_ref, self.yaw_ref)
+        self.target_idx = self.controller.calc_target_index(self.state)[0] # waypoint the vehicle is targeting
+
+    def set_ref_v(self, v_ref: float):
+        self.v_ref = v_ref
+
+    def set_target_idx(self, target_idx: int):
+        self.target_idx = target_idx
+
+    def set_anchor_parking(self, going_to_anchor, spot_index, should_overshoot):
+        self.going_to_anchor = going_to_anchor
+        self.spot_index = spot_index
+        self.should_overshoot = should_overshoot
+
     def reached_target(self):
         # return self.last_idx == self.target_idx
         # need to constantize this
         if not self.reached_tgt:
-            self.reached_tgt = np.linalg.norm([self.state.x.x - self.x_waypoints[-1], self.state.x.y - self.y_waypoints[-1]]) < 0.3
+            self.reached_tgt = np.linalg.norm([self.state.x.x - self.x_ref[-1], self.state.x.y - self.y_ref[-1]]) < 0.3
         return self.reached_tgt
 
     def num_waypoints(self):
-        return len(self.x_waypoints)
+        return len(self.x_ref)
 
     def will_crash(self, other_vehicles: List[AbstractAgent], look_ahead_timesteps, radius=None, verbose=False):
         
@@ -98,16 +125,22 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         for i in range(look_ahead_timesteps):
 
             # calculate new positions
-
-            ai = self.controller.pid_control(self.target_speed, look_ahead_state.v.v, braking=self.braking())
-            di, _ = self.controller.stanley_control(look_ahead_state, self.x_waypoints, self.y_waypoints, self.yaw_waypoints, self.target_idx)
-            self.controller.step(look_ahead_state, ai, di)
+            self.predictor.set_ref_pose(self.x_ref, self.y_ref, self.yaw_ref)
+            self.predictor.set_ref_v(self.v_ref)
+            self.predictor.set_target_idx(self.target_idx)
+            ai, di, _ = self.predictor.solve(look_ahead_state, self.braking())
+            self.predictor.step(look_ahead_state, ai, di)
 
             for v in range(len(other_vehicles)):
                 if other_vehicles[v] not in will_crash_with: # for efficiency
-                    ai = self.controller.pid_control(other_vehicles[v].target_speed, other_look_ahead_states[v].v.v, braking=other_vehicles[v].braking()) 
-                    di, _ = self.controller.stanley_control(other_look_ahead_states[v], other_vehicles[v].x_waypoints, other_vehicles[v].y_waypoints, other_vehicles[v].yaw_waypoints, other_vehicles[v].target_idx)
-                    self.controller.step(other_look_ahead_states[v], ai, di)
+                    other_vehicle = other_vehicles[v]
+                    other_look_ahead_state = other_look_ahead_states[v]
+                    self.predictor.set_ref_pose(other_vehicle.x_ref, other_vehicle.y_ref, other_vehicle.yaw_ref)
+                    self.predictor.set_ref_v(other_vehicle.v_ref)
+                    self.predictor.set_target_idx(other_vehicle.target_idx)
+                    ai, di, _ = self.predictor.solve(look_ahead_state, other_vehicle.braking())
+                    self.predictor.step(other_look_ahead_state, ai, di)
+
 
             # detect crash
 
@@ -128,10 +161,11 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         return will_crash_with
 
     def update_state(self, time):
-        # get acceleration toward target speed (ai)
-        ai = self.controller.pid_control(self.target_speed, self.state.v.v, braking=self.braking()) 
-        # get amount we should turn (di) and next target (target_idx)
-        di, self.target_idx = self.controller.stanley_control(self.state, self.x_waypoints, self.y_waypoints, self.yaw_waypoints, self.target_idx)
+        self.controller.set_ref_pose(self.x_ref, self.y_ref, self.yaw_ref)
+        self.controller.set_ref_v(self.v_ref)
+        self.controller.set_target_idx(self.target_idx)
+        # get acceleration toward target speed (ai), amount we should turn (di), and next target (target_idx)
+        ai, di, self.target_idx = self.controller.solve(self.state, self.braking())
         # advance state of vehicle (updates x, y, yaw, velocity)
         self.controller.step(self.state, ai, di)
 
@@ -188,7 +222,7 @@ class RuleBasedStanleyVehicle(AbstractAgent):
     def update_state_unparking(self, time, advance=True):
         if self.unparking_maneuver_state is None: # start unparking
             # get unparking parameters
-            direction = 'west' if self.x_waypoints[0] > self.x_waypoints[1] else 'east' # if first direction of travel is left, face west
+            direction = 'west' if self.x_ref[0] > self.x_ref[1] else 'east' # if first direction of travel is left, face west
             location = 'right' if np.random.rand() < 0.5 else 'left' # random for diversity
             pointing = 'up' if self.state.e.psi > 0 else 'down' # determine from state
             north_spot_ranges = [(0, 41), (67, 91), (113, 133), (159, 183), (205, 225), (251, 275), (297, 317)]
@@ -260,8 +294,8 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         """
         Set target speed to 0 and turn on brakes, which make deceleration faster
         """
-        self._pre_brake_target_speed = self.target_speed
-        self.target_speed = 0
+        self._pre_brake_target_speed = self.v_ref
+        self.v_ref = 0
         self.brake_state = brake_state
 
     def unbrake(self):
@@ -269,7 +303,7 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         Set target speed back to what it was. Only does something if braking
         """
         if self.brake_state != BrakeState.NOT_BRAKING:
-            self.target_speed = self._pre_brake_target_speed
+            self.v_ref = self._pre_brake_target_speed
             self.brake_state = BrakeState.NOT_BRAKING
             self.crash_set.clear()
             self.priority = None

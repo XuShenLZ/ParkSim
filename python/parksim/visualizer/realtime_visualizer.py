@@ -121,15 +121,15 @@ class RealtimeVisualizer(object):
     def clear_frame(self):
         dpg.delete_item(self.frame_canvas, children_only=True)
 
-    def draw_vehicles(self, states_list: List[np.ndarray], fill=(255,128,0,255)):
+    def draw_vehicle(self, states: List[np.ndarray], fill=(255,128,0,255)):
         """
-        states_list: an array-like object with size Nx3 that contains the (x, y, theta) states in (m, rad) of all vehicles
+        states: an array-like object with size 3 that contains the (x, y, psi) states in (m, rad)
+        color: (r, g, b, a) tuple in range 0-255
         """
-        for state in states_list:
-            corners = self._gen_vehicle_corners(state)
+        corners = self._gen_vehicle_corners(states)
 
-            px, py = self._xy2p(corners[:,0], corners[:, 1])
-            dpg.draw_quad(p1=[px[0], py[0]], p2=[px[1], py[1]], p3=[px[2], py[2]], p4=[px[3], py[3]], fill=fill, color=(0,0,0,0), parent=self.frame_canvas)
+        px, py = self._xy2p(corners[:,0], corners[:, 1])
+        dpg.draw_quad(p1=[px[0], py[0]], p2=[px[1], py[1]], p3=[px[2], py[2]], p4=[px[3], py[3]], fill=fill, color=(0,0,0,0), parent=self.frame_canvas)
 
     def draw_frame(self, frame_token):
         frame = self.dlpvis.dataset.get('frame', frame_token)
@@ -144,6 +144,13 @@ class RealtimeVisualizer(object):
                 px, py = self._xy2p(corners[:,0], corners[:, 1])
 
                 dpg.draw_quad(p1=[px[0], py[0]], p2=[px[1], py[1]], p3=[px[2], py[2]], p4=[px[3], py[3]], fill=(255,128,0,255), color=(0,0,0,0), parent=self.frame_canvas)
+
+    def render(self):
+        """
+        render a frame after updating contents
+        """
+        if dpg.is_dearpygui_running():
+            dpg.render_dearpygui_frame()
 
 
 if __name__ == "__main__":
@@ -170,5 +177,6 @@ if __name__ == "__main__":
         for frame in frames:
             vis.clear_frame()
             # vis.draw_frame(frame["frame_token"])
-            vis.draw_vehicles(states_list)
+            for states in states_list:
+                vis.draw_vehicle(states)
             dpg.render_dearpygui_frame()

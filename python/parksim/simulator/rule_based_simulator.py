@@ -1,13 +1,10 @@
 from typing import List
 
-from parksim.pytypes import VehicleState
-from parksim.vehicle_types import VehicleBody
 from pytope import Polytope
 
 from dlp.dataset import Dataset
 from dlp.visualizer import Visualizer as DlpVisualizer
 
-from parksim.route_planner.graph import WaypointsGraph
 
 from pathlib import Path
 
@@ -15,19 +12,24 @@ import numpy as np
 
 import matplotlib.pyplot as plt
 
+from parksim.pytypes import VehicleState
+from parksim.vehicle_types import VehicleBody
 from parksim.route_planner.a_star import AStarPlanner
-from parksim.controller.stanley_controller import StanleyController
+from parksim.route_planner.graph import WaypointsGraph
 from parksim.path_planner.spline import calc_spline_course
 from parksim.path_planner.offline_maneuver import OfflineManeuver
+from parksim.visualizer.realtime_visualizer import RealtimeVisualizer
 
 from parksim.agents.rule_based_stanley_vehicle import RuleBasedStanleyVehicle, BrakeState
 
 np.random.seed(0)
 
 class RuleBasedSimulator(object):
-    def __init__(self, dataset: Dataset, offline_maneuver: OfflineManeuver):
+    def __init__(self, dataset: Dataset, offline_maneuver: OfflineManeuver, vis: RealtimeVisualizer):
         self.dlpvis = DlpVisualizer(dataset)
         self.offline_maneuver = offline_maneuver
+
+        self.vis = vis
 
         self.parking_spaces, self.occupied = self._gen_occupancy()
 
@@ -50,9 +52,8 @@ class RuleBasedSimulator(object):
         self.spawn_wait = 50 # number of timesteps between cars spawning
         # self.entrance_vertex = 243
         self.entrance_vertex = self.graph.search([14.38, 76.21])
-        print(self.entrance_vertex)
 
-        self.spawn_entering = 1 # number of vehicles to enter
+        self.spawn_entering = 3 # number of vehicles to enter
         self.spawn_exiting = 1 # number of vehicles to exit
         self.spawn_exiting_loops = np.random.choice(range(self.spawn_exiting * self.spawn_wait), self.spawn_exiting)
 
@@ -126,7 +127,10 @@ class RuleBasedSimulator(object):
             initial_state.x.y = self.parking_spaces[-spot_index][1]
             initial_state.e.psi = np.pi / 2 if np.random.rand() < 0.5 else -np.pi / 2
         
-        vehicle = RuleBasedStanleyVehicle(cxs[-1], cys[-1], cyaws[-1], initial_state, VehicleBody(), spot_index, False, self.offline_maneuver, target_speed=0, visual_metadata = loops)
+        vehicle = RuleBasedStanleyVehicle(initial_state, VehicleBody(), self.offline_maneuver, visual_metadata = loops)
+        vehicle.set_ref_pose(cxs[-1], cys[-1], cyaws[-1])
+        vehicle.set_ref_v(0)
+        vehicle.set_anchor_parking(going_to_anchor=spot_index>0, spot_index=spot_index, should_overshoot=False)
 
         self.vehicles.append(vehicle)
     
@@ -196,7 +200,7 @@ class RuleBasedSimulator(object):
         # have the y coordinate of the last waypoint be the same as the previous last
     
         if len(new_ax) == 0:
-            new_ay.append(vehicle.y_waypoints[-1])
+            new_ay.append(vehicle.y_ref[-1])
         else:
             new_ay.append(last_edge.v2.coords[1])
         
@@ -209,13 +213,9 @@ class RuleBasedSimulator(object):
         new_cy = [new_cy[j] - self.offset * np.cos(new_cyaw[j]) for j in range(len(new_cy))]
         
         # set new targets for vehicle
-        vehicle.x_waypoints = new_cx
-        vehicle.y_waypoints = new_cy
-        vehicle.yaw_waypoints = new_cyaw
-        vehicle.target_idx = 0
-        vehicle.spot_index = new_spot_index
-        vehicle.should_overshoot = should_overshoot
-        vehicle.going_to_anchor = False
+        vehicle.set_ref_pose(new_cx, new_cy, new_cyaw)
+        vehicle.set_target_idx(0)
+        vehicle.set_anchor_parking(going_to_anchor=False, spot_index=new_spot_index, should_overshoot=should_overshoot)
         
         self.occupied[new_spot_index] = True
 
@@ -247,9 +247,9 @@ class RuleBasedSimulator(object):
                         
                         # normal speed controller if not braking
                         if vehicle.target_idx < vehicle.num_waypoints() - 30:
-                            vehicle.target_speed = self.max_target_speed
+                            vehicle.v_ref = self.max_target_speed
                         else:
-                            vehicle.target_speed = 1
+                            vehicle.v_ref = 1
 
                         # detect parking and unparking
                         nearby_parkers = [v for v in self.vehicles if ((v.parking and not v.all_done()) or v.currently_unparking()) and np.linalg.norm([vehicle.state.x.x - v.state.x.x, vehicle.state.x.y - v.state.x.y]) < self.parking_radius]
@@ -415,7 +415,7 @@ class RuleBasedSimulator(object):
 
                 else:
                     # if reached target (pre-parking point), start parking
-                    vehicle.target_speed = 0
+                    vehicle.v_ref = 0
                     vehicle.parking = vehicle.spot_index > 0 # park unless going to exit
                     # NOTE: if vehicle.spot_index < 0 (i.e. exiting), then kill the node b/c we're done
                     
@@ -435,7 +435,19 @@ class RuleBasedSimulator(object):
 
             self.time += 0.1
             self.loops += 1
-            print(self.loops)
+
+            self.vis.clear_frame()
+            for vehicle in self.vehicles:
+
+                if vehicle.braking():
+                    fill = (255, 0, 0, 255)
+                elif vehicle.parking:
+                    fill = (255, 128, 0, 255)
+                else:
+                    fill = (0, 255, 0, 255)
+
+                self.vis.draw_vehicle(states=[vehicle.state.x.x, vehicle.state.x.y, vehicle.state.e.psi], fill=fill)
+            self.vis.render()
 
     def animate(self):
         """
@@ -460,7 +472,7 @@ class RuleBasedSimulator(object):
                     if i < v.visual_metadata:
                         continue
                     actual_start = i - v.visual_metadata
-                    ax.plot(v.x_waypoints, v.y_waypoints, ".b", markersize=1, zorder=0)
+                    ax.plot(v.x_ref, v.y_ref, ".b", markersize=1, zorder=0)
                     state = VehicleState()
                     state.x.x = v.visited_x[actual_start]
                     state.x.y = v.visited_y[actual_start]
@@ -481,15 +493,18 @@ def main():
     ds = Dataset()
 
     home_path = str(Path.home())
+    print('Loading dataset...')
     ds.load(home_path + '/dlp-dataset/data/DJI_0012')
+    print("Dataset loaded.")
 
     offline_maneuver = OfflineManeuver(pickle_file='parking_maneuvers.pickle')
 
-    simulator = RuleBasedSimulator(ds, offline_maneuver)
+    vis = RealtimeVisualizer(ds, VehicleBody())
+
+    simulator = RuleBasedSimulator(ds, offline_maneuver, vis)
 
     simulator.run()
 
-    simulator.animate()
 
 
 if __name__ == "__main__":

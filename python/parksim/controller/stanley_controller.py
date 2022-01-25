@@ -48,7 +48,25 @@ class StanleyController(object):
 
         self.max_steer = vehicle_config.delta_max
 
-    def calc_target_index(self, state: VehicleState, cx: List[float], cy: List[float]):
+        self.x_ref = []
+        self.y_ref = []
+        self.yaw_ref = []
+        self.v_ref = 0.0
+
+        self.target_idx = None
+
+    def set_ref_pose(self, x_ref: List[float], y_ref: List[float], yaw_ref: List[float]):
+        self.x_ref = x_ref
+        self.y_ref = y_ref
+        self.yaw_ref = yaw_ref
+
+    def set_ref_v(self, v_ref: float):
+        self.v_ref = v_ref
+
+    def set_target_idx(self, target_idx: int):
+        self.target_idx = target_idx
+
+    def calc_target_index(self, state: VehicleState):
         """
         Compute index in the trajectory list of the target.
 
@@ -63,8 +81,8 @@ class StanleyController(object):
 
         # Search nearest point index
         # returns index of point that is closest to front axle
-        dx = [fx - icx for icx in cx]
-        dy = [fy - icy for icy in cy]
+        dx = [fx - icx for icx in self.x_ref]
+        dy = [fy - icy for icy in self.y_ref]
         d = np.hypot(dx, dy)
         target_idx = np.argmin(d)
 
@@ -91,26 +109,22 @@ class StanleyController(object):
             return self.Kp_braking * (target - current)
 
 
-    def stanley_control(self, state: VehicleState, cx: List[float], cy: List[float], cyaw: List[float], last_target_idx):
+    def stanley_control(self, state: VehicleState):
         """
         Stanley steering control.
 
         :param state: (VehicleState object)
-        :param cx: ([float])
-        :param cy: ([float])
-        :param cyaw: ([float])
-        :param last_target_idx: (int)
         :return: (float, int)
         """
         # get index of waypoint we should travel to
-        current_target_idx, error_front_axle = self.calc_target_index(state, cx, cy)
+        current_target_idx, error_front_axle = self.calc_target_index(state)
 
         # if we're moving forward, cool, otherwise keep going to where we were going before
-        if last_target_idx >= current_target_idx:
-            current_target_idx = last_target_idx
+        if self.target_idx >= current_target_idx:
+            current_target_idx = self.target_idx
 
         # theta_e corrects the heading error
-        theta_e = normalize_angle(cyaw[current_target_idx] - state.e.psi)
+        theta_e = normalize_angle(self.yaw_ref[current_target_idx] - state.e.psi)
         # theta_d corrects based on the cross track error (k is a gain for this)
         # Cross track error: http://www.sailtrain.co.uk/gps/functions.htm
         theta_d = np.arctan2(self.k * error_front_axle, state.v.v)
@@ -118,6 +132,12 @@ class StanleyController(object):
         delta = theta_e + theta_d
 
         return delta, current_target_idx
+
+    def solve(self, state: VehicleState, braking=False):
+        a = self.pid_control(self.v_ref, state.v.v, braking)
+        d, current_target_idx = self.stanley_control(state)
+
+        return a, d, current_target_idx
 
     def step(self, state: VehicleState, acceleration: float, delta: float):
         """
