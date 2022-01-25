@@ -59,20 +59,23 @@ class Predictor:
         
         image_features, non_spatial_features, spot_coordinates = self.get_features(instance_centric_view, global_position, heading, speed, time_spent_in_lot)
         scores = []
-        for img_feature, non_spatial_feature in zip(image_features, non_spatial_features):
-            img_feature = transforms.ToTensor()(img_feature)[None, :, :, :]
-            non_spatial_feature = torch.Tensor(non_spatial_feature.astype(np.single))[None, :]
-            if self.use_cuda:
-                img_feature.cuda()
-                non_spatial_feature.cuda()
-            pred = self.model(img_feature, non_spatial_feature)
-            pred_score = torch.nn.functional.sigmoid(pred.float()).item()
-            scores.append(pred_score)
-        scores = np.array(scores)
-        #exponentiated_scores = np.exp(scores)
-        total_score = sum(scores)
-        normalized_scores = [score / total_score for score in scores]
         
+
+        
+        
+        img_tensors = [transforms.ToTensor()(img_feature) for img_feature in image_features]
+        img_tensors = torch.stack(img_tensors, 0)
+        non_spatial_tensors = torch.stack([torch.Tensor(non_spatial_feature.astype(np.single)) for non_spatial_feature in non_spatial_features], 0)
+        if self.use_cuda:
+            img_tensors.cuda()
+            non_spatial_tensors.cuda()
+        preds = self.model(img_tensors, non_spatial_tensors)
+        pred_scores = torch.nn.functional.sigmoid(preds.float())
+        #exponentiated_scores = np.exp(scores)
+        total_score = torch.sum(pred_scores)
+        normalized_scores = pred_scores / total_score
+        normalized_scores = normalized_scores.cpu().detach().numpy().reshape(-1,)
+
         response = PredictionResponse(spot_coordinates, normalized_scores)
         return response
         
