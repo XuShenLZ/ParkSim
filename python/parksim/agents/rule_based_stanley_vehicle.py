@@ -54,7 +54,7 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         self.parking_step = 0
         
         # unparking stuff
-        self.unparking = self.spot_index < 0 # are we waiting to unpark or are currently unparking?
+        self.unparking = False
         self.unparking_maneuver_state = None
         self.unparking_maneuver_index = None
         self.unparking_step = 0
@@ -85,6 +85,7 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         self.going_to_anchor = going_to_anchor
         self.spot_index = spot_index
         self.should_overshoot = should_overshoot
+        self.unparking = self.spot_index < 0 # are we waiting to unpark or are currently unparking?
 
     def reached_target(self, threshold=0.3):
         # return self.last_idx == self.target_idx

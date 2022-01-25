@@ -64,6 +64,17 @@ class RuleBasedSimulator(object):
         self.crash_polytopes = None
 
     def _gen_occupancy(self):
+
+        # Spot guide (note: NOT VERTICES) — the i in parking_spaces[i]
+        # 0-41 are top row
+        # 42-66 are left second row top, 67-91 are left second row bottom
+        # 92-112 are right second row top, 113-133 are right second row bottom
+        # 134-158 are left third row top, 159-183 are left third row bottom
+        # 184-204 are right third row top, 205-225 are right third row bottom
+        # 226-250 are left fourth row top, 251-275 are left fourth row bottom
+        # 276-296 are right fourth row top, 297-317 are right fourth row bottom
+        # 318-342 are left fifth row, 343-363 are right fifth row
+
         # get parking spaces
         arr = self.dlpvis.parking_spaces.to_numpy()
         # array of tuples of x-y coords of centers of spots
