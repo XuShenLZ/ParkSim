@@ -1,7 +1,6 @@
 from typing import List, Set
 import numpy as np
 from parksim.path_planner.offline_maneuver import OfflineManeuver
-from pytope import Polytope
 from enum import Enum
 
 from parksim.agents.abstract_agent import AbstractAgent
@@ -10,16 +9,13 @@ from parksim.controller.stanley_controller import StanleyController
 from parksim.pytypes import VehicleState
 from parksim.vehicle_types import VehicleBody
 
-import os
-import contextlib
-
 class BrakeState(Enum):
     NOT_BRAKING = 0
     BRAKING = 1
     WAITING = 2
 
 class RuleBasedStanleyVehicle(AbstractAgent):
-    def __init__(self, initial_state: VehicleState, vehicle_body: VehicleBody, offline_maneuver: OfflineManeuver, visual_metadata=0, controller: StanleyController = StanleyController(), predictor: StanleyController = StanleyController()):
+    def __init__(self, initial_state: VehicleState, vehicle_body: VehicleBody, offline_maneuver: OfflineManeuver, controller: StanleyController = StanleyController(), predictor: StanleyController = StanleyController()):
 
         # State and Reference Waypoints
         self.state = initial_state # state
@@ -70,16 +66,6 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         self.crash_set: Set[RuleBasedStanleyVehicle] = set() # vehicles that we will crash with
         self.waiting_for: RuleBasedStanleyVehicle = None # vehicle waiting for before we go
         self.waiting_for_unparker = False # need special handling for waiting for unparker
-        
-        # visualization
-        self.visual_metadata = visual_metadata # right now, just has loop that this car starts on, could contain more stuff
-        self.visited_x = [initial_state.x.x] # x coordinates the vehicle has travelled
-        self.visited_y = [initial_state.x.y] # y coordinates the vehicle has travelled
-        self.visited_yaw = [initial_state.e.psi] # yaw for where the vehicle has travelled
-        self.visited_v = [initial_state.v.v] # velocity for where the vehicle has travelled
-        self.visited_t = [0.0] # times for where the vehicle has travelled
-        self.visited_braking = [False] # were we braking at this time?
-        self.visited_parking = [self.parking or self.unparking] # were we parking or unparking at this time?
 
     def set_ref_pose(self, x_ref: List[float], y_ref: List[float], yaw_ref: List[float]):
         self.x_ref = x_ref
@@ -100,11 +86,11 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         self.spot_index = spot_index
         self.should_overshoot = should_overshoot
 
-    def reached_target(self):
+    def reached_target(self, threshold=0.3):
         # return self.last_idx == self.target_idx
         # need to constantize this
         if not self.reached_tgt:
-            self.reached_tgt = np.linalg.norm([self.state.x.x - self.x_ref[-1], self.state.x.y - self.y_ref[-1]]) < 0.3
+            self.reached_tgt = np.linalg.norm([self.state.x.x - self.x_ref[-1], self.state.x.y - self.y_ref[-1]]) < threshold
         return self.reached_tgt
 
     def num_waypoints(self):
@@ -138,26 +124,17 @@ class RuleBasedStanleyVehicle(AbstractAgent):
                     self.predictor.set_ref_pose(other_vehicle.x_ref, other_vehicle.y_ref, other_vehicle.yaw_ref)
                     self.predictor.set_ref_v(other_vehicle.v_ref)
                     self.predictor.set_target_idx(other_vehicle.target_idx)
-                    ai, di, _ = self.predictor.solve(look_ahead_state, other_vehicle.braking())
+                    ai, di, _ = self.predictor.solve(other_look_ahead_state, other_vehicle.braking())
                     self.predictor.step(other_look_ahead_state, ai, di)
 
 
             # detect crash
-
-            this_polytope = Polytope(self.get_corners(look_ahead_state))
-
             for v in range(len(other_vehicles)):
                 if other_vehicles[v] not in will_crash_with: # for efficiency
-                    other_polytope = Polytope(self.get_corners(other_look_ahead_states[v]))
-
-                    # inter_polytope = None
-                    # with io.capture_output() as captured:
-                    #     inter_polytope = this_polytope & other_polytope
-                    inter_polytope = None
-                    with open(os.devnull, "w") as f, contextlib.redirect_stdout(f):
-                        inter_polytope = this_polytope & other_polytope
-                    if len(inter_polytope.V) > 0: # they crash
+                    if self.will_collide(other_look_ahead_states[v], other_vehicles[v].vehicle_body):
                         will_crash_with.add(other_vehicles[v])
+
+
         return will_crash_with
 
     def update_state(self, time):
@@ -168,19 +145,6 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         ai, di, self.target_idx = self.controller.solve(self.state, self.braking())
         # advance state of vehicle (updates x, y, yaw, velocity)
         self.controller.step(self.state, ai, di)
-
-        # add to list of states
-        self.visited_x.append(self.state.x.x)
-        self.visited_y.append(self.state.x.y)
-        self.visited_yaw.append(self.state.e.psi)
-        self.visited_v.append(self.state.v.v)
-        self.visited_t.append(time)
-        self.visited_braking.append(self.braking())
-        self.visited_parking.append(False)
-
-        if len(self.visited_indices) == 0 or self.visited_indices[-1] != self.target_idx:
-            self.visited_indices.append(self.target_idx)
-            self.visited_speed.append(self.state.v.v)
             
     def update_state_parking(self, time, advance=True):
         if self.parking_maneuver_state is None: # start parking
@@ -206,15 +170,6 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         self.state.x.y = self.parking_maneuver_state['y'][step]
         self.state.e.psi = self.parking_maneuver_state['yaw'][step]
         self.state.v.v = self.parking_maneuver_state['v'][step]
-        
-        # add to state history
-        self.visited_x.append(self.state.x.x)
-        self.visited_y.append(self.state.x.y)
-        self.visited_yaw.append(self.state.e.psi)
-        self.visited_v.append(self.state.v.v)
-        self.visited_t.append(time)
-        self.visited_braking.append(False)
-        self.visited_parking.append(True)
         
         # update parking step if advancing
         self.parking_step += 1 if advance else 0
@@ -242,15 +197,6 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         self.state.x.y = self.unparking_maneuver_state['y'][step]
         self.state.e.psi = self.unparking_maneuver_state['yaw'][step]
         self.state.v.v = self.unparking_maneuver_state['v'][step]
-        
-        # add to state history
-        self.visited_x.append(self.state.x.x)
-        self.visited_y.append(self.state.x.y)
-        self.visited_yaw.append(self.state.e.psi)
-        self.visited_v.append(self.state.v.v)
-        self.visited_t.append(time)
-        self.visited_braking.append(False)
-        self.visited_parking.append(True)
         
         if self.unparking_step == 0: # done unparking
             self.unparking = False

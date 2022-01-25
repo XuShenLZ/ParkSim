@@ -64,9 +64,9 @@ class RealtimeVisualizer(object):
             pxs, pys = self._xy2p(points[:,0], points[:, 1])
 
             for px, py in zip(pxs, pys):
-                dpg.draw_circle([px, py], 3, fill=(0,0,0,255), parent=self.scene_canvas)
+                dpg.draw_circle([px, py], 2, fill=(0,0,0,128), parent=self.scene_canvas)
 
-    def _draw_lines(self):
+    def _draw_parking_lines(self):
         """
         draw parking lines
         """
@@ -107,13 +107,29 @@ class RealtimeVisualizer(object):
         
         return p.T
 
+    def draw_line(self, points: np.ndarray, color: tuple):
+        """
+        draw a (curved) line with a list of x, y coordinates
+
+        points: np.array with size Nx2
+        color: (RGBA) tuple
+        """
+        poli_xy = []
+        for x, y in points:
+            px, py = self._xy2p(x, y)
+            poli_xy.append([px, py])
+
+        dpg.draw_polyline(points=poli_xy, color=color, parent=self.frame_canvas)
+
     def draw_scene(self, scene_token):
         """
         plot lines and static obstacles in a specified scene
         """
 
+        self._draw_waypoints()
+
         # Plot parking lines
-        self._draw_lines()
+        self._draw_parking_lines()
 
         # Plot static obstacles
         self._draw_obstacles(scene_token)

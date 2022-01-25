@@ -18,6 +18,8 @@ class VehicleBody(BasePolytopeObstacle):
     # Wheelbase
     lf: float = field(default = 0)
     lr: float = field(default = 0)
+    bf: float = field(default = 0)
+    br: float = field(default = 0)
     wb: float = field(default = 0)
     # Total Length and width
     l: float = field(default = 0)
@@ -27,6 +29,11 @@ class VehicleBody(BasePolytopeObstacle):
     # Wheel diameter and width
     wheel_d: float = field(default = 0.72)
     wheel_w: float = field(default = 0.22)
+
+    # Circle Approximation
+    cr: float = field(default = 0) # Offset of the first circle center in front
+    cf: float = field(default = 0) # Offset of the first circle center at rear
+    num_circles: int = field(default = 3)
     
     def __post_init__(self):
         if self.vehicle_flag == 0:
@@ -34,9 +41,15 @@ class VehicleBody(BasePolytopeObstacle):
             self.lf = 1.35
             self.wb = self.lr + self.lf
             self.w = 1.85
-            self.l = 4.6
+            self.bf = 2.3
+            self.br = 2.3
+            self.l = self.br + self.bf
+
+            self.cf = 1.5
+            self.cr = 1.5
+            self.num_circles = 4
         else:
-            raise NotImplementedError('Unrecognized rover flag: %d'%self.vehicle_flag)
+            raise NotImplementedError('Unrecognized vehicle flag: %d'%self.vehicle_flag)
     
         self.__calc_V__()
         self.__calc_A_b__()

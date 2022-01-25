@@ -1,16 +1,11 @@
 from typing import List
 
-from pytope import Polytope
-
 from dlp.dataset import Dataset
 from dlp.visualizer import Visualizer as DlpVisualizer
-
 
 from pathlib import Path
 
 import numpy as np
-
-import matplotlib.pyplot as plt
 
 from parksim.pytypes import VehicleState
 from parksim.vehicle_types import VehicleBody
@@ -54,7 +49,7 @@ class RuleBasedSimulator(object):
         self.entrance_vertex = self.graph.search([14.38, 76.21])
 
         self.spawn_entering = 3 # number of vehicles to enter
-        self.spawn_exiting = 1 # number of vehicles to exit
+        self.spawn_exiting = 3 # number of vehicles to exit
         self.spawn_exiting_loops = np.random.choice(range(self.spawn_exiting * self.spawn_wait), self.spawn_exiting)
 
         self.vehicles: List[RuleBasedStanleyVehicle] = []
@@ -127,7 +122,7 @@ class RuleBasedSimulator(object):
             initial_state.x.y = self.parking_spaces[-spot_index][1]
             initial_state.e.psi = np.pi / 2 if np.random.rand() < 0.5 else -np.pi / 2
         
-        vehicle = RuleBasedStanleyVehicle(initial_state, VehicleBody(), self.offline_maneuver, visual_metadata = loops)
+        vehicle = RuleBasedStanleyVehicle(initial_state, VehicleBody(), self.offline_maneuver)
         vehicle.set_ref_pose(cxs[-1], cys[-1], cyaws[-1])
         vehicle.set_ref_v(0)
         vehicle.set_anchor_parking(going_to_anchor=spot_index>0, spot_index=spot_index, should_overshoot=False)
@@ -436,6 +431,7 @@ class RuleBasedSimulator(object):
             self.time += 0.1
             self.loops += 1
 
+            # Visualize
             self.vis.clear_frame()
             for vehicle in self.vehicles:
 
@@ -447,46 +443,8 @@ class RuleBasedSimulator(object):
                     fill = (0, 255, 0, 255)
 
                 self.vis.draw_vehicle(states=[vehicle.state.x.x, vehicle.state.x.y, vehicle.state.e.psi], fill=fill)
+                self.vis.draw_line(points=np.array([vehicle.x_ref, vehicle.y_ref]).T, color=(39,228,245, 193))
             self.vis.render()
-
-    def animate(self):
-        """
-        Show animation
-        """
-        fig,ax = plt.subplots(1,1)
-        plt.show(block=False)
-
-        scene = self.dlpvis.dataset.get('scene', self.dlpvis.dataset.list_scenes()[0])
-        frame_token = scene['first_frame']
-        
-        for i in range(self.loops):
-            if i % 5 == 0:
-                ax.clear()
-                ax.set_xlabel('X')
-                ax.set_ylabel('Y')
-                ax.set_xlim(0,140)
-                ax.set_ylim(0,80)
-                frame = self.dlpvis.dataset.get('frame', frame_token)
-                ax = self.dlpvis.plot_scene(frame['scene_token'], ax=ax)
-                for v in self.vehicles:
-                    if i < v.visual_metadata:
-                        continue
-                    actual_start = i - v.visual_metadata
-                    ax.plot(v.x_ref, v.y_ref, ".b", markersize=1, zorder=0)
-                    state = VehicleState()
-                    state.x.x = v.visited_x[actual_start]
-                    state.x.y = v.visited_y[actual_start]
-                    state.e.psi = v.visited_yaw[actual_start]
-                    state.v.v = v.visited_v[actual_start]
-
-                    if v.visited_braking[actual_start]:
-                        Polytope(v.get_corners(state=state)).plot(ax, facecolor='g', zorder=10)
-                    elif v.visited_parking[actual_start]:
-                        Polytope(v.get_corners(state=state)).plot(ax, facecolor='b', zorder=10)
-                    else:
-                        Polytope(v.get_corners(state=state)).plot(ax, facecolor='r', zorder=10)
-                fig.canvas.draw()
-                plt.pause(0.002)
 
 def main():
     # Load dataset
@@ -497,7 +455,7 @@ def main():
     ds.load(home_path + '/dlp-dataset/data/DJI_0012')
     print("Dataset loaded.")
 
-    offline_maneuver = OfflineManeuver(pickle_file='parking_maneuvers.pickle')
+    offline_maneuver = OfflineManeuver(pickle_file=home_path + '/ParkSim/parking_maneuvers.pickle')
 
     vis = RealtimeVisualizer(ds, VehicleBody())
 
