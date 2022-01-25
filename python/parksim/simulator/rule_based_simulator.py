@@ -464,9 +464,11 @@ def main():
     home_path = str(Path.home())
     print('Loading dataset...')
     ds.load(home_path + '/dlp-dataset/data/DJI_0012')
+    # ds.load(home_path + '/Documents/Berkeley/Research/dlp-dataset/data/DJI_0012')
     print("Dataset loaded.")
 
     offline_maneuver = OfflineManeuver(pickle_file=home_path + '/ParkSim/parking_maneuvers.pickle')
+    # offline_maneuver = OfflineManeuver(pickle_file=home_path + '/Documents/Berkeley/Research/ParkSim/parking_maneuvers.pickle')
 
     vis = RealtimeVisualizer(ds, VehicleBody())
 
