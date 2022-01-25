@@ -133,9 +133,12 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('-s', '--stride', help='stride size for saving images. e.g. 10 means save one image per 10 timesteps', type=int)
     parser.add_argument('-p', '--path', help='absolute path to JSON files, e.g. ~/dlp-dataset/data/', type=str)
-    parser.add_argument('-n', '--name', help='name of the scene, e.g. DJI_0012', type=str)
+    #parser.add_argument('-n', '--name', help='name of the scene, e.g. DJI_0012', type=str)
     args = parser.parse_args()
     stride = args.stride
     path = args.path
-    name = args.name
-    create_dataset(stride, path, name)
+    #name = args.name
+
+    names = ["DJI_0007", "DJI_0008", "DJI_0009", "DJI_0010", "DJI_0011"]
+    for name in names:
+        create_dataset(stride, path, name)

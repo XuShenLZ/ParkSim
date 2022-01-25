@@ -1,5 +1,5 @@
 import torch
-from network import SimpleCNN
+from network import SimpleCNN, RegularizedCNN
 from utils import CNNDataset
 from torch.utils.data import DataLoader
 from torchvision import transforms
@@ -14,8 +14,8 @@ from datetime import datetime
 import numpy as np
 
 def main():
-    model = SimpleCNN()
-    model_state = torch.load('models/simpleCNN_L0.066_11-10-2021_05-10-22.pth')
+    model = RegularizedCNN()
+    model_state = torch.load('models/regularizedCNN_L0.053_12-06-2021_13-38-13.pth')
     model.load_state_dict(model_state)
     model.eval().cuda()
     dataset = CNNDataset("data/DJI_0005", input_transform = transforms.ToTensor())

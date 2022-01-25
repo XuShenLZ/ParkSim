@@ -11,10 +11,10 @@ class CNNDataset(Dataset):
         """
         #self.image_features = (np.load('%s_image_feature.npy' % file_path) /
         #255).astype(np.single)
-        self.image_features = np.load('%s_image_feature.npy' % file_path)
+        self.image_features = np.load('%s_image_feature.npy' % file_path, mmap_mode='r+')
         #self.image_features = self.image_features.transpose(0, 3, 1, 2)
-        self.non_spatial_features = np.load('%s_non_spatial_feature.npy' % file_path)
-        self.all_labels = np.load('%s_label.npy' % file_path)
+        self.non_spatial_features = np.load('%s_non_spatial_feature.npy' % file_path, mmap_mode='r+')
+        self.all_labels = np.load('%s_label.npy' % file_path, mmap_mode='r+')
         self.input_transform = input_transform
         self.target_transform = target_transform
 

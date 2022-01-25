@@ -11,12 +11,13 @@ from tqdm import tqdm
 import os
 from datetime import datetime
 import numpy as np
-from network import SimpleCNN
+from network import SimpleCNN, RegularizedCNN
 from sklearn.model_selection import KFold
 from pytorchtools import EarlyStopping
 
 
 _CURRENT = os.path.abspath(os.path.dirname(__file__))
+
 
 def train_network():
 
@@ -26,17 +27,22 @@ def train_network():
 
     print(device)
     
-    
-    train_dataset = CNNDataset("data/DJI_0012", input_transform = transforms.ToTensor())
-    trainloader = DataLoader(train_dataset, batch_size=64, shuffle=True, num_workers=12)
-    full_validation_dataset = CNNDataset("data/DJI_0005", input_transform = transforms.ToTensor())
-    val_size = int(0.3 * len(full_validation_dataset))
-    unused_data_size = len(full_validation_dataset) - val_size
-    
-    validation_dataset, _ = torch.utils.data.random_split(full_validation_dataset, [val_size, unused_data_size], generator=torch.Generator().manual_seed(42))
-    testloader = DataLoader(validation_dataset, batch_size=64, shuffle=True, num_workers=12)
 
-    cnn = SimpleCNN()
+    train_datasets = ["0008", "0009", "0010", "0011", "0012"]
+    validation_dataset = "0007"
+    
+    all_train_datasets = [CNNDataset(f"data/DJI_{ds_num}", input_transform = transforms.ToTensor()) for ds_num in train_datasets]
+
+    train_dataset = torch.utils.data.ConcatDataset(all_train_datasets)
+    trainloader = DataLoader(train_dataset, batch_size=32, shuffle=True, num_workers=12)
+    full_validation_dataset = CNNDataset(f"data/DJI_{validation_dataset}", input_transform = transforms.ToTensor())
+    #val_size = int(1.0 * len(full_validation_dataset))
+    #unused_data_size = len(full_validation_dataset) - val_size
+    
+    #validation_dataset, _ = torch.utils.data.random_split(full_validation_dataset, [val_size, unused_data_size], generator=torch.Generator().#manual_seed(42))
+    testloader = DataLoader(full_validation_dataset, batch_size=32, shuffle=True, num_workers=12)
+
+    cnn = RegularizedCNN()
     cnn = cnn.cuda()
     optimizer = optim.AdamW(cnn.parameters(), lr=1e-3)
     loss_fn = torch.nn.BCEWithLogitsLoss().cuda()
@@ -49,6 +55,7 @@ def train_network():
     for epoch in range(num_epochs):
         running_loss = 0.0
         running_train_accuracy = 0.0
+        cnn.train()
         for data in tqdm(trainloader):
             img_feature, non_spatial_feature, labels = data
             img_feature = img_feature.cuda()
@@ -72,6 +79,7 @@ def train_network():
             running_train_accuracy += correct / len(trainloader)
         
         running_val_accuracy = 0
+        cnn.eval()
         with torch.no_grad():
                 # Iterate over the test data and generate predictions
                 for i, data in enumerate(testloader, 0):
@@ -113,7 +121,7 @@ def train_network():
         os.mkdir(_CURRENT + '/models')
 
     timestamp = datetime.now().strftime("%m-%d-%Y_%H-%M-%S")
-    PATH = _CURRENT + '/models/simpleCNN_L%.3f_%s.pth' % (running_loss, timestamp)
+    PATH = _CURRENT + '/models/regularizedCNN_L%.3f_%s.pth' % (running_loss, timestamp)
     cnn.load_state_dict(torch.load(early_stopping.path))
     torch.save(cnn.state_dict(), PATH)
     
