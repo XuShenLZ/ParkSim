@@ -17,7 +17,7 @@ from parksim.visualizer.realtime_visualizer import RealtimeVisualizer
 
 from parksim.agents.rule_based_stanley_vehicle import RuleBasedStanleyVehicle, BrakeState
 
-np.random.seed(0)
+np.random.seed(10)
 
 class RuleBasedSimulator(object):
     def __init__(self, dataset: Dataset, offline_maneuver: OfflineManeuver, vis: RealtimeVisualizer):
@@ -40,7 +40,7 @@ class RuleBasedSimulator(object):
         self.parking_radius = 7 # how much room a vehicle should have to park
 
         # anchor spots
-        self.anchor_points = [43, 93, 135, 185, 227, 277, 319, 344] # for now, second spot at the start of a row
+        self.anchor_points = [47, 93, 135, 185, 227, 277, 319, 344] # for now, second spot at the start of a row
         self.anchor_spots = [list(range(21)) + list(range(42, 67)), list(range(21, 42)) + list(range(92, 113)), list(range(67, 92)) + list(range(134, 159)), list(range(113, 134)) + list(range(184, 205)), list(range(159, 184)) + list(range(226, 251)), list(range(205, 226)) + list(range(276, 297)), list(range(251, 276)) + list(range(318, 343)), list(range(297, 318)) + list(range(343, 364))]
 
         # spawn stuff
@@ -241,7 +241,7 @@ class RuleBasedSimulator(object):
                 
             for i in range(len(self.vehicles)):
                 vehicle = self.vehicles[i]
-                
+
                 # driving control
                 
                 if vehicle.parking or vehicle.unparking:
@@ -263,6 +263,7 @@ class RuleBasedSimulator(object):
                             parker = nearby_parkers[0]
                             vehicle.brake(brake_state=BrakeState.WAITING)
                             vehicle.waiting_for = parker
+                            vehicle.priority = -1
                             if parker.unparking:
                                 vehicle.waiting_for_unparker = True
                             
@@ -300,7 +301,8 @@ class RuleBasedSimulator(object):
                                 if vehicle.priority is None:
                                     # for leading/trailing situation
                                     lst = list(vehicle.crash_set)
-                                    if len(vehicle.crash_set) == 2 and abs(lst[0].state.e.psi - lst[1].state.e.psi) < 0.25: # about 15 degrees, should make this a constant
+                                    ang = ((lst[0].state.e.psi - lst[1].state.e.psi) + (2 * np.pi)) % (2 * np.pi) # [0, 2pi)
+                                    if len(vehicle.crash_set) == 2 and (ang < 0.25 or ang > 2 * np.pi - 0.25): # about 15 degrees, should make this a constant
                                         this_v = lst[0] if lst[0] is vehicle else lst[1]
                                         other_v = lst[1] if lst[0] is vehicle else lst[0]
                                         if this_v.state.v.v > other_v.state.v.v and not other_v.braking(): # trailing car
@@ -398,7 +400,8 @@ class RuleBasedSimulator(object):
                                 should_unbrake = True
                             else:
                                 # TODO: better heuristic for unbraking
-                                if vehicle.waiting_for.all_done() or (not vehicle.waiting_for.braking() and np.linalg.norm([vehicle.waiting_for.state.x.x - vehicle.state.x.x, vehicle.waiting_for.state.x.y - vehicle.state.x.y]) > 10):
+                                ang = ((np.arctan2(vehicle.waiting_for.state.x.y - vehicle.state.x.y, vehicle.waiting_for.state.x.x - vehicle.state.x.x) - vehicle.waiting_for.state.e.psi) + (2*np.pi)) % (2*np.pi)
+                                if vehicle.waiting_for.all_done() or (not vehicle.waiting_for.braking() and (((ang > (np.pi/2) and ang < (3*np.pi)/2))) or np.linalg.norm([vehicle.waiting_for.state.x.x - vehicle.state.x.x, vehicle.waiting_for.state.x.y - vehicle.state.x.y]) > 10):
                                     should_unbrake = True
                                 elif vehicle.waiting_for.waiting_for == vehicle: # if the vehicle you're waiting for is waiting for you
                                     # you should go
@@ -448,7 +451,7 @@ class RuleBasedSimulator(object):
 
                 if vehicle.braking():
                     fill = (255, 0, 0, 255)
-                elif vehicle.parking:
+                elif vehicle.parking or vehicle.unparking:
                     fill = (255, 128, 0, 255)
                 else:
                     fill = (0, 255, 0, 255)
@@ -463,12 +466,12 @@ def main():
 
     home_path = str(Path.home())
     print('Loading dataset...')
-    ds.load(home_path + '/dlp-dataset/data/DJI_0012')
-    # ds.load(home_path + '/Documents/Berkeley/Research/dlp-dataset/data/DJI_0012')
+    # ds.load(home_path + '/dlp-dataset/data/DJI_0012')
+    ds.load(home_path + '/Documents/Berkeley/Research/dlp-dataset/data/DJI_0012')
     print("Dataset loaded.")
 
-    offline_maneuver = OfflineManeuver(pickle_file=home_path + '/ParkSim/parking_maneuvers.pickle')
-    # offline_maneuver = OfflineManeuver(pickle_file=home_path + '/Documents/Berkeley/Research/ParkSim/parking_maneuvers.pickle')
+    # offline_maneuver = OfflineManeuver(pickle_file=home_path + '/ParkSim/parking_maneuvers.pickle')
+    offline_maneuver = OfflineManeuver(pickle_file=home_path + '/Documents/Berkeley/Research/ParkSim/parking_maneuvers.pickle')
 
     vis = RealtimeVisualizer(ds, VehicleBody())
 
