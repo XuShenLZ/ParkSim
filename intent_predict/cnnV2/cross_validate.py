@@ -136,7 +136,7 @@ def main():
                     # Set total and correct
                     predictions = (preds > 0.5).float()
                     correct = (predictions == labels).float().sum() / labels.shape[0]
-                    running_accuracy += correct / len(trainloader)
+                    running_accuracy += correct / len(testloader)
 
             # Print accuracy
             print('Accuracy for fold %d: %d %%' % (fold, 100.0 * running_accuracy))

@@ -8,7 +8,7 @@ import argparse
 
 from dlp.dataset import Dataset
 import traceback
-from utils import CNNDataProcessor
+from data_processing.utils import CNNDataProcessor
 from tqdm import tqdm
 import multiprocessing
 from itertools import product
@@ -19,6 +19,7 @@ from itertools import product
 
 _CURRENT = os.path.abspath(os.path.dirname(__file__))
 DATA_PATH = os.path.join(_CURRENT, '..', 'data')
+ENTRANCE_TO_PARKING_LOT = np.array([20, 80])
 
 def get_label_for_index(current_index, target_index):
     return 1 if current_index == target_index else 0
@@ -42,8 +43,6 @@ def get_data_for_instance(inst_token, frame, extractor, ds):
     instance = ds.get('instance', inst_token)
     agent_token = instance['agent_token']
     ego_speed = instance['speed']
-    
-    ENTRANCE_TO_PARKING_LOT = np.array([20, 80])
     current_global_coords = extractor.get_global_coords(inst_token)
     distance_to_entrance = np.linalg.norm(current_global_coords - ENTRANCE_TO_PARKING_LOT)
     
