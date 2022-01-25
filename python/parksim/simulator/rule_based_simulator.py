@@ -17,7 +17,7 @@ from parksim.visualizer.realtime_visualizer import RealtimeVisualizer
 
 from parksim.agents.rule_based_stanley_vehicle import RuleBasedStanleyVehicle, BrakeState
 
-np.random.seed(10)
+np.random.seed(40)
 
 class RuleBasedSimulator(object):
     def __init__(self, dataset: Dataset, offline_maneuver: OfflineManeuver, vis: RealtimeVisualizer):
@@ -449,7 +449,9 @@ class RuleBasedSimulator(object):
             self.vis.clear_frame()
             for vehicle in self.vehicles:
 
-                if vehicle.braking():
+                if vehicle.all_done():
+                    fill = (0, 0, 0, 255)
+                elif vehicle.braking():
                     fill = (255, 0, 0, 255)
                 elif vehicle.parking or vehicle.unparking:
                     fill = (255, 128, 0, 255)
