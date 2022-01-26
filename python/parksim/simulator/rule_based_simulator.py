@@ -17,7 +17,7 @@ from parksim.visualizer.realtime_visualizer import RealtimeVisualizer
 
 from parksim.agents.rule_based_stanley_vehicle import RuleBasedStanleyVehicle, BrakeState
 
-np.random.seed(40)
+np.random.seed(0) # ones with interesting cases: 20, 33, 60
 
 class RuleBasedSimulator(object):
     def __init__(self, dataset: Dataset, offline_maneuver: OfflineManeuver, vis: RealtimeVisualizer):
