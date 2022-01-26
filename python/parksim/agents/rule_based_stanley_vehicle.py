@@ -87,11 +87,14 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         self.should_overshoot = should_overshoot
         self.unparking = self.spot_index < 0 # are we waiting to unpark or are currently unparking?
 
-    def reached_target(self, threshold=0.3):
+    def reached_target(self):
         # return self.last_idx == self.target_idx
         # need to constantize this
         if not self.reached_tgt:
-            self.reached_tgt = np.linalg.norm([self.state.x.x - self.x_ref[-1], self.state.x.y - self.y_ref[-1]]) < threshold
+            dist = np.linalg.norm([self.state.x.x - self.x_ref[-1], self.state.x.y - self.y_ref[-1]])
+            ang = ((np.arctan2(self.y_ref[-1] - self.state.x.y, self.x_ref[-1] - self.state.x.x) - self.state.e.psi) + (2*np.pi)) % (2*np.pi)
+            self.reached_tgt = dist < 5 and ang > (np.pi / 2) and ang < (3 * np.pi / 2)
+            # self.reached_tgt = np.linalg.norm([self.state.x.x - self.x_ref[-1], self.state.x.y - self.y_ref[-1]]) < threshold
         return self.reached_tgt
 
     def num_waypoints(self):
