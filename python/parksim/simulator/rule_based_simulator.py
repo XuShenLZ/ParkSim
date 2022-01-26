@@ -17,7 +17,7 @@ from parksim.visualizer.realtime_visualizer import RealtimeVisualizer
 
 from parksim.agents.rule_based_stanley_vehicle import RuleBasedStanleyVehicle, BrakeState
 
-np.random.seed(0) # ones with interesting cases: 20, 33, 60
+np.random.seed(44) # ones with interesting cases: 20, 33, 44, 60
 
 class RuleBasedSimulator(object):
     def __init__(self, dataset: Dataset, offline_maneuver: OfflineManeuver, vis: RealtimeVisualizer):
@@ -54,7 +54,7 @@ class RuleBasedSimulator(object):
 
         self.vehicles: List[RuleBasedStanleyVehicle] = []
 
-        self.max_simulation_time = 80
+        self.max_simulation_time = 100
 
         self.time = 0.0
         self.loops = 0
@@ -228,6 +228,9 @@ class RuleBasedSimulator(object):
     def run(self):
         # while not run out of time and we have not reached the last waypoint yet
         while self.max_simulation_time >= self.time and (len(self.vehicles) < self.spawn_entering + self.spawn_exiting or not all([v.all_done() for v in self.vehicles])):
+
+            # clear visualizer
+            self.vis.clear_frame()
             
             # spawn vehicles
             if self.loops % self.spawn_wait == 0 and self.spawn_entering > 0: # entering
@@ -305,9 +308,10 @@ class RuleBasedSimulator(object):
                                     if len(vehicle.crash_set) == 2 and (ang < 0.25 or ang > 2 * np.pi - 0.25): # about 15 degrees, should make this a constant
                                         this_v = lst[0] if lst[0] is vehicle else lst[1]
                                         other_v = lst[1] if lst[0] is vehicle else lst[0]
-                                        if this_v.state.v.v > other_v.state.v.v and not other_v.braking(): # trailing car
+                                        this_to_other_ang = ((np.arctan2(other_v.state.x.y - this_v.state.x.y, other_v.state.x.x - this_v.state.x.x) - other_v.state.e.psi) + (2*np.pi)) % (2*np.pi)
+                                        if this_to_other_ang < np.pi / 2 or this_to_other_ang > 3 * np.pi / 2: # trailing car
                                             next_state = BrakeState.WAITING # go straight to waiting, no priority calculations necessary
-                                            vehicle.priority = -1 # so cars that may brake behind it can have a priority
+                                            vehicle.priority = other_v.priority - 1 if other_v.priority is not None else -1 # so cars that may brake behind it can have a priority
                                             vehicle.waiting_for = other_v
                                         else: # leading car
                                             next_state = BrakeState.NOT_BRAKING # don't brake
@@ -321,15 +325,6 @@ class RuleBasedSimulator(object):
                                         else: # new car meeting up with cars that have already braked
                                             # wait for last car in queue
                                             next_state = BrakeState.WAITING
-                                            """
-                                            # telem for this case
-                                            cs = list(vehicle.crash_set)
-                                            print([v.brake_state for v in cs if v is not vehicle])
-                                            print([v.waiting_for for v in cs if v is not vehicle])
-                                            print([v.state.x for v in cs if v is not vehicle])
-                                            print([v.state.y for v in cs if v is not vehicle])
-                                            print([v.state.yaw for v in cs if v is not vehicle])
-                                            """
                                             vehicle.waiting_for = min([v for v in vehicle.crash_set if v is not vehicle], key=lambda v: v.priority)
                                             vehicle.priority = min([v.priority for v in vehicle.crash_set if v is not vehicle]) - 1
 
@@ -446,7 +441,6 @@ class RuleBasedSimulator(object):
             self.loops += 1
 
             # Visualize
-            self.vis.clear_frame()
             for vehicle in self.vehicles:
 
                 if vehicle.all_done():
@@ -460,6 +454,8 @@ class RuleBasedSimulator(object):
 
                 self.vis.draw_vehicle(states=[vehicle.state.x.x, vehicle.state.x.y, vehicle.state.e.psi], fill=fill)
                 self.vis.draw_line(points=np.array([vehicle.x_ref, vehicle.y_ref]).T, color=(39,228,245, 193))
+                on_vehicle_text = "N/A" if vehicle.priority is None else round(vehicle.priority, 3)
+                self.vis.draw_text([vehicle.state.x.x - 2, vehicle.state.x.y + 2], on_vehicle_text, size=25)
             self.vis.render()
 
 def main():
