@@ -1,6 +1,9 @@
 # This is a message to hold data with system state information
 std_msgs/Header header
-float64                                  t       # Time
+
+int16                              vehicle_id    # Vehicle ID
+
+float64                            t       # Time
 
 parksim/PositionMsg                x
 
@@ -15,5 +18,3 @@ parksim/ParametricPoseMsg          p
 parksim/ParametricVelocityMsg      pt
 
 parksim/VehicleActuationMsg        u
-
-float64                                  lap_num    # Lap number

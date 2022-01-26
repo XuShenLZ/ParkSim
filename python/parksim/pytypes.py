@@ -295,6 +295,8 @@ class VehicleState(PythonMsg):
     '''
     Complete vehicle state (local, global, and input)
     '''
+    vehicle_id: int = field(default=1)
+
     t: float  = field(default = None)    # time in seconds
 
     x: Position = field(default=None)  # global position
@@ -311,13 +313,6 @@ class VehicleState(PythonMsg):
     pt: ParametricVelocity = field(default=None)  # parametric velocity (ds, dy, dths)
 
     u: VehicleActuation = field(default=None)
-
-    lap_num: int = field(default = None)
-
-    #TODO: Maybe need a different way of storing the covariance matricies
-    # For covariances, only store the upper triangular part
-    local_state_covariance: array.array = field(default = None) # Vectorized upper triangular part of covariance matrix with main diagonal order [v_long, v_tran, psidot, e_psi, s, e_y]
-    global_state_covariance: array.array = field(default = None) # Vectorized upper triangular part of covariance matrix with main diagonal order [x, y, psi, v_long, v_tran, psidot]
 
     def __post_init__(self):
         if self.x is None: self.x = Position()
