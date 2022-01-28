@@ -17,10 +17,9 @@ from parksim.visualizer.realtime_visualizer import RealtimeVisualizer
 
 from parksim.agents.rule_based_stanley_vehicle import RuleBasedStanleyVehicle, BrakeState
 
-np.random.seed(6)
+np.random.seed(100)
 # cases and possible solutions
-# 44: stopping isn't fast enough for full speed car going toward stopped car
-# 5 looks really good
+# 6 is a tough edge case
 
 class RuleBasedSimulator(object):
     def __init__(self, dataset: Dataset, offline_maneuver: OfflineManeuver, vis: RealtimeVisualizer):
@@ -57,7 +56,7 @@ class RuleBasedSimulator(object):
 
         self.vehicles: List[RuleBasedStanleyVehicle] = []
 
-        self.max_simulation_time = 100
+        self.max_simulation_time = 150 
 
         self.time = 0.0
         self.loops = 0
@@ -435,6 +434,7 @@ class RuleBasedSimulator(object):
                     # if reached target (pre-parking point), start parking
                     vehicle.v_ref = 0
                     vehicle.parking = vehicle.spot_index > 0 # park unless going to exit
+                    vehicle.priority = 1 # high priority for parkers
                     # NOTE: if vehicle.spot_index < 0 (i.e. exiting), then kill the node b/c we're done
                     
                 if vehicle.parking: # wait for coast to be clear, then start parking
@@ -467,7 +467,7 @@ class RuleBasedSimulator(object):
 
                 self.vis.draw_vehicle(states=[vehicle.state.x.x, vehicle.state.x.y, vehicle.state.e.psi], fill=fill)
                 self.vis.draw_line(points=np.array([vehicle.x_ref, vehicle.y_ref]).T, color=(39,228,245, 193))
-                on_vehicle_text = vehicle.unparking_step
+                on_vehicle_text = "N" if vehicle.priority is None else vehicle.priority
                 self.vis.draw_text([vehicle.state.x.x - 2, vehicle.state.x.y + 2], on_vehicle_text, size=25)
             self.vis.render()
 
