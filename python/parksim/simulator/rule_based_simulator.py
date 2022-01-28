@@ -17,7 +17,7 @@ from parksim.visualizer.realtime_visualizer import RealtimeVisualizer
 
 from parksim.agents.rule_based_stanley_vehicle import RuleBasedStanleyVehicle, BrakeState
 
-np.random.seed(17)
+np.random.seed(6)
 # cases and possible solutions
 # 44: stopping isn't fast enough for full speed car going toward stopped car
 # 5 looks really good

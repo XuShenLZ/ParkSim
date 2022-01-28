@@ -52,12 +52,14 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         self.parking_maneuver_state = None
         self.parking_maneuver_index = None
         self.parking_step = 0
+        self.parking_start_time = 0
         
         # unparking stuff
         self.unparking = False
         self.unparking_maneuver_state = None
         self.unparking_maneuver_index = None
         self.unparking_step = 0
+        self.unparking_start_time = 0
         
         # braking stuff
         self.brake_state = BrakeState.NOT_BRAKING # are we braking?
@@ -164,6 +166,8 @@ class RuleBasedStanleyVehicle(AbstractAgent):
             
             # get parking maneuver
             self.parking_maneuver_state, self.parking_maneuver_input = self.offline_maneuver.get_maneuver([self.park_start_coords[0] - 4 if location == 'right' else self.park_start_coords[0] + 4, self.park_start_coords[1]], direction, location, spot, pointing)
+
+            self.parking_start_time = time
             
             
         # idle when done
@@ -192,6 +196,8 @@ class RuleBasedStanleyVehicle(AbstractAgent):
             
             # set initial unparking state
             self.unparking_step = len(self.unparking_maneuver_state['x']) - 1
+
+            self.unparking_start_time = time
             
         # get step
         step = self.unparking_step
@@ -213,6 +219,7 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         center: center of vehicle (x, y)
         dims: dimensions of vehicle (length, width)
         angle: angle of vehicle in radians
+        returns: returns rear left, rear right, front right, front left
         """
         if state is None:
             state = self.state
@@ -240,6 +247,43 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         c_stacked = np.vstack((c, c, c, c))
         return offsets_rotated.T + c_stacked
 
+    def should_go_before(self, other):
+        """
+        Determines if one car should go before another. Does it based on angles: if one vehicle has gone more past the other vehicle than the other, it should go first.
+        """
+        this_ang = ((np.arctan2(other.state.x.y - self.state.x.y, other.state.x.x - self.state.x.x) - self.state.e.psi) + (2*np.pi)) % (2*np.pi)
+        other_ang = ((np.arctan2(self.state.x.y - other.state.x.y, self.state.x.x - other.state.x.x) - other.state.e.psi) + (2*np.pi)) % (2*np.pi)
+        this_ang_centered = this_ang if this_ang < np.pi else this_ang - 2 * np.pi
+        other_ang_centered = other_ang if other_ang < np.pi else other_ang - 2 * np.pi
+        return abs(this_ang_centered) > abs(other_ang_centered)
+        
+    def has_passed(self, other):
+        """
+        If the rear corners of this vehicle have passed the front corners of the other vehicle, we say this vehicle has passed the other vehicle.
+
+        Old:
+         ang = ((np.arctan2(vehicle.waiting_for.state.x.y - vehicle.state.x.y, vehicle.waiting_for.state.x.x - vehicle.state.x.x) - vehicle.waiting_for.state.e.psi) + (2*np.pi)) % (2*np.pi)
+                                if vehicle.waiting_for.all_done() or (not vehicle.waiting_for.braking() and (((ang > (np.pi/2) and ang < (3*np.pi)/2))) or np.linalg.norm([vehicle.waiting_for.state.x.x - vehicle.state.x.x, vehicle.waiting_for.state.x.y - vehicle.state.x.y]) > 10):
+                                    should_unbrake = True
+        """
+        this_corners = self.get_corners()
+        other_corners = other.get_corners()
+        for this_corner in [this_corners[0], this_corners[1]]:
+            for other_corner in [other_corners[2], other_corners[3]]:
+                ang = ((np.arctan2(other_corner[1] - this_corner[1], other_corner[0] - this_corner[0]) - self.state.e.psi) + (2*np.pi)) % (2*np.pi)
+                if ang < (np.pi/2) or ang > (3*np.pi)/2:
+                    return False
+        return True
+
+    def other_within_parking_box(self, other):
+        ang = ((np.arctan2(other.state.x.y - self.state.x.y, other.state.x.x - self.state.x.x) - self.state.e.psi) + (2*np.pi)) % (2*np.pi)
+        dist = np.linalg.norm([other.state.x.x - self.state.x.x, other.state.x.y - self.state.x.y])
+        # TODO: constantize
+        if ang < np.pi / 6 or ang > 2 * np.pi - np.pi / 6: # within 30 degrees each way
+            return dist < 12
+        else:
+            return dist < 5
+    
     def brake(self, brake_state=BrakeState.BRAKING):
         """
         Set target speed to 0 and turn on brakes, which make deceleration faster
@@ -264,12 +308,19 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         Are we braking?
         """
         return self.brake_state != BrakeState.NOT_BRAKING
+
+    def mid_park(self):
+        """
+        Are we in the middle of a parking manuever? If this is False, traffic should have the right of way, else this vehicle should have the right of way
+        """
+        return self.parking and self.parking_maneuver_state is not None and self.parking_step > 0 and self.parking_step < len(self.parking_maneuver_state['x']) - 1
     
-    def currently_unparking(self):
+    def mid_unpark(self):
         """
-        Have we started the unparking maneuver yet? If this is False, traffic should have the right of way, else this vehicle should have the right of way
+        Are we in the middle of an unparking manuever? If this is False, traffic should have the right of way, else this vehicle should have the right of way
+        Note: we still give traffic right of way for a few steps into the park
         """
-        return self.unparking and self.unparking_maneuver_state is not None and self.unparking_step < len(self.unparking_maneuver_state['x']) - 1
+        return self.unparking and self.unparking_maneuver_state is not None and self.unparking_step < len(self.unparking_maneuver_state['x']) - 11 and self.unparking_step > 0
     
     def all_done(self):
         """
