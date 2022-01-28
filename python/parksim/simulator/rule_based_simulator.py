@@ -17,7 +17,7 @@ from parksim.visualizer.realtime_visualizer import RealtimeVisualizer
 
 from parksim.agents.rule_based_stanley_vehicle import RuleBasedStanleyVehicle, BrakeState
 
-np.random.seed(1)
+np.random.seed(17)
 # cases and possible solutions
 # 44: stopping isn't fast enough for full speed car going toward stopped car
 # 5 looks really good
@@ -440,13 +440,13 @@ class RuleBasedSimulator(object):
                 if vehicle.parking: # wait for coast to be clear, then start parking
                     # everyone within range should be braking or parking or unparking
                     # NOTE: this doesn't yet account for a braked vehicle in the way of our parking
-                    should_go = all([v.all_done() or (v.parking and v.parking_start_time > vehicle.parking_start_time) or (v.unparking and v.unparking_start_time > vehicle.unparking_start_time) or np.linalg.norm([vehicle.state.x.x - v.state.x.x, vehicle.state.x.y - v.state.x.y]) >= self.parking_radius * 2 for v in self.vehicles if v != vehicle])
+                    should_go = all([v.all_done() or (v.parking and v.parking_start_time > vehicle.parking_start_time) or (v.unparking and v.unparking_start_time > vehicle.unparking_start_time) or v.braking() or np.linalg.norm([vehicle.state.x.x - v.state.x.x, vehicle.state.x.y - v.state.x.y]) >= self.parking_radius * 2 for v in self.vehicles if v != vehicle])
                     if vehicle.park_start_coords is None:
                         vehicle.park_start_coords = (vehicle.state.x.x - self.offset * np.sin(vehicle.state.e.psi), vehicle.state.x.y + self.offset * np.cos(vehicle.state.e.psi))
                     vehicle.update_state_parking(self.time, should_go)
                 elif vehicle.unparking: # wait for coast to be clear, then start unparking
                     # everyone within range should be braking or parking or unparking
-                    should_go = all([v.all_done() or (v.parking and v.parking_start_time > vehicle.parking_start_time) or (v.unparking and v.unparking_start_time > vehicle.unparking_start_time) or np.linalg.norm([vehicle.state.x.x - v.state.x.x, vehicle.state.x.y - v.state.x.y]) >= self.parking_radius * 2 for v in self.vehicles if v != vehicle])
+                    should_go = all([v.all_done() or (v.parking and v.parking_start_time > vehicle.parking_start_time) or (v.unparking and v.unparking_start_time > vehicle.unparking_start_time) or v.braking() or np.linalg.norm([vehicle.state.x.x - v.state.x.x, vehicle.state.x.y - v.state.x.y]) >= self.parking_radius * 2 for v in self.vehicles if v != vehicle])
                     vehicle.update_state_unparking(self.time, should_go)
                 else: 
                     vehicle.update_state(self.time)
