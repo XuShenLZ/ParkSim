@@ -11,7 +11,7 @@ from parksim.pytypes import VehicleState
 from parksim.vehicle_types import VehicleBody
 from parksim.route_planner.a_star import AStarPlanner
 from parksim.route_planner.graph import WaypointsGraph
-from parksim.path_planner.spline import calc_spline_course
+from parksim.utils.spline import calc_spline_course
 from parksim.path_planner.offline_maneuver import OfflineManeuver
 from parksim.visualizer.realtime_visualizer import RealtimeVisualizer
 
@@ -240,7 +240,7 @@ class RuleBasedSimulator(object):
                 empty_spots = [i for i in range(len(self.occupied)) if not self.occupied[i]]
                 chosen_spot = np.random.choice(empty_spots)
                 self.add_vehicle(self.loops, -1 * chosen_spot)
-                self.occupied[i] = True
+                self.occupied[chosen_spot] = True
                 
             for i in range(len(self.vehicles)):
                 vehicle = self.vehicles[i]
@@ -433,6 +433,8 @@ class RuleBasedSimulator(object):
                 elif vehicle.unparking: # wait for coast to be clear, then start unparking
                     # everyone within range should be braking or parking or unparking
                     should_go = all([v.braking() or v.parking or v.unparking or np.linalg.norm([vehicle.state.x.x - v.state.x.x, vehicle.state.x.y - v.state.x.y]) >= self.parking_radius for v in self.vehicles if v != vehicle])
+                    print("Unparking Vehicle at:", vehicle.state.x.x, vehicle.state.x.y)
+                    print("Should_go:", should_go)
                     vehicle.update_state_unparking(self.time, should_go)
                 else: 
                     vehicle.update_state(self.time)
@@ -464,12 +466,10 @@ def main():
 
     home_path = str(Path.home())
     print('Loading dataset...')
-    # ds.load(home_path + '/dlp-dataset/data/DJI_0012')
-    ds.load(home_path + '/Documents/Berkeley/Research/dlp-dataset/data/DJI_0012')
+    ds.load(home_path + '/dlp-dataset/data/DJI_0012')
     print("Dataset loaded.")
 
-    # offline_maneuver = OfflineManeuver(pickle_file=home_path + '/ParkSim/parking_maneuvers.pickle')
-    offline_maneuver = OfflineManeuver(pickle_file=home_path + '/Documents/Berkeley/Research/ParkSim/parking_maneuvers.pickle')
+    offline_maneuver = OfflineManeuver(pickle_file=home_path + '/ParkSim/parking_maneuvers.pickle')
 
     vis = RealtimeVisualizer(ds, VehicleBody())
 

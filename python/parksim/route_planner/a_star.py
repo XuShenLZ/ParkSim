@@ -2,7 +2,10 @@ from itertools import count
 from typing import List
 from queue import PriorityQueue
 
+import numpy as np
+
 from parksim.route_planner.graph import Vertex, Edge, WaypointsGraph
+from parksim.utils.spline import calc_spline_course
 
 class AStarGraph(WaypointsGraph):
     """
@@ -41,6 +44,29 @@ class AStarGraph(WaypointsGraph):
         ax.plot(self.vertices[-1].coords[0], self.vertices[-1].coords[1], marker='x', markersize=4, mfc='none', **plt_ops)
 
         return ax
+
+    def compute_ref_path(self, offset: float = 0):
+        """
+        Compute vehicle ref path with offset from the center line
+        """
+        # collect x, y, yaw from A* solution
+        axs = []
+        ays = []
+
+        # calculate splines
+
+        # generate list of x, y waypoints NOTE: need to cleanup, axs, ays etc. don't need to be global
+        for edge in self.edges:
+            axs.append(edge.v1.coords[0])
+            ays.append(edge.v1.coords[1])
+        axs.append(self.edges[-1].v2.coords[0])
+        ays.append(self.edges[-1].v2.coords[1])
+
+        cxs, cys, cyaws, _, _ = calc_spline_course(axs, ays, ds=0.1)
+        cxs = [cxs[j] + offset * np.sin(cyaws[j]) for j in range(len(cxs))]
+        cys = [cys[j] - offset * np.cos(cyaws[j]) for j in range(len(cys))]
+
+        return cxs, cys, cyaws
 
 class AStarPlanner(object):
     """

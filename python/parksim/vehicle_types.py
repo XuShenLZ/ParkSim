@@ -45,9 +45,9 @@ class VehicleBody(BasePolytopeObstacle):
             self.br = 2.3
             self.l = self.br + self.bf
 
-            self.cf = 1.5
+            self.cf = 2.25
             self.cr = 1.5
-            self.num_circles = 4
+            self.num_circles = 5
         else:
             raise NotImplementedError('Unrecognized vehicle flag: %d'%self.vehicle_flag)
     
@@ -56,11 +56,11 @@ class VehicleBody(BasePolytopeObstacle):
         return
         
     def __calc_V__(self):
-        xy = np.array([[self.w/2, self.l/2],
-                       [self.w/2, self.l/2],
-                       [-self.w/2, self.l/2],
-                       [-self.w/2, self.l/2],
-                       [self.w/2, self.l/2]])
+        xy = np.array([[self.l/2, self.w/2],
+                       [-self.l/2, self.w/2],
+                       [-self.l/2, -self.w/2],
+                       [self.l/2, -self.w/2],
+                       [self.l/2, self.w/2]])
         
         V = xy[:-1,:]
                            
@@ -89,12 +89,24 @@ class VehicleConfig(PythonMsg):
     dt: float = field(default=0.1)  # vehicle simulation time step (applies to rest of vehicle as well)
     M: int = field(default = 4) # RK4 steps per interval
 
-    v_max: float = field(default=3)  # maximum velocity
-    v_min: float = field(default=-3)  # minimum velocity
+    # Vehicle Limits
+    v_max: float = field(default=5)  # maximum velocity
+    v_min: float = field(default=-5)  # minimum velocity
     a_max: float = field(default=2)  # maximum acceleration
     a_min: float = field(default=-2)  # minimum acceleration
     delta_max: float = field(default=np.deg2rad(40.0))  # maximum steering angle
     delta_min: float = field(default=-np.deg2rad(40.0))  # minimum steering angle
     d_delta_max: float = field(default=1.5)  # maximum change in steering angle over dt
     d_delta_min: float = field(default=-1.5)  # minimum change in steering angle over dt
-    
+
+    # Path Following Related
+    v_cruise: float = field(default=5) # Maximum cruising speed
+    steps_to_end: int = field(default=30) # The steps towards the end of the ref path to slow down
+    v_end: float = field(default=1) # The speed in the final segment of tracking
+
+    # Decision Making Related
+    offset: float = field(default=1.75) # distance off from waypoints
+    look_ahead_timesteps: int = field(default=10) # how far to look ahead for crash detection
+    crash_check_radius: float = field(default=15) # which vehicles to check crash
+    parking_radius: float = field(default=7) # how much room a vehicle should have to park
+    leading_trailing_thres: float = field(default=0.25) # Threshold of heading angle difference to check whether two vehicles are leading and trailing. 0.25 is about about 15 degrees

@@ -14,7 +14,9 @@ class AbstractAgent(ABC):
     """
     Abstract Agent Class
     """
-    def __init__(self, state: VehicleState, vehicle_body: VehicleBody):
+    def __init__(self, vehicle_id: int, state: VehicleState, vehicle_body: VehicleBody):
+        self.vehicle_id = vehicle_id
+        
         self.state = state
         self.vehicle_body = vehicle_body
 
