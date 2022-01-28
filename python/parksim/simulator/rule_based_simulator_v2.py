@@ -6,6 +6,7 @@ from dlp.visualizer import Visualizer as DlpVisualizer
 from pathlib import Path
 
 import numpy as np
+import pickle
 
 from parksim.pytypes import VehicleState
 from parksim.vehicle_types import VehicleBody, VehicleConfig
@@ -19,10 +20,21 @@ from parksim.agents.rule_based_stanley_vehicle_v2 import RuleBasedStanleyVehicle
 
 np.random.seed(44) # ones with interesting cases: 20, 33, 44, 60
 
+# These parameters should all become ROS param for simulator and vehicle
+parking_spaces_path = '/ParkSim/parking_spaces.npy'
+offline_maneuver_path = '/ParkSim/parking_maneuvers.pickle'
+waypoints_graph_path = '/ParkSim/waypoints_graph.pickle'
+entrance_coords = [14.38, 76.21]
+
+overshoot_ranges = {'pointed_right': [(42, 48), (67, 69), (92, 94), (113, 115), (134, 136), (159, 161), (184, 186), (205, 207), (226, 228), (251, 253), (276, 278), (297, 299), (318, 320), (343, 345)],
+                    'pointed_left': [(64, 66), (89, 91), (156, 158), (181, 183), (248, 250), (273, 275), (340, 342)]}
+
+anchor_points = [47, 93, 135, 185, 227, 277, 319, 344] # for now, second spot at the start of a row
+anchor_spots = [list(range(21)) + list(range(42, 67)), list(range(21, 42)) + list(range(92, 113)), list(range(67, 92)) + list(range(134, 159)), list(range(113, 134)) + list(range(184, 205)), list(range(159, 184)) + list(range(226, 251)), list(range(205, 226)) + list(range(276, 297)), list(range(251, 276)) + list(range(318, 343)), list(range(297, 318)) + list(range(343, 364))]
+
 class RuleBasedSimulator(object):
-    def __init__(self, dataset: Dataset, offline_maneuver: OfflineManeuver, vis: RealtimeVisualizer):
+    def __init__(self, dataset: Dataset, vis: RealtimeVisualizer, entrance_coords: List[float], anchor_points: List[int], anchor_spots: List[List[int]]):
         self.dlpvis = DlpVisualizer(dataset)
-        self.offline_maneuver = offline_maneuver
 
         self.vis = vis
 
@@ -31,15 +43,15 @@ class RuleBasedSimulator(object):
         self.graph = WaypointsGraph()
         self.graph.setup_with_vis(self.dlpvis)
 
-        # TODO: Change these to params
         # anchor spots
-        self.anchor_points = [47, 93, 135, 185, 227, 277, 319, 344] # for now, second spot at the start of a row
-        self.anchor_spots = [list(range(21)) + list(range(42, 67)), list(range(21, 42)) + list(range(92, 113)), list(range(67, 92)) + list(range(134, 159)), list(range(113, 134)) + list(range(184, 205)), list(range(159, 184)) + list(range(226, 251)), list(range(205, 226)) + list(range(276, 297)), list(range(251, 276)) + list(range(318, 343)), list(range(297, 318)) + list(range(343, 364))]
+        self.anchor_points = anchor_points
+        self.anchor_spots = anchor_spots
 
         # spawn stuff
         self.spawn_wait = 50 # number of timesteps between cars spawning
         # self.entrance_vertex = 243
-        self.entrance_vertex = self.graph.search([14.38, 76.21])
+        self.entrance_coords = entrance_coords
+        self.entrance_vertex = self.graph.search(self.entrance_coords)
 
         self.spawn_entering = 3 # number of vehicles to enter
         self.spawn_exiting = 3 # number of vehicles to exit
@@ -86,30 +98,14 @@ class RuleBasedSimulator(object):
     # goes to an anchor point
     # convention: if entering, spot_index is positive, and if exiting, it's negative
     def add_vehicle(self, spot_index: int, vehicle_body: VehicleBody=VehicleBody(), vehicle_config: VehicleConfig=VehicleConfig()):
-        if spot_index > 0: # entering
-            graph_sol = AStarPlanner(self.graph.vertices[self.entrance_vertex], self.graph.vertices[self.graph.search(self.parking_spaces[spot_index])]).solve()
-        else: # exiting
-            graph_sol = AStarPlanner(self.graph.vertices[self.graph.search(self.parking_spaces[-spot_index])], self.graph.vertices[self.entrance_vertex]).solve()
 
-        x_ref, y_ref, yaw_ref = graph_sol.compute_ref_path(vehicle_config.offset)
-        
-        initial_state = VehicleState()
-        if spot_index > 0: # entering
-            initial_state.x.x = x_ref[0]
-            initial_state.x.y = y_ref[0]
-            initial_state.e.psi = yaw_ref[0]
-        else: # start parked
-            # randomize if pointing up or down to start
-            initial_state.x.x = self.parking_spaces[-spot_index][0]
-            initial_state.x.y = self.parking_spaces[-spot_index][1]
-            initial_state.e.psi = np.pi / 2 if np.random.rand() < 0.5 else -np.pi / 2
-        
-
-        vehicle = RuleBasedStanleyVehicle(vehicle_id=self.num_vehicles, initial_state=initial_state, vehicle_body=vehicle_body, vehicle_config=vehicle_config, offline_maneuver=self.offline_maneuver)
-        vehicle.set_ref_pose(x_ref, y_ref, yaw_ref)
-        vehicle.set_ref_v(0)
+        # NOTE: These lines are here for now. In the ROS implementation, they will all be in the vehicle node, no the simulator node
+        vehicle = RuleBasedStanleyVehicle(vehicle_id=self.num_vehicles, vehicle_body=vehicle_body, vehicle_config=vehicle_config)
+        vehicle.load_parking_spaces(parking_spaces_path=parking_spaces_path)
         vehicle.set_anchor(going_to_anchor=spot_index>0, spot_index=spot_index, should_overshoot=False, anchor_points=self.anchor_points, anchor_spots=self.anchor_spots)
-        vehicle.set_graph(self.graph)
+        vehicle.load_graph(waypoints_graph_path=waypoints_graph_path, entrance_coords=entrance_coords)
+        vehicle.load_maneuver(offline_maneuver_path=offline_maneuver_path, overshoot_ranges=overshoot_ranges)
+        vehicle.start_vehicle()
 
         self.num_vehicles += 1
         self.vehicles.append(vehicle)
@@ -145,7 +141,7 @@ class RuleBasedSimulator(object):
                 vehicle = active_vehicles[vehicle_id]
 
                 vehicle.get_other_info(active_vehicles)
-                vehicle.set_method_to_get_central_occupancy([self.parking_spaces, self.occupied])
+                vehicle.set_method_to_get_central_occupancy(self.occupied)
                 vehicle.set_method_to_change_central_occupancy(self.occupied)
                 vehicle.set_method_to_change_other_priority(active_vehicles)
                 vehicle.set_method_to_change_other_crash_set(active_vehicles)
@@ -182,11 +178,9 @@ def main():
     ds.load(home_path + '/dlp-dataset/data/DJI_0012')
     print("Dataset loaded.")
 
-    offline_maneuver = OfflineManeuver(pickle_file=home_path + '/ParkSim/parking_maneuvers.pickle')
-
     vis = RealtimeVisualizer(ds, VehicleBody())
 
-    simulator = RuleBasedSimulator(ds, offline_maneuver, vis)
+    simulator = RuleBasedSimulator(dataset=ds, vis=vis, entrance_coords=entrance_coords, anchor_points=anchor_points, anchor_spots=anchor_spots)
 
     simulator.run()
 

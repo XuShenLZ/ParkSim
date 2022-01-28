@@ -1,5 +1,3 @@
-*.pickle
-
 # ROS
 install/
 build/
@@ -19,6 +17,9 @@ runs/
 
 # data files
 data/
+*.pickle
+*.npz
+*.npy
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
