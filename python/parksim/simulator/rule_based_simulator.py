@@ -17,7 +17,10 @@ from parksim.visualizer.realtime_visualizer import RealtimeVisualizer
 
 from parksim.agents.rule_based_stanley_vehicle import RuleBasedStanleyVehicle, BrakeState
 
-np.random.seed(44) # ones with interesting cases: 20, 33, 44, 60
+np.random.seed(1)
+# cases and possible solutions
+# 44: stopping isn't fast enough for full speed car going toward stopped car
+# 5 looks really good
 
 class RuleBasedSimulator(object):
     def __init__(self, dataset: Dataset, offline_maneuver: OfflineManeuver, vis: RealtimeVisualizer):
@@ -33,7 +36,7 @@ class RuleBasedSimulator(object):
 
         # TODO: change these as ROS params
         self.offset = 1.75 # distance off from waypoints
-        self.max_target_speed = 5 # for this implementation, normal cruising speed
+        self.max_target_speed = 3 # for this implementation, normal cruising speed normally was 5
 
         self.look_ahead_timesteps = 10 # how far to look ahead for crash detection
         self.crash_check_radius = 15 # which vehicles to check crash
@@ -92,10 +95,18 @@ class RuleBasedSimulator(object):
     # goes to an anchor point
     # convention: if entering, spot_index is positive, and if exiting, it's negative
     def add_vehicle(self, loops, spot_index):
+        north_spot_ranges = [(0, 41), (67, 91), (113, 133), (159, 183), (205, 225), (251, 275), (297, 317)]
         if spot_index > 0: # entering
-            graph_sol = AStarPlanner(self.graph.vertices[self.entrance_vertex], self.graph.vertices[self.graph.search(self.parking_spaces[spot_index])]).solve()
+            north_spot = any([spot_index >= r[0] and spot_index <= r[1] for r in north_spot_ranges])
+            y_offset = -5 if north_spot else 5
+            coords = [self.parking_spaces[spot_index][0], self.parking_spaces[spot_index][1] + y_offset]
+            graph_sol = AStarPlanner(self.graph.vertices[self.entrance_vertex], self.graph.vertices[self.graph.search(coords)]).solve()
         else: # exiting
-            graph_sol = AStarPlanner(self.graph.vertices[self.graph.search(self.parking_spaces[-spot_index])], self.graph.vertices[self.entrance_vertex]).solve()
+            north_spot = any([-spot_index >= r[0] and -spot_index <= r[1] for r in north_spot_ranges])
+            y_offset = -5 if north_spot else 5
+            coords = [self.parking_spaces[-spot_index][0], self.parking_spaces[-spot_index][1] + y_offset]
+            print(spot_index, coords)
+            graph_sol = AStarPlanner(self.graph.vertices[self.graph.search(coords)], self.graph.vertices[self.entrance_vertex]).solve()
 
         # collect x, y, yaw from A* solution
         axs = [] 
@@ -147,11 +158,12 @@ class RuleBasedSimulator(object):
         graph_sol = AStarPlanner(self.graph.vertices[self.graph.search([vehicle.state.x.x, vehicle.state.x.y])], self.graph.vertices[self.graph.search(self.parking_spaces[new_spot_index])]).solve()
         new_ax = []
         new_ay = []
-        for edge in graph_sol.edges:
-            new_ax.append(edge.v1.coords[0])
-            new_ay.append(edge.v1.coords[1])
-        new_ax.append(graph_sol.edges[-1].v2.coords[0])
-        new_ay.append(graph_sol.edges[-1].v2.coords[1])
+        if len(graph_sol.edges) > 0:
+            for edge in graph_sol.edges:
+                new_ax.append(edge.v1.coords[0])
+                new_ay.append(edge.v1.coords[1])
+            new_ax.append(graph_sol.edges[-1].v2.coords[0])
+            new_ay.append(graph_sol.edges[-1].v2.coords[1])
         
         # do parking stuff
         
@@ -203,12 +215,12 @@ class RuleBasedSimulator(object):
             else:
                 new_ax.append(spot_x + 4)
 
-        # have the y coordinate of the last waypoint be the same as the previous last
+        # have the y coordinate of the last waypoint be the same as the new last 
     
         if len(new_ax) == 0:
             new_ay.append(vehicle.y_ref[-1])
         else:
-            new_ay.append(last_edge.v2.coords[1])
+            new_ay.append(new_ay[-1])
         
         # offsets for lanes
         new_cx = []
@@ -240,7 +252,7 @@ class RuleBasedSimulator(object):
                 empty_spots = [i for i in range(len(self.occupied)) if not self.occupied[i]]
                 chosen_spot = np.random.choice(empty_spots)
                 self.add_vehicle(self.loops, -1 * chosen_spot)
-                self.occupied[i] = True
+                self.occupied[chosen_spot] = True
                 
             for i in range(len(self.vehicles)):
                 vehicle = self.vehicles[i]
@@ -261,7 +273,8 @@ class RuleBasedSimulator(object):
                             vehicle.v_ref = 1
 
                         # detect parking and unparking
-                        nearby_parkers = [v for v in self.vehicles if ((v.parking and not v.all_done()) or v.currently_unparking()) and np.linalg.norm([vehicle.state.x.x - v.state.x.x, vehicle.state.x.y - v.state.x.y]) < self.parking_radius]
+                        # nearby_parkers = [v for v in self.vehicles if (v.mid_park() or v.mid_unpark()) and np.linalg.norm([vehicle.state.x.x - v.state.x.x, vehicle.state.x.y - v.state.x.y]) < self.parking_radius]
+                        nearby_parkers = [v for v in self.vehicles if (v.mid_park() or v.mid_unpark()) and vehicle.other_within_parking_box(v) and v is not vehicle]
                         if len(nearby_parkers) > 0: # should only be one nearby parker, since they wait for each other
                             parker = nearby_parkers[0]
                             vehicle.brake(brake_state=BrakeState.WAITING)
@@ -304,12 +317,14 @@ class RuleBasedSimulator(object):
                                 if vehicle.priority is None:
                                     # for leading/trailing situation
                                     lst = list(vehicle.crash_set)
-                                    ang = ((lst[0].state.e.psi - lst[1].state.e.psi) + (2 * np.pi)) % (2 * np.pi) # [0, 2pi)
-                                    if len(vehicle.crash_set) == 2 and (ang < 0.25 or ang > 2 * np.pi - 0.25): # about 15 degrees, should make this a constant
+                                    # ang = ((lst[0].state.e.psi - lst[1].state.e.psi) + (2 * np.pi)) % (2 * np.pi) # [0, 2pi)
+                                    # if len(vehicle.crash_set) == 2 and (ang < 0.25 or ang > 2 * np.pi - 0.25): # about 15 degrees, should make this a constant
+                                    if len(vehicle.crash_set) == 2: # this means that if there are only 2 cars crashing, one won't stop. That's unrealistic, probably would need some constraint on angle
                                         this_v = lst[0] if lst[0] is vehicle else lst[1]
                                         other_v = lst[1] if lst[0] is vehicle else lst[0]
-                                        this_to_other_ang = ((np.arctan2(other_v.state.x.y - this_v.state.x.y, other_v.state.x.x - this_v.state.x.x) - other_v.state.e.psi) + (2*np.pi)) % (2*np.pi)
-                                        if this_to_other_ang < np.pi / 2 or this_to_other_ang > 3 * np.pi / 2: # trailing car
+                                        # this_to_other_ang = ((np.arctan2(other_v.state.x.y - this_v.state.x.y, other_v.state.x.x - this_v.state.x.x) - other_v.state.e.psi) + (2*np.pi)) % (2*np.pi)
+                                        # if this_to_other_ang < np.pi / 2 or this_to_other_ang > 3 * np.pi / 2: # trailing car
+                                        if not this_v.should_go_before(other_v):
                                             next_state = BrakeState.WAITING # go straight to waiting, no priority calculations necessary
                                             vehicle.priority = other_v.priority - 1 if other_v.priority is not None else -1 # so cars that may brake behind it can have a priority
                                             vehicle.waiting_for = other_v
@@ -395,8 +410,7 @@ class RuleBasedSimulator(object):
                                 should_unbrake = True
                             else:
                                 # TODO: better heuristic for unbraking
-                                ang = ((np.arctan2(vehicle.waiting_for.state.x.y - vehicle.state.x.y, vehicle.waiting_for.state.x.x - vehicle.state.x.x) - vehicle.waiting_for.state.e.psi) + (2*np.pi)) % (2*np.pi)
-                                if vehicle.waiting_for.all_done() or (not vehicle.waiting_for.braking() and (((ang > (np.pi/2) and ang < (3*np.pi)/2))) or np.linalg.norm([vehicle.waiting_for.state.x.x - vehicle.state.x.x, vehicle.waiting_for.state.x.y - vehicle.state.x.y]) > 10):
+                                if vehicle.waiting_for.all_done() or (not vehicle.waiting_for.braking() and vehicle.waiting_for.has_passed(vehicle)) or np.linalg.norm([vehicle.waiting_for.state.x.x - vehicle.state.x.x, vehicle.waiting_for.state.x.y - vehicle.state.x.y]) > 10:
                                     should_unbrake = True
                                 elif vehicle.waiting_for.waiting_for == vehicle: # if the vehicle you're waiting for is waiting for you
                                     # you should go
@@ -426,13 +440,13 @@ class RuleBasedSimulator(object):
                 if vehicle.parking: # wait for coast to be clear, then start parking
                     # everyone within range should be braking or parking or unparking
                     # NOTE: this doesn't yet account for a braked vehicle in the way of our parking
-                    should_go = all([v.braking() or v.parking or v.unparking or np.linalg.norm([vehicle.state.x.x - v.state.x.x, vehicle.state.x.y - v.state.x.y]) >= self.parking_radius for v in self.vehicles if v != vehicle])
+                    should_go = all([v.all_done() or (v.parking and v.parking_start_time > vehicle.parking_start_time) or (v.unparking and v.unparking_start_time > vehicle.unparking_start_time) or np.linalg.norm([vehicle.state.x.x - v.state.x.x, vehicle.state.x.y - v.state.x.y]) >= self.parking_radius * 2 for v in self.vehicles if v != vehicle])
                     if vehicle.park_start_coords is None:
                         vehicle.park_start_coords = (vehicle.state.x.x - self.offset * np.sin(vehicle.state.e.psi), vehicle.state.x.y + self.offset * np.cos(vehicle.state.e.psi))
                     vehicle.update_state_parking(self.time, should_go)
                 elif vehicle.unparking: # wait for coast to be clear, then start unparking
                     # everyone within range should be braking or parking or unparking
-                    should_go = all([v.braking() or v.parking or v.unparking or np.linalg.norm([vehicle.state.x.x - v.state.x.x, vehicle.state.x.y - v.state.x.y]) >= self.parking_radius for v in self.vehicles if v != vehicle])
+                    should_go = all([v.all_done() or (v.parking and v.parking_start_time > vehicle.parking_start_time) or (v.unparking and v.unparking_start_time > vehicle.unparking_start_time) or np.linalg.norm([vehicle.state.x.x - v.state.x.x, vehicle.state.x.y - v.state.x.y]) >= self.parking_radius * 2 for v in self.vehicles if v != vehicle])
                     vehicle.update_state_unparking(self.time, should_go)
                 else: 
                     vehicle.update_state(self.time)
@@ -442,7 +456,6 @@ class RuleBasedSimulator(object):
 
             # Visualize
             for vehicle in self.vehicles:
-
                 if vehicle.all_done():
                     fill = (0, 0, 0, 255)
                 elif vehicle.braking():
@@ -454,7 +467,7 @@ class RuleBasedSimulator(object):
 
                 self.vis.draw_vehicle(states=[vehicle.state.x.x, vehicle.state.x.y, vehicle.state.e.psi], fill=fill)
                 self.vis.draw_line(points=np.array([vehicle.x_ref, vehicle.y_ref]).T, color=(39,228,245, 193))
-                on_vehicle_text = "N/A" if vehicle.priority is None else round(vehicle.priority, 3)
+                on_vehicle_text = vehicle.unparking_step
                 self.vis.draw_text([vehicle.state.x.x - 2, vehicle.state.x.y + 2], on_vehicle_text, size=25)
             self.vis.render()
 
