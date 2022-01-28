@@ -45,9 +45,9 @@ class VehicleBody(BasePolytopeObstacle):
             self.br = 2.3
             self.l = self.br + self.bf
 
-            self.cf = 1.5
-            self.cr = 1.5
-            self.num_circles = 4
+            self.cf = 2.25 # was 1.5
+            self.cr = 2.25 # was 1.5
+            self.num_circles = 5
         else:
             raise NotImplementedError('Unrecognized vehicle flag: %d'%self.vehicle_flag)
     
