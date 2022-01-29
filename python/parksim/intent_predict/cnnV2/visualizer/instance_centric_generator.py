@@ -137,7 +137,7 @@ class InstanceCentricGenerator:
 
         return waypoints
 
-    def inst_centric(self, ego_agent, all_agents):
+    def inst_centric(self, ego_agent: RuleBasedStanleyVehicle, all_agents):
         """
         crop the local region around an instance and replot it in ego color. The ego instance is always pointing towards the west
 
