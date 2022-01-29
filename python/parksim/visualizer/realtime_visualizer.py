@@ -1,11 +1,9 @@
-from tracemalloc import start
-from typing import List
-from matplotlib.pyplot import yticks
 import numpy as np
 import dearpygui.dearpygui as dpg
 
 from dlp.dataset import Dataset
 from dlp.visualizer import Visualizer as DlpVis
+from parksim.pytypes import VehicleState
 
 from parksim.vehicle_types import VehicleBody
 
@@ -124,14 +122,16 @@ class RealtimeVisualizer(object):
             dpg.draw_text([2, p1[1]+2], str(y), color=(0,0,0,255), size=15, parent=self.grid_canvas)
 
 
-    def _gen_vehicle_corners(self, state):
+    def _gen_vehicle_corners(self, state: VehicleState):
         """
         state: array-like with size (3,) for x, y, psi
         """
         l = self.vehicle_body.l
         w = self.vehicle_body.w
 
-        x, y, th = state
+        x = state.x.x
+        y = state.x.y
+        th = state.e.psi
 
         # Body
         p = np.array([[np.cos(th), -np.sin(th)],[np.sin(th), np.cos(th)]]) @ np.array([[l/2,l/2, -l/2, -l/2, l/2],[w/2, -w/2, -w/2, w/2, w/2]])
@@ -186,12 +186,12 @@ class RealtimeVisualizer(object):
     def clear_frame(self):
         dpg.delete_item(self.frame_canvas, children_only=True)
 
-    def draw_vehicle(self, states: List[np.ndarray], fill=(255,128,0,255)):
+    def draw_vehicle(self, state: VehicleState, fill=(255,128,0,255)):
         """
-        states: an array-like object with size 3 that contains the (x, y, psi) states in (m, rad)
+        state: VehicleState object
         color: (r, g, b, a) tuple in range 0-255
         """
-        corners = self._gen_vehicle_corners(states)
+        corners = self._gen_vehicle_corners(state)
 
         px, py = self._xy2p(corners[:,0], corners[:, 1])
         dpg.draw_quad(p1=[px[0], py[0]], p2=[px[1], py[1]], p3=[px[2], py[2]], p4=[px[3], py[3]], fill=fill, color=(0,0,0,0), parent=self.frame_canvas)
@@ -234,7 +234,21 @@ if __name__ == "__main__":
 
     scene = ds.get('scene', ds.list_scenes()[0])
 
-    states_list = [[10,10,0], [50, 70, np.pi/2], [70, 15, -np.pi/2]]
+    state_1 = VehicleState()
+    state_1.x.x = 10
+    state_1.x.y = 10
+
+    state_2 = VehicleState()
+    state_2.x.x = 50
+    state_2.x.y = 70
+    state_2.e.psi = np.pi/2
+
+    state_3 = VehicleState()
+    state_3.x.x = 70
+    state_3.x.y = 15
+    state_3.e.psi = -np.pi/2
+
+    states_list = [state_1, state_2, state_3]
 
     frames = ds.get_future_frames(scene['first_frame'], 100)
 
@@ -242,6 +256,7 @@ if __name__ == "__main__":
         for frame in frames:
             vis.clear_frame()
             # vis.draw_frame(frame["frame_token"])
-            for states in states_list:
-                vis.draw_vehicle(states)
-            dpg.render_dearpygui_frame()
+            for state in states_list:
+                vis.draw_vehicle(state)
+            
+            vis.render()
