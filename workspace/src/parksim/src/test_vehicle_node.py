@@ -36,7 +36,7 @@ class VehiclePublisher(MPClabNode):
 
         self.timer = self.create_timer(self.timer_period, self.timer_callback)
 
-        self.i = 0
+        self.i = np.random.rand()
 
     def timer_callback(self):
         msg = VehicleStateMsg()
@@ -44,7 +44,7 @@ class VehiclePublisher(MPClabNode):
         msg.x.x = 10. + 10*np.sin(self.i)
         msg.x.y = 20. + 10*np.cos(self.i)
 
-        self.i += 1
+        self.i += 0.05
 
         self.pub.publish(msg)
 

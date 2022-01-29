@@ -7,8 +7,6 @@ import re
 
 from pathlib import Path
 
-import dearpygui.dearpygui as dpg
-
 from dlp.dataset import Dataset
 
 from parksim.msg import VehicleStateMsg
@@ -54,13 +52,13 @@ class VisualizerNode(MPClabNode):
 
         self.timer = self.create_timer(self.timer_period, self.timer_callback)
 
-    def vehicle_state_cb(self, vehicle_id, msg):
-        """
-        subscriber callback to receive vehicle states
-        """
-        state = VehicleState()
-        self.unpack_msg(msg, state)
-        self.states[vehicle_id] = state
+    def vehicle_state_cb(self, vehicle_id):
+        def callback(msg):
+            state = VehicleState()
+            self.unpack_msg(msg, state)
+            self.states[vehicle_id] = state
+
+        return callback
 
     def timer_callback(self):
         """
@@ -68,7 +66,7 @@ class VisualizerNode(MPClabNode):
         """
         topic_list_types = self.get_topic_names_and_types()
 
-        states_list = []
+        self.vis.clear_frame()
 
         for topic_name, _ in topic_list_types:
             name_pattern = re.match("/vehicle_([1-9][0-9]*)/state", topic_name)
@@ -79,17 +77,13 @@ class VisualizerNode(MPClabNode):
                 vehicle_id = int(name_pattern.group(1))
 
                 if vehicle_id not in self.subs:
-                    self.subs[vehicle_id] = self.create_subscription(VehicleStateMsg, topic_name, lambda msg: self.vehicle_state_cb(vehicle_id, msg), 10)
+                    self.subs[vehicle_id] = self.create_subscription(VehicleStateMsg, topic_name, self.vehicle_state_cb(vehicle_id), 10)
                     self.states[vehicle_id] = VehicleState()
                 else:
                     state = self.states[vehicle_id]
-                    states_list.append([state.x.x, state.x.y, state.q.to_yaw()])
+                    self.vis.draw_vehicle(state)
 
-        if dpg.is_dearpygui_running():
-            self.vis.clear_frame()
-            self.vis.draw_vehicles(states_list)
-
-            dpg.render_dearpygui_frame()
+        self.vis.render()
         
 def main(args=None):
     rclpy.init(args=args)

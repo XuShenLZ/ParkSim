@@ -6,14 +6,9 @@ from dlp.visualizer import Visualizer as DlpVisualizer
 from pathlib import Path
 
 import numpy as np
-import pickle
 
-from parksim.pytypes import VehicleState
 from parksim.vehicle_types import VehicleBody, VehicleConfig
-from parksim.route_planner.a_star import AStarPlanner
 from parksim.route_planner.graph import WaypointsGraph
-from parksim.utils.spline import calc_spline_course
-from parksim.path_planner.offline_maneuver import OfflineManeuver
 from parksim.visualizer.realtime_visualizer import RealtimeVisualizer
 
 from parksim.agents.rule_based_stanley_vehicle_v2 import RuleBasedStanleyVehicle
@@ -33,7 +28,7 @@ anchor_points = [47, 93, 135, 185, 227, 277, 319, 344] # for now, second spot at
 anchor_spots = [list(range(21)) + list(range(42, 67)), list(range(21, 42)) + list(range(92, 113)), list(range(67, 92)) + list(range(134, 159)), list(range(113, 134)) + list(range(184, 205)), list(range(159, 184)) + list(range(226, 251)), list(range(205, 226)) + list(range(276, 297)), list(range(251, 276)) + list(range(318, 343)), list(range(297, 318)) + list(range(343, 364))]
 
 class RuleBasedSimulator(object):
-    def __init__(self, dataset: Dataset, vis: RealtimeVisualizer, entrance_coords: List[float], anchor_points: List[int], anchor_spots: List[List[int]]):
+    def __init__(self, dataset: Dataset, vis: RealtimeVisualizer, anchor_points: List[int]):
         self.dlpvis = DlpVisualizer(dataset)
 
         self.vis = vis
@@ -45,13 +40,9 @@ class RuleBasedSimulator(object):
 
         # anchor spots
         self.anchor_points = anchor_points
-        self.anchor_spots = anchor_spots
 
         # spawn stuff
         self.spawn_wait = 50 # number of timesteps between cars spawning
-        # self.entrance_vertex = 243
-        self.entrance_coords = entrance_coords
-        self.entrance_vertex = self.graph.search(self.entrance_coords)
 
         self.spawn_entering = 3 # number of vehicles to enter
         self.spawn_exiting = 3 # number of vehicles to exit
@@ -102,7 +93,7 @@ class RuleBasedSimulator(object):
         # NOTE: These lines are here for now. In the ROS implementation, they will all be in the vehicle node, no the simulator node
         vehicle = RuleBasedStanleyVehicle(vehicle_id=self.num_vehicles, vehicle_body=vehicle_body, vehicle_config=vehicle_config)
         vehicle.load_parking_spaces(parking_spaces_path=parking_spaces_path)
-        vehicle.set_anchor(going_to_anchor=spot_index>0, spot_index=spot_index, should_overshoot=False, anchor_points=self.anchor_points, anchor_spots=self.anchor_spots)
+        vehicle.set_anchor(going_to_anchor=spot_index>0, spot_index=spot_index, should_overshoot=False, anchor_points=anchor_points, anchor_spots=anchor_spots)
         vehicle.load_graph(waypoints_graph_path=waypoints_graph_path, entrance_coords=entrance_coords)
         vehicle.load_maneuver(offline_maneuver_path=offline_maneuver_path, overshoot_ranges=overshoot_ranges)
         vehicle.start_vehicle()
@@ -163,7 +154,7 @@ class RuleBasedSimulator(object):
                 else:
                     fill = (0, 255, 0, 255)
 
-                self.vis.draw_vehicle(states=[vehicle.state.x.x, vehicle.state.x.y, vehicle.state.e.psi], fill=fill)
+                self.vis.draw_vehicle(state=vehicle.state, fill=fill)
                 self.vis.draw_line(points=np.array([vehicle.x_ref, vehicle.y_ref]).T, color=(39,228,245, 193))
                 on_vehicle_text = "N/A" if vehicle.priority is None else round(vehicle.priority, 3)
                 self.vis.draw_text([vehicle.state.x.x - 2, vehicle.state.x.y + 2], on_vehicle_text, size=25)
@@ -180,7 +171,7 @@ def main():
 
     vis = RealtimeVisualizer(ds, VehicleBody())
 
-    simulator = RuleBasedSimulator(dataset=ds, vis=vis, entrance_coords=entrance_coords, anchor_points=anchor_points, anchor_spots=anchor_spots)
+    simulator = RuleBasedSimulator(dataset=ds, vis=vis, anchor_points=anchor_points)
 
     simulator.run()
 
