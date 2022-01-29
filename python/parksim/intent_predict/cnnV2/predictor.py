@@ -79,7 +79,10 @@ class Predictor:
         if self.use_cuda:
             img_tensors = img_tensors.cuda()
             non_spatial_tensors = non_spatial_tensors.cuda()
+        start = time.time()
         preds = self.model(img_tensors, non_spatial_tensors)
+        end = time.time()
+        print("Pred Time: ", end - start)
         pred_scores = torch.sigmoid(preds.float())
         #exponentiated_scores = np.exp(scores)
         total_score = torch.sum(pred_scores)

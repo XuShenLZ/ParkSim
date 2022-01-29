@@ -11,7 +11,7 @@ from tqdm import tqdm
 import os
 from datetime import datetime
 import numpy as np
-from parksim.intent_predict.cnnV2.network import SimpleCNN, RegularizedCNN
+from parksim.intent_predict.cnnV2.network import SimpleCNN, RegularizedCNN, SmallRegularizedCNN
 from sklearn.model_selection import KFold
 from parksim.intent_predict.cnnV2.pytorchtools import EarlyStopping
 
@@ -27,8 +27,8 @@ def train_network():
 
     print(device)
     
-
-    train_datasets = ["0008", "0009", "0010", "0011", "0012"]
+    # , "0010", "0011", "0012"
+    train_datasets = ["0008", "0009", "0010","0011", "0012"]
     validation_dataset = "0007"
     
     all_train_datasets = [CNNDataset(f"data/DJI_{ds_num}", input_transform = transforms.ToTensor()) for ds_num in train_datasets]
@@ -42,7 +42,7 @@ def train_network():
     #validation_dataset, _ = torch.utils.data.random_split(full_validation_dataset, [val_size, unused_data_size], generator=torch.Generator().#manual_seed(42))
     testloader = DataLoader(full_validation_dataset, batch_size=32, shuffle=True, num_workers=12)
 
-    cnn = RegularizedCNN()
+    cnn = SmallRegularizedCNN()
     cnn = cnn.cuda()
     optimizer = optim.AdamW(cnn.parameters(), lr=1e-3)
     loss_fn = torch.nn.BCEWithLogitsLoss().cuda()
@@ -56,7 +56,7 @@ def train_network():
         running_loss = 0.0
         running_train_accuracy = 0.0
         cnn.train()
-        for data in tqdm(trainloader):
+        for data in trainloader:
             img_feature, non_spatial_feature, labels = data
             img_feature = img_feature.cuda()
             non_spatial_feature = non_spatial_feature.cuda()
@@ -121,7 +121,7 @@ def train_network():
         os.mkdir(_CURRENT + '/models')
 
     timestamp = datetime.now().strftime("%m-%d-%Y_%H-%M-%S")
-    PATH = _CURRENT + '/models/regularizedCNN_L%.3f_%s.pth' % (running_loss, timestamp)
+    PATH = _CURRENT + '/models/smallRegularizedCNN_L%.3f_%s.pth' % (running_loss, timestamp)
     cnn.load_state_dict(torch.load(early_stopping.path))
     torch.save(cnn.state_dict(), PATH)
     
