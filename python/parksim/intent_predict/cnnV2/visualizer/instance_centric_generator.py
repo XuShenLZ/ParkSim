@@ -1,4 +1,5 @@
 from PIL import ImageDraw, Image
+from parksim.pytypes import VehicleState
 from parksim.agents.rule_based_stanley_vehicle import RuleBasedStanleyVehicle
 import numpy as np
 import os

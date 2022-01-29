@@ -9,6 +9,11 @@ from parksim.route_planner.a_star import WaypointsGraph
 from parksim.route_planner.a_star import AStarGraph, AStarPlanner
 import PIL
 import cv2
+import os
+import time
+from pathlib import Path
+
+ROOT_DIR = Path(os.path.dirname(os.path.abspath(__file__)))
 
 class PredictionResponse:
     def __init__(self, all_spot_centers, distribution):
@@ -27,17 +32,16 @@ class PredictionResponse:
 
 
 class Predictor:
-    def __init__(self, waypoints: WaypointsGraph, resolution=0.1, sensing_limit=20, use_cuda=True):
+    def __init__(self, resolution=0.1, sensing_limit=20, use_cuda=False):
         # Resolution is distance in meters per pixel
         # sensing_limit: the longest distance to sense along 4 directions (m). The side length of the square = 2*sensing_limit
-        
         self.use_cuda = use_cuda
         self.spot_detector = LocalDetector(spot_color_rgb=(0, 255, 0))
-        self.waypoints = waypoints
         self.resolution = resolution
         self.sensing_limit = sensing_limit
 
-    def load_model(self, model_path: str):
+    def load_model(self, waypoints: WaypointsGraph, model_path=ROOT_DIR / 'models/regularizedCNN_L0.053_12-06-2021_13-38-13.pth'):
+        self.waypoints = waypoints
         model = RegularizedCNN()
         if self.use_cuda:
             model_state = torch.load(model_path)
@@ -46,7 +50,7 @@ class Predictor:
         model.load_state_dict(model_state)
         model.eval()
         if self.use_cuda:
-            model.cuda()
+            model = model.cuda()
         self.model = model
             
         
@@ -73,14 +77,16 @@ class Predictor:
         img_tensors = torch.stack(img_tensors, 0)
         non_spatial_tensors = torch.stack([torch.Tensor(non_spatial_feature.astype(np.single)) for non_spatial_feature in non_spatial_features], 0)
         if self.use_cuda:
-            img_tensors.cuda()
-            non_spatial_tensors.cuda()
+            img_tensors = img_tensors.cuda()
+            non_spatial_tensors = non_spatial_tensors.cuda()
         preds = self.model(img_tensors, non_spatial_tensors)
-        pred_scores = torch.nn.functional.sigmoid(preds.float())
+        pred_scores = torch.sigmoid(preds.float())
         #exponentiated_scores = np.exp(scores)
         total_score = torch.sum(pred_scores)
         normalized_scores = pred_scores / total_score
-        normalized_scores = normalized_scores.cpu().detach().numpy().reshape(-1,)
+        if self.use_cuda:
+            normalized_scores = normalized_scores.cpu()
+        normalized_scores = normalized_scores.detach().numpy().reshape(-1,)
 
         response = PredictionResponse(spot_coordinates, normalized_scores)
         return response

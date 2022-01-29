@@ -1,3 +1,4 @@
+from turtle import home
 from typing import Dict, List, Set, Tuple
 import numpy as np
 from pathlib import Path
@@ -13,9 +14,10 @@ from parksim.route_planner.a_star import AStarPlanner
 from parksim.route_planner.graph import WaypointsGraph
 from parksim.utils.spline import calc_spline_course
 from parksim.vehicle_types import VehicleBody, VehicleConfig
+from parksim.intent_predict.cnnV2.predictor import Predictor, PredictionResponse
 
 class RuleBasedStanleyVehicle(AbstractAgent):
-    def __init__(self, vehicle_id: int, vehicle_body: VehicleBody, vehicle_config: VehicleConfig, controller: StanleyController = StanleyController(), motion_predictor: StanleyController = StanleyController(), intent_predictor = None):
+    def __init__(self, vehicle_id: int, vehicle_body: VehicleBody, vehicle_config: VehicleConfig, controller: StanleyController = StanleyController(), motion_predictor: StanleyController = StanleyController(), intent_predictor = Predictor()):
         self.vehicle_id = vehicle_id
 
         # State and Reference Waypoints
@@ -107,28 +109,37 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         self.target_idx = target_idx
 
     def load_parking_spaces(self, parking_spaces_path: str):
-        home_path = str(Path.home())
-        self.parking_spaces = np.load(home_path + parking_spaces_path)
+        home_path = Path.home() / 'Documents/GitHub'
+        combined_path = str(home_path / parking_spaces_path)
+        self.parking_spaces = np.load(combined_path)
 
     def load_graph(self, waypoints_graph_path: str, entrance_coords: List[float]):
         """
         waypoints_graph_path: path to WaypointGraph object pickle
         entrance_coords: The (x,y) coordinates of the entrance
         """
-        home_path = str(Path.home())
-        with open(home_path + waypoints_graph_path, 'rb') as f:
+        home_path = Path.home() / 'Documents/GitHub'
+        combined_path = str(home_path / waypoints_graph_path)
+        with open(combined_path, 'rb') as f:
             self.graph = pickle.load(f)
 
         self.entrance_vertex = self.graph.search(entrance_coords)
 
     def load_maneuver(self, offline_maneuver_path: str, overshoot_ranges: Dict[str, List[Tuple[int]]]):
-        home_path = str(Path.home())
-        self.offline_maneuver = OfflineManeuver(pickle_file=home_path+offline_maneuver_path)
+        home_path = Path.home() / 'Documents/GitHub'
+        combined_path = str(home_path / offline_maneuver_path)
+        self.offline_maneuver = OfflineManeuver(pickle_file=combined_path)
 
         self.overshoot_ranges = overshoot_ranges
 
     def load_intent_model(self, model_path: str):
-        pass
+        """
+        load_graph must be called before load_intent_model.
+        """
+        home_path = Path.home() / 'Documents/GitHub'
+        combined_path = str(home_path / model_path)
+        self.intent_predictor.load_model(waypoints=self.graph, model_path=combined_path)
+
 
     def set_anchor(self, going_to_anchor: bool=None, spot_index: int=None, should_overshoot: bool=None, anchor_points: List[int]=None, anchor_spots: List[List[int]]=None):
 
@@ -781,12 +792,21 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         else: 
             self.update_state()
 
-    def predict_intent(self, vehicle_id=None, radius=None):
+    def get_time_spent_in_lot(vehicle_id=None):
+        return 1.0
+        SAMPLING_RATE_IN_MINUTES = 0.04 / 60
+        if vehicle_id is None:
+            instance_tokens_agent_is_in = [instance['instance_token'] for instance in instances_agent_is_in]
+            current_inst_idx = instance_tokens_agent_is_in.index(inst_token)    
+        return current_inst_idx * SAMPLING_RATE_IN_MINUTES
+
+    def predict_intent(self, generator, all_vehicles, vehicle_id=None, radius=None):
         """
         docstring
         """
         if vehicle_id is None:
-            pass
+            img = generator.inst_centric(self, all_vehicles)
+            return self.intent_predictor.predict(img, np.array([self.state.x.x, self.state.x.y]), self.state.e.psi, self.state.v.v, self.get_time_spent_in_lot())
             # Predicting ourselves
         else:
             pass

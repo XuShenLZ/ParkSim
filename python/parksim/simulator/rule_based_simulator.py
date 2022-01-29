@@ -6,6 +6,7 @@ from dlp.visualizer import Visualizer as DlpVisualizer
 from pathlib import Path
 
 import numpy as np
+from parksim.intent_predict.cnnV2.visualizer.instance_centric_generator import InstanceCentricGenerator
 
 from parksim.vehicle_types import VehicleBody, VehicleConfig
 from parksim.route_planner.graph import WaypointsGraph
@@ -16,11 +17,10 @@ from parksim.agents.rule_based_stanley_vehicle import RuleBasedStanleyVehicle
 np.random.seed(44) # ones with interesting cases: 20, 33, 44, 60
 
 # These parameters should all become ROS param for simulator and vehicle
-parking_spaces_path = '/ParkSim/parking_spaces.npy'
-offline_maneuver_path = '/ParkSim/parking_maneuvers.pickle'
-waypoints_graph_path = '/ParkSim/waypoints_graph.pickle'
-# Add the model path here
-# intent_model_path = ''
+parking_spaces_path = 'ParkSim/parking_spaces.npy'
+offline_maneuver_path = 'ParkSim/parking_maneuvers.pickle'
+waypoints_graph_path = 'ParkSim/waypoints_graph.pickle'
+intent_model_path = 'ParkSim/python/parksim/intent_predict/cnnV2/models/regularizedCNN_L0.053_12-06-2021_13-38-13.pth'
 entrance_coords = [14.38, 76.21]
 
 overshoot_ranges = {'pointed_right': [(42, 48), (67, 69), (92, 94), (113, 115), (134, 136), (159, 161), (184, 186), (205, 207), (226, 228), (251, 253), (276, 278), (297, 299), (318, 320), (343, 345)],
@@ -40,14 +40,16 @@ class RuleBasedSimulator(object):
         self.graph = WaypointsGraph()
         self.graph.setup_with_vis(self.dlpvis)
 
+        self.inst_generator = InstanceCentricGenerator()
+
         # anchor spots
         self.anchor_points = anchor_points
 
         # spawn stuff
         self.spawn_wait = 50 # number of timesteps between cars spawning
 
-        self.spawn_entering = 3 # number of vehicles to enter
-        self.spawn_exiting = 3 # number of vehicles to exit
+        self.spawn_entering = 1 # number of vehicles to enter
+        self.spawn_exiting = 0 # number of vehicles to exit
         self.spawn_exiting_loops = np.random.choice(range(self.spawn_exiting * self.spawn_wait), self.spawn_exiting)
 
         self.num_vehicles = 0
@@ -98,7 +100,7 @@ class RuleBasedSimulator(object):
         vehicle.set_anchor(going_to_anchor=spot_index>0, spot_index=spot_index, should_overshoot=False, anchor_points=anchor_points, anchor_spots=anchor_spots)
         vehicle.load_graph(waypoints_graph_path=waypoints_graph_path, entrance_coords=entrance_coords)
         vehicle.load_maneuver(offline_maneuver_path=offline_maneuver_path, overshoot_ranges=overshoot_ranges)
-        # vehicle.load_intent_model(path=pth)
+        vehicle.load_intent_model(model_path=intent_model_path)
         vehicle.start_vehicle()
 
         self.num_vehicles += 1
@@ -131,6 +133,7 @@ class RuleBasedSimulator(object):
                 print("No Active Vehicles")
                 break
                 
+            results = []
             for vehicle_id in active_vehicles:
                 vehicle = active_vehicles[vehicle_id]
 
@@ -141,7 +144,8 @@ class RuleBasedSimulator(object):
                 vehicle.set_method_to_change_other_crash_set(active_vehicles)
 
                 vehicle.solve()
-                # result = vehicle.predict_intent()
+                result = vehicle.predict_intent(self.inst_generator, active_vehicles.values())
+                results.append(result)
                 
             self.loops += 1
             self.time += 0.1
@@ -162,16 +166,22 @@ class RuleBasedSimulator(object):
                 self.vis.draw_line(points=np.array([vehicle.x_ref, vehicle.y_ref]).T, color=(39,228,245, 193))
                 on_vehicle_text = "N/A" if vehicle.priority is None else round(vehicle.priority, 3)
                 self.vis.draw_text([vehicle.state.x.x - 2, vehicle.state.x.y + 2], on_vehicle_text, size=25)
-                # self.vis.draw_text([x,y], prob, size, color)
+                
+            for result in results:
+                distribution = result.distribution
+                for i in range(len(distribution) - 1):
+                    coords = result.all_spot_centers[i]
+                    prob = format(distribution[i], '.2f')
+                    self.vis.draw_text(coords, prob, 10)
             self.vis.render()
 
 def main():
     # Load dataset
     ds = Dataset()
 
-    home_path = str(Path.home())
+    home_path = Path.home() / 'Documents/Github'
     print('Loading dataset...')
-    ds.load(home_path + '/dlp-dataset/data/DJI_0012')
+    ds.load(str(home_path / 'dlp-dataset/data/DJI_0012'))
     print("Dataset loaded.")
 
     vis = RealtimeVisualizer(ds, VehicleBody())

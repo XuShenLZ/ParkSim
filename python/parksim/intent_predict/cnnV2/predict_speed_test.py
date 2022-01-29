@@ -28,7 +28,8 @@ heading = instance['heading']
 speed = instance['speed']
 time_in_lot = 0.04 / 60 * frame_index
 
-predictor = Predictor(extractor.waypoints_graph, use_cuda=False)
+predictor = Predictor(use_cuda=False)
+predictor.load_model(extractor.waypoints_graph)
 
 start_time = time.time()
 response = predictor.predict(img, global_coords, heading, speed, time_in_lot)
