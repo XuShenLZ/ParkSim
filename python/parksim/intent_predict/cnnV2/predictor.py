@@ -27,24 +27,27 @@ class PredictionResponse:
 
 
 class Predictor:
-    def __init__(self, waypoints: WaypointsGraph, model_path="models/regularizedCNN_L0.053_12-06-2021_13-38-13.pth", resolution=0.1, sensing_limit=20, use_cuda=True):
+    def __init__(self, waypoints: WaypointsGraph, resolution=0.1, sensing_limit=20, use_cuda=True):
         # Resolution is distance in meters per pixel
         # sensing_limit: the longest distance to sense along 4 directions (m). The side length of the square = 2*sensing_limit
+        
+        self.use_cuda = use_cuda
+        self.spot_detector = LocalDetector(spot_color_rgb=(0, 255, 0))
+        self.waypoints = waypoints
+        self.resolution = resolution
+        self.sensing_limit = sensing_limit
+
+    def load_model(self, model_path: str):
         model = RegularizedCNN()
-        if use_cuda:
+        if self.use_cuda:
             model_state = torch.load(model_path)
         else:
             model_state = torch.load(model_path, map_location=torch.device('cpu'))
         model.load_state_dict(model_state)
         model.eval()
-        if use_cuda:
+        if self.use_cuda:
             model.cuda()
-        self.use_cuda = use_cuda
         self.model = model
-        self.spot_detector = LocalDetector(spot_color_rgb=(0, 255, 0))
-        self.waypoints = waypoints
-        self.resolution = resolution
-        self.sensing_limit = sensing_limit
             
         
     def predict(self, instance_centric_view, global_position, heading, speed, time_spent_in_lot) -> PredictionResponse:
@@ -56,6 +59,9 @@ class Predictor:
         spent in lot
         
         """
+        assert self.model != None, "You must call load_model before trying to predict"
+
+
         
         image_features, non_spatial_features, spot_coordinates = self.get_features(instance_centric_view, global_position, heading, speed, time_spent_in_lot)
         scores = []

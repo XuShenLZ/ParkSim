@@ -1,5 +1,5 @@
 from PIL import ImageDraw, Image
-from parksim.agents.rule_based_stanley_vehicle_v2 import RuleBasedStanleyVehicle
+from parksim.agents.rule_based_stanley_vehicle import RuleBasedStanleyVehicle
 import numpy as np
 import os
 from pathlib import Path
