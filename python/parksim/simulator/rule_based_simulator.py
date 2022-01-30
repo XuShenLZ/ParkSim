@@ -20,7 +20,7 @@ np.random.seed(44) # ones with interesting cases: 20, 33, 44, 60
 parking_spaces_path = 'ParkSim/parking_spaces.npy'
 offline_maneuver_path = 'ParkSim/parking_maneuvers.pickle'
 waypoints_graph_path = 'ParkSim/waypoints_graph.pickle'
-intent_model_path = 'ParkSim/python/parksim/intent_predict/cnnV2/models/regularizedCNN_L0.053_12-06-2021_13-38-13.pth'
+intent_model_path = 'ParkSim/python/parksim/intent_predict/cnnV2/models/smallRegularizedCNN_L0.068_01-29-2022_19-50-35.pth'
 entrance_coords = [14.38, 76.21]
 
 overshoot_ranges = {'pointed_right': [(42, 48), (67, 69), (92, 94), (113, 115), (134, 136), (159, 161), (184, 186), (205, 207), (226, 228), (251, 253), (276, 278), (297, 299), (318, 320), (343, 345)],
@@ -171,8 +171,9 @@ class RuleBasedSimulator(object):
                 distribution = result.distribution
                 for i in range(len(distribution) - 1):
                     coords = result.all_spot_centers[i]
+                    coords[0] -= 2
                     prob = format(distribution[i], '.2f')
-                    self.vis.draw_text(coords, prob, 10)
+                    self.vis.draw_text(coords, prob, 15)
             self.vis.render()
 
 def main():
