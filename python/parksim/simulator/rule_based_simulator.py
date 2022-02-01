@@ -13,7 +13,8 @@ from parksim.visualizer.realtime_visualizer import RealtimeVisualizer
 
 from parksim.agents.rule_based_stanley_vehicle import RuleBasedStanleyVehicle
 
-np.random.seed(44) # ones with interesting cases: 20, 33, 44, 60
+np.random.seed(654) # ones with interesting cases: 20, 33, 44, 60
+# 44, 654 has a unparking car ignoring braked vehicles
 
 # These parameters should all become ROS param for simulator and vehicle
 parking_spaces_path = '/ParkSim/parking_spaces.npy'
@@ -28,6 +29,9 @@ overshoot_ranges = {'pointed_right': [(42, 48), (67, 69), (92, 94), (113, 115), 
 
 anchor_points = [47, 93, 135, 185, 227, 277, 319, 344] # for now, second spot at the start of a row
 anchor_spots = [list(range(21)) + list(range(42, 67)), list(range(21, 42)) + list(range(92, 113)), list(range(67, 92)) + list(range(134, 159)), list(range(113, 134)) + list(range(184, 205)), list(range(159, 184)) + list(range(226, 251)), list(range(205, 226)) + list(range(276, 297)), list(range(251, 276)) + list(range(318, 343)), list(range(297, 318)) + list(range(343, 364))]
+
+north_spot_idx_ranges = [(0, 41), (67, 91), (113, 133), (159, 183), (205, 225), (251, 275), (297, 317)]
+spot_y_offset = 5
 
 class RuleBasedSimulator(object):
     def __init__(self, dataset: Dataset, vis: RealtimeVisualizer, anchor_points: List[int]):
@@ -94,7 +98,7 @@ class RuleBasedSimulator(object):
 
         # NOTE: These lines are here for now. In the ROS implementation, they will all be in the vehicle node, no the simulator node
         vehicle = RuleBasedStanleyVehicle(vehicle_id=self.num_vehicles, vehicle_body=vehicle_body, vehicle_config=vehicle_config)
-        vehicle.load_parking_spaces(parking_spaces_path=parking_spaces_path)
+        vehicle.load_parking_spaces(parking_spaces_path=parking_spaces_path, north_spot_idx_ranges=north_spot_idx_ranges, spot_y_offset=spot_y_offset)
         vehicle.set_anchor(going_to_anchor=spot_index>0, spot_index=spot_index, should_overshoot=False, anchor_points=anchor_points, anchor_spots=anchor_spots)
         vehicle.load_graph(waypoints_graph_path=waypoints_graph_path, entrance_coords=entrance_coords)
         vehicle.load_maneuver(offline_maneuver_path=offline_maneuver_path, overshoot_ranges=overshoot_ranges)
@@ -137,8 +141,6 @@ class RuleBasedSimulator(object):
                 vehicle.get_other_info(active_vehicles)
                 vehicle.set_method_to_get_central_occupancy(self.occupied)
                 vehicle.set_method_to_change_central_occupancy(self.occupied)
-                vehicle.set_method_to_change_other_priority(active_vehicles)
-                vehicle.set_method_to_change_other_crash_set(active_vehicles)
 
                 vehicle.solve()
                 # result = vehicle.predict_intent()
@@ -160,7 +162,7 @@ class RuleBasedSimulator(object):
 
                 self.vis.draw_vehicle(state=vehicle.state, fill=fill)
                 self.vis.draw_line(points=np.array([vehicle.x_ref, vehicle.y_ref]).T, color=(39,228,245, 193))
-                on_vehicle_text = "N/A" if vehicle.priority is None else round(vehicle.priority, 3)
+                on_vehicle_text = "N" if vehicle.priority is None else round(vehicle.priority, 3)
                 self.vis.draw_text([vehicle.state.x.x - 2, vehicle.state.x.y + 2], on_vehicle_text, size=25)
                 # self.vis.draw_text([x,y], prob, size, color)
             self.vis.render()
