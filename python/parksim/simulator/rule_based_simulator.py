@@ -17,11 +17,10 @@ from parksim.visualizer.realtime_visualizer import RealtimeVisualizer
 
 from parksim.agents.rule_based_stanley_vehicle import RuleBasedStanleyVehicle, BrakeState
 
-np.random.seed(300)
+np.random.seed(654)
 # cases and possible solutions
-# 6 is a tough edge case
-# 21 (4, 4) produces left-hand turn with straight case
-# 200 (6, 6)
+# may need to not let people unpark/park in edge spots for now (see 6 (3, 3))
+# 200 (6, 6) double unparking in close proximity weirdness
 
 class RuleBasedSimulator(object):
     def __init__(self, dataset: Dataset, offline_maneuver: OfflineManeuver, vis: RealtimeVisualizer):
@@ -52,8 +51,8 @@ class RuleBasedSimulator(object):
         # self.entrance_vertex = 243
         self.entrance_vertex = self.graph.search([14.38, 76.21])
 
-        self.spawn_entering = 6 # number of vehicles to enter
-        self.spawn_exiting = 6 # number of vehicles to exit
+        self.spawn_entering = 3 # number of vehicles to enter
+        self.spawn_exiting = 3 # number of vehicles to exit
         self.spawn_exiting_loops = np.random.choice(range(self.spawn_exiting * self.spawn_wait), self.spawn_exiting)
 
         self.vehicles: List[RuleBasedStanleyVehicle] = []
@@ -210,7 +209,7 @@ class RuleBasedSimulator(object):
                         last_waypoint = i
                         break
 
-            """"Parking in edge spot edge case:
+            """"Parking in near edge spot on bottom edge case:
                 new_ax, new_ay = new_ax[:last_waypoint + 1], new_ay[:last_waypoint + 1]
 TypeError: unsupported operand type(s) for +: 'NoneType' and 'int'
 Produced by 11, (4, 4)"""
@@ -293,7 +292,6 @@ Produced by 11, (4, 4)"""
                             
                             # don't check for crash with self, or vehicles that are all done
                             others = [veh for veh in (self.vehicles[:i] + self.vehicles[i+1:]) if not veh.all_done()]
-                            
                             #vehicle.crash_set.update(vehicle.will_crash(others, self.look_ahead_timesteps, radius=self.crash_check_radius))
                             vehicles_will_crash = list(vehicle.will_crash(others, self.look_ahead_timesteps, radius=self.crash_check_radius))
                             # if will crash
@@ -324,7 +322,7 @@ Produced by 11, (4, 4)"""
 
                                 # set priority if not already set for this vehicle
                                 if vehicle.priority is None:
-                                    other_v = list(vehicles_will_crash)[0] # TODO: what if there are multiple cars it will crash with?
+                                    other_v = vehicles_will_crash[0] # TODO: what if there are multiple cars it will crash with?
                                     #if not vehicle.should_go_before(other_v):
                                     if not any([vehicle.should_go_before(veh) for veh in vehicles_will_crash]): 
                                         next_state = BrakeState.WAITING # go straight to waiting, no priority calculations necessary

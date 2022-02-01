@@ -137,7 +137,7 @@ class RuleBasedStanleyVehicle(AbstractAgent):
             # detect crash
             for v in range(len(other_vehicles)):
                 if other_vehicles[v] not in will_crash_with: # for efficiency
-                    if self.will_collide(other_look_ahead_states[v], other_vehicles[v].vehicle_body):
+                    if self.will_collide(look_ahead_state, other_look_ahead_states[v], other_vehicles[v].vehicle_body):
                         will_crash_with.add(other_vehicles[v])
 
 

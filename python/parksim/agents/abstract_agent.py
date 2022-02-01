@@ -30,7 +30,7 @@ class AbstractAgent(ABC):
         """
         return v2c(state=state, vehicle_body=vehicle_body)
 
-    def will_collide(self, state: VehicleState, vehicle_body: VehicleBody) -> bool:
+    def will_collide(self, this_state: VehicleState, other_state: VehicleState, vehicle_body: VehicleBody) -> bool:
         """
         Check collision using circles. Return True if will collide
         
@@ -38,8 +38,8 @@ class AbstractAgent(ABC):
         vehicle_body: The vehicle body of the other vehicle
         eps: A tunable safety margin
         """
-        circles_self = self._v2c(self.state, self.vehicle_body)
-        circles_other = self._v2c(state, vehicle_body)
+        circles_self = self._v2c(this_state, self.vehicle_body)
+        circles_other = self._v2c(other_state, vehicle_body)
 
         for circle_a, circle_b in product(circles_self, circles_other):
             dist = np.linalg.norm([circle_a[0]-circle_b[0], circle_a[1]-circle_b[1]])
