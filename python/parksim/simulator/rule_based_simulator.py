@@ -17,9 +17,11 @@ from parksim.visualizer.realtime_visualizer import RealtimeVisualizer
 
 from parksim.agents.rule_based_stanley_vehicle import RuleBasedStanleyVehicle, BrakeState
 
-np.random.seed(100)
+np.random.seed(300)
 # cases and possible solutions
 # 6 is a tough edge case
+# 21 (4, 4) produces left-hand turn with straight case
+# 200 (6, 6)
 
 class RuleBasedSimulator(object):
     def __init__(self, dataset: Dataset, offline_maneuver: OfflineManeuver, vis: RealtimeVisualizer):
@@ -50,8 +52,8 @@ class RuleBasedSimulator(object):
         # self.entrance_vertex = 243
         self.entrance_vertex = self.graph.search([14.38, 76.21])
 
-        self.spawn_entering = 3 # number of vehicles to enter
-        self.spawn_exiting = 3 # number of vehicles to exit
+        self.spawn_entering = 6 # number of vehicles to enter
+        self.spawn_exiting = 6 # number of vehicles to exit
         self.spawn_exiting_loops = np.random.choice(range(self.spawn_exiting * self.spawn_wait), self.spawn_exiting)
 
         self.vehicles: List[RuleBasedStanleyVehicle] = []
@@ -207,6 +209,11 @@ class RuleBasedSimulator(object):
                     if new_ax[i] > last_x:
                         last_waypoint = i
                         break
+
+            """"Parking in edge spot edge case:
+                new_ax, new_ay = new_ax[:last_waypoint + 1], new_ay[:last_waypoint + 1]
+TypeError: unsupported operand type(s) for +: 'NoneType' and 'int'
+Produced by 11, (4, 4)"""
             new_ax, new_ay = new_ax[:last_waypoint + 1], new_ay[:last_waypoint + 1]
 
             if pointed_right:
@@ -287,9 +294,12 @@ class RuleBasedSimulator(object):
                             # don't check for crash with self, or vehicles that are all done
                             others = [veh for veh in (self.vehicles[:i] + self.vehicles[i+1:]) if not veh.all_done()]
                             
-                            vehicle.crash_set.update(vehicle.will_crash(others, self.look_ahead_timesteps, radius=self.crash_check_radius))
+                            #vehicle.crash_set.update(vehicle.will_crash(others, self.look_ahead_timesteps, radius=self.crash_check_radius))
+                            vehicles_will_crash = list(vehicle.will_crash(others, self.look_ahead_timesteps, radius=self.crash_check_radius))
                             # if will crash
-                            if len(vehicle.crash_set) > 0:
+                            #if len(vehicle.crash_set) > 0:
+                            if len(vehicles_will_crash) > 0:
+                                """"
                                 # add ourselves to the crash set
                                 vehicle.crash_set.add(vehicle)
                                 # add ourselves to other vehicle crash sets (to cause them to stop)
@@ -308,12 +318,22 @@ class RuleBasedSimulator(object):
                                         secondary_crash_set.update(v.crash_set)
                                     new_len = len(secondary_crash_set)
                                     vehicle.crash_set.update(secondary_crash_set)
-
+                                """
                                 # variable to tell where to go next (default is braking)
                                 next_state = BrakeState.BRAKING
 
                                 # set priority if not already set for this vehicle
                                 if vehicle.priority is None:
+                                    other_v = list(vehicles_will_crash)[0] # TODO: what if there are multiple cars it will crash with?
+                                    #if not vehicle.should_go_before(other_v):
+                                    if not any([vehicle.should_go_before(veh) for veh in vehicles_will_crash]): 
+                                        next_state = BrakeState.WAITING # go straight to waiting, no priority calculations necessary
+                                        vehicle.priority = other_v.priority - 1 if other_v.priority is not None else -1 # so cars that may brake behind it can have a priority
+                                        vehicle.waiting_for = other_v
+                                    else: # leading car
+                                        next_state = BrakeState.NOT_BRAKING # don't brake
+
+                                    """"
                                     # for leading/trailing situation
                                     lst = list(vehicle.crash_set)
                                     # ang = ((lst[0].state.e.psi - lst[1].state.e.psi) + (2 * np.pi)) % (2 * np.pi) # [0, 2pi)
@@ -341,12 +361,13 @@ class RuleBasedSimulator(object):
                                             next_state = BrakeState.WAITING
                                             vehicle.waiting_for = min([v for v in vehicle.crash_set if v is not vehicle], key=lambda v: v.priority)
                                             vehicle.priority = min([v.priority for v in vehicle.crash_set if v is not vehicle]) - 1
-
+                                    """
                                 if next_state != BrakeState.NOT_BRAKING:
                                     vehicle.brake(brake_state=next_state) 
 
                     elif vehicle.brake_state == BrakeState.BRAKING: # when we don't know who we're waiting for yet, but know we need to brake
                 
+                        """"
                         # don't check for crash with self, or vehicles that are all done
                         others = [veh for veh in (self.vehicles[:i] + self.vehicles[i+1:]) if not veh.all_done()]
                         
@@ -386,6 +407,8 @@ class RuleBasedSimulator(object):
                             
                             vehicle.brake_state = BrakeState.WAITING
 
+                        """
+
                     else: # waiting
                 
                         # parking
@@ -418,11 +441,12 @@ class RuleBasedSimulator(object):
                                     should_unbrake = True
 
                             if should_unbrake:
+                                """"
                                 # remove vehicle from other vehicle's crash sets
                                 for c in vehicle.crash_set:
                                     if c != vehicle and vehicle in c.crash_set:
                                         c.crash_set.remove(vehicle)
-
+                                """
                                 vehicle.unbrake() # also sets brake_state to NOT_BRAKING
                 
                     # if gotten near anchor point, figure out where to go next
