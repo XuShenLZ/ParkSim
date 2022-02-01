@@ -84,9 +84,10 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         self.other_ref_v: Dict[int, float] = {}
         self.other_target_idx: Dict[int, int] = {}
         self.other_priority: Dict[int, float] = {}
-        self.other_parking_status: Dict[int, str] = {} # Other vehicles will broadcast "PARKING" if vehicle.is_parking(), "UNPARKING" if vehicle.is_unparking(), "NONE" otherwise
-        self.other_is_braking: Dict[int, str] = {}
+        self.other_parking_flag: Dict[int, str] = {} # The parking flag of other vehicle
+        self.other_parking_progress: Dict[int, str] = {} # Other vehicles will broadcast "PARKING" if vehicle.is_parking(), "UNPARKING" if vehicle.is_unparking(), None otherwise
         self.other_parking_start_time: Dict[int, float] = {}
+        self.other_is_braking: Dict[int, str] = {}
         self.other_waiting_for: Dict[int, int] = {}
 
         # ============== Method to exchange information
@@ -339,7 +340,14 @@ class RuleBasedStanleyVehicle(AbstractAgent):
             self.other_target_idx[id] = v.target_idx
             self.other_priority[id] = v.priority
 
-            self.other_parking_status[id] = v.parking_flag
+            # TODO: distinguish between "mid_park" and "parking"
+            self.other_parking_flag[id] = v.parking_flag
+            if v.is_parking():
+                self.other_parking_progress[id] = "PARKING"
+            elif v.is_unparking():
+                self.other_parking_progress[id] = "UNPARKING"
+            else:
+                self.other_parking_progress[id] = None
 
             self.other_is_braking[id] = v.is_braking()
             self.other_parking_start_time[id] = v.parking_start_time
@@ -420,7 +428,7 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         ang = ((np.arctan2(self.other_state[other_id].x.y - self.state.x.y, self.other_state[other_id].x.x - self.state.x.x) - self.state.e.psi) + (2*np.pi)) % (2*np.pi)
         dist = np.linalg.norm([self.other_state[other_id].x.x - self.state.x.x, self.other_state[other_id].x.y - self.state.x.y])
         
-        if ang < np.pi / 6 or ang > 2 * np.pi - np.pi / 6: # within 30 degrees each way
+        if ang < self.vehicle_config.parking_ahead_angle or ang > 2 * np.pi - self.vehicle_config.parking_ahead_angle:
             return dist < 2*self.vehicle_config.parking_radius
         else:
             return dist < self.vehicle_config.parking_radius
@@ -443,8 +451,7 @@ class RuleBasedStanleyVehicle(AbstractAgent):
             else:
                 location = 'left' if (direction == 'east') else 'right' # we are designed to undershoot the spot
             pointing = 'up' if np.random.rand() < 0.5 else 'down' # random for diversity
-            north_spot_ranges = [(0, 41), (67, 91), (113, 133), (159, 183), (205, 225), (251, 275), (297, 317)]
-            spot = 'north' if any([self.spot_index >= r[0] and self.spot_index <= r[1] for r in north_spot_ranges]) else 'south'
+            spot = 'north' if any([self.spot_index >= r[0] and self.spot_index <= r[1] for r in self.north_spot_idx_ranges]) else 'south'
             
             # get parking maneuver
             self.parking_maneuver_state, self.parking_maneuver_input = self.offline_maneuver.get_maneuver([self.park_start_coords[0] - 4 if location == 'right' else self.park_start_coords[0] + 4, self.park_start_coords[1]], direction, location, spot, pointing)
@@ -470,8 +477,7 @@ class RuleBasedStanleyVehicle(AbstractAgent):
             direction = 'west' if self.x_ref[0] > self.x_ref[1] else 'east' # if first direction of travel is left, face west
             location = 'right' if np.random.rand() < 0.5 else 'left' # random for diversity
             pointing = 'up' if self.state.e.psi > 0 else 'down' # determine from state
-            north_spot_ranges = [(0, 41), (67, 91), (113, 133), (159, 183), (205, 225), (251, 275), (297, 317)]
-            spot = 'north' if any([-self.spot_index >= r[0] and -self.spot_index <= r[1] for r in north_spot_ranges]) else 'south'
+            spot = 'north' if any([-self.spot_index >= r[0] and -self.spot_index <= r[1] for r in self.north_spot_idx_ranges]) else 'south'
             
             # get parking maneuver
             self.unparking_maneuver_state, self.unparking_maneuver_input = self.offline_maneuver.get_maneuver([self.state.x.x if location == 'right' else self.state.x.x, self.state.x.y - 6.25 if spot == 'north' else self.state.x.y + 6.25], direction, location, spot, pointing)
@@ -576,7 +582,7 @@ class RuleBasedStanleyVehicle(AbstractAgent):
                     self.set_ref_v(self.vehicle_config.v_end)
 
                 # detect parking and unparking
-                nearby_parkers = [id for id in self.other_vehicles if (self.other_parking_status[id] is not None) and self.other_within_parking_box(id)]
+                nearby_parkers = [id for id in self.other_vehicles if (self.other_parking_progress[id] is not None) and self.other_within_parking_box(id)]
 
                 if nearby_parkers:
                     # should only be one nearby parker, since they wait for each other
@@ -586,7 +592,7 @@ class RuleBasedStanleyVehicle(AbstractAgent):
                     self.waiting_for = parker_id
                     self.priority = -1
 
-                    if self.other_parking_status[parker_id] == "UNPARKING":
+                    if self.other_parking_flag[parker_id] == "UNPARKING":
                         self.waiting_for_unparker = True
 
                 else: # No one is parking
@@ -666,12 +672,12 @@ class RuleBasedStanleyVehicle(AbstractAgent):
 
             else: # waiting
                 # parking
-                if self.waiting_for is not None and self.other_parking_status[self.waiting_for]:
+                if self.waiting_for is not None and self.other_parking_flag[self.waiting_for] == "PARKING":
                     if self.waiting_for not in self.other_vehicles:
                         self.unbrake()
                         
                 elif self.waiting_for is not None and self.waiting_for_unparker:
-                    if self.other_parking_status[self.waiting_for] != "UNPARKING":
+                    if self.other_parking_flag[self.waiting_for] != "UNPARKING":
                         self.waiting_for_unparker = False
                         self.unbrake()
 
@@ -724,7 +730,7 @@ class RuleBasedStanleyVehicle(AbstractAgent):
             # everyone within range should be braking or parking or unparking
             # TODO: this doesn't yet account for a braked vehicle in the way of our parking
             should_go = all([self.other_is_braking[id]
-                            or (self.other_parking_status[id] is not None and self.other_parking_start_time[id] > self.parking_start_time)
+                            or (self.other_parking_flag[id] is not None and self.other_parking_start_time[id] > self.parking_start_time)
                             or np.linalg.norm([self.state.x.x - self.other_state[id].x.x, self.state.x.y - self.other_state[id].x.y]) >= 2*self.vehicle_config.parking_radius for id in self.other_vehicles])
 
             if self.park_start_coords is None:
@@ -735,7 +741,7 @@ class RuleBasedStanleyVehicle(AbstractAgent):
 
             # TODO: this doesn't yet account for a braked / (un)parking vehicle in the way of our parking
             should_go = all([self.other_is_braking[id] 
-                            or (self.other_parking_status[id] is not None and self.other_parking_start_time[id] > self.parking_start_time)
+                            or (self.other_parking_flag[id] is not None and self.other_parking_start_time[id] > self.parking_start_time)
                             or np.linalg.norm([self.state.x.x - self.other_state[id].x.x, self.state.x.y - self.other_state[id].x.y]) >= 2*self.vehicle_config.parking_radius for id in self.other_vehicles])
 
             self.update_state_unparking(should_go)
