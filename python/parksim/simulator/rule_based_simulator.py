@@ -13,7 +13,7 @@ from parksim.visualizer.realtime_visualizer import RealtimeVisualizer
 
 from parksim.agents.rule_based_stanley_vehicle import RuleBasedStanleyVehicle
 
-np.random.seed(20) # ones with interesting cases: 20, 33, 44, 60
+np.random.seed(44) # ones with interesting cases: 20, 33, 44, 60
 
 # These parameters should all become ROS param for simulator and vehicle
 parking_spaces_path = '/ParkSim/parking_spaces.npy'
@@ -152,7 +152,7 @@ class RuleBasedSimulator(object):
 
                 if vehicle.is_all_done():
                     fill = (0, 0, 0, 255)
-                elif vehicle.is_braking():
+                elif vehicle.is_braking:
                     fill = (255, 0, 0, 255)
                 elif vehicle.parking_flag:
                     fill = (255, 128, 0, 255)
@@ -161,7 +161,7 @@ class RuleBasedSimulator(object):
 
                 self.vis.draw_vehicle(state=vehicle.state, fill=fill)
                 self.vis.draw_line(points=np.array([vehicle.x_ref, vehicle.y_ref]).T, color=(39,228,245, 193))
-                on_vehicle_text =  str(vehicle.vehicle_id) + ": "
+                on_vehicle_text =  str(vehicle.vehicle_id) + ":"
                 on_vehicle_text += "N" if vehicle.priority is None else str(round(vehicle.priority, 3))
                 self.vis.draw_text([vehicle.state.x.x - 2, vehicle.state.x.y + 2], on_vehicle_text, size=25)
                 # self.vis.draw_text([x,y], prob, size, color)

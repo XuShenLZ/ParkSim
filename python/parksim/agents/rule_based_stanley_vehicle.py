@@ -71,7 +71,7 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         self.unparking_step = 0
         
         # braking stuff
-        self.braking_flag = "NOT_BRAKING" # are we braking? "NOT_BRAKING", "BRAKING", "WAITING"
+        self.is_braking = False # are we braking?
         self._pre_brake_target_speed = 0 # speed to restore when unbraking
         self.priority = None # priority for going after braking
         self.waiting_for: int = None # vehicle waiting for before we go
@@ -340,7 +340,7 @@ class RuleBasedStanleyVehicle(AbstractAgent):
             self.other_target_idx[id] = v.target_idx
             self.other_priority[id] = v.priority
 
-            # TODO: distinguish between "mid_park" and "parking"
+            # NOTE: distinguish between "mid_park" and "parking"
             self.other_parking_flag[id] = v.parking_flag
             if v.is_parking():
                 self.other_parking_progress[id] = "PARKING"
@@ -349,7 +349,7 @@ class RuleBasedStanleyVehicle(AbstractAgent):
             else:
                 self.other_parking_progress[id] = None
 
-            self.other_is_braking[id] = v.is_braking()
+            self.other_is_braking[id] = v.is_braking
             self.other_parking_start_time[id] = v.parking_start_time
             self.other_waiting_for[id] = v.waiting_for
 
@@ -368,7 +368,7 @@ class RuleBasedStanleyVehicle(AbstractAgent):
             self.motion_predictor.set_ref_pose(self.x_ref, self.y_ref, self.yaw_ref)
             self.motion_predictor.set_ref_v(self.v_ref)
             self.motion_predictor.set_target_idx(self.target_idx)
-            ai, di, _ = self.motion_predictor.solve(look_ahead_state, self.is_braking())
+            ai, di, _ = self.motion_predictor.solve(look_ahead_state, self.is_braking)
             self.motion_predictor.step(look_ahead_state, ai, di)
 
             for id, other_look_ahead_state in zip(surrounding_ids, other_look_ahead_states):
@@ -438,7 +438,7 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         self.controller.set_ref_v(self.v_ref)
         self.controller.set_target_idx(self.target_idx)
         # get acceleration toward target speed (ai), amount we should turn (di), and next target (target_idx)
-        ai, di, self.target_idx = self.controller.solve(self.state, self.is_braking())
+        ai, di, self.target_idx = self.controller.solve(self.state, self.is_braking)
         # advance state of vehicle (updates x, y, yaw, velocity)
         self.controller.step(self.state, ai, di)
             
@@ -522,29 +522,23 @@ class RuleBasedStanleyVehicle(AbstractAgent):
 
         return corners + center
 
-    def brake(self, braking_flag="BRAKING"):
+    def brake(self):
         """
         Set target speed to 0 and turn on brakes, which make deceleration faster
         """
         self._pre_brake_target_speed = self.v_ref
         self.v_ref = 0
-        self.braking_flag = braking_flag
+        self.is_braking = True
 
     def unbrake(self):
         """
         Set target speed back to what it was. Only does something if braking
         """
-        if self.braking_flag != "NOT_BRAKING":
+        if self.is_braking:
             self.v_ref = self._pre_brake_target_speed
-            self.braking_flag = "NOT_BRAKING"
+            self.is_braking = False
             self.priority = None
             self.waiting_for = None
-
-    def is_braking(self):
-        """
-        Are we braking?
-        """
-        return self.braking_flag != "NOT_BRAKING"
     
     def is_parking(self):
         """
@@ -574,7 +568,7 @@ class RuleBasedStanleyVehicle(AbstractAgent):
             # normal driving (haven't reached pre-parking point)
 
             # braking controller
-            if self.braking_flag == "NOT_BRAKING":
+            if not self.is_braking:
                 # normal speed controller if not braking
                 if self.target_idx < self.num_waypoints() - self.vehicle_config.steps_to_end:
                     self.set_ref_v(self.vehicle_config.v_max)
@@ -586,9 +580,8 @@ class RuleBasedStanleyVehicle(AbstractAgent):
 
                 if nearby_parkers:
                     # should only be one nearby parker, since they wait for each other
-                    # TODO: What does this mean?
                     parker_id = nearby_parkers[0]
-                    self.brake(braking_flag="WAITING")
+                    self.brake()
                     self.waiting_for = parker_id
                     self.priority = -1
 
@@ -602,75 +595,25 @@ class RuleBasedStanleyVehicle(AbstractAgent):
                     if ids_will_crash_with:
                         
                         # variable to tell where to go next (default is braking)
-                        next_flag = "BRAKING"
+                        going_to_brake = True
 
                         # set priority if not already set for this vehicle
                         if self.priority is None:
                             other_id = ids_will_crash_with[0] # TODO: what if there are multiple cars it will crash with?
 
                             if not any([self.should_go_before(id) for id in ids_will_crash_with]):
-                                next_flag = "WAITING" # go straight to waiting, no priority calculations necessary
+                                going_to_brake = True # go straight to waiting, no priority calculations necessary
 
                                 self.priority = self.other_priority[other_id] - 1 if self.other_priority[other_id] is not None else -1 # so cars that may brake behind it can have a priority
 
                                 self.waiting_for = other_id
                             else: # leading car
-                                next_flag = "NOT_BRAKING" # don't brake
+                                going_to_brake = False # don't brake
                         
-                        if next_flag != "NOT_BRAKING":
-                            self.brake(braking_flag=next_flag)
+                        if going_to_brake:
+                            self.brake()
 
-            elif self.braking_flag == "BRAKING": # when we don't know who we're waiting for yet, but know we need to brake
-                
-                # TODO: So we just pass here?
-                pass
-                
-                """
-                # don't check for crash with self, or vehicles that are all done
-                crasher_ids = self.will_crash_with()
-
-                if crasher_ids:
-                    self.crash_set.update(crasher_ids)
-
-                    for other_id in crasher_ids:
-                        self.change_other_crash_set(other_id, self.vehicle_id, "add")
-
-                # recursively add all that they will also crash with to our set
-                secondary_crash_set = set()
-                old_len = 0
-                new_len = 1 # just to make sure the loop runs at least once
-
-                # keep checking until no longer adding vehicles
-                while new_len - old_len > 0:
-                    old_len = len(secondary_crash_set)
-                    for id in self.crash_set:
-                        secondary_crash_set.update(self.other_crash_set[id])
-                    new_len = len(secondary_crash_set)
-                    self.crash_set.update(secondary_crash_set)
-
-                # if everyone stopped
-                if all([self.other_state[other_id].v.v < 0.05 for other_id in self.crash_set if other_id != self.vehicle_id] + [self.state.v.v < 0.05]):
-                    d = {}
-                    d[self.vehicle_id] = self.priority
-                    for id in self.crash_set:
-                        if id != self.vehicle_id:
-                            d[id] = self.other_priority[id]
-
-                    # determine order of going (for now random)
-                    order = sorted(d.items(), key=lambda o: o[1], reverse=True)
-
-                    # determine who we're waiting for
-                    if order[0][0] == self.vehicle_id: # we go first
-                        self.waiting_for = None
-                    else: # we're waiting
-                        for oi in range(1, len(order)):
-                            if order[oi][0] == self.vehicle_id:
-                                self.waiting_for = order[oi - 1][0]
-                    
-                    self.braking_flag = "WAITING"
-                """
-
-            else: # waiting
+            else: # waiting / braking
                 # parking
                 if self.waiting_for is not None and self.other_parking_flag[self.waiting_for] == "PARKING":
                     if self.waiting_for not in self.other_vehicles:
