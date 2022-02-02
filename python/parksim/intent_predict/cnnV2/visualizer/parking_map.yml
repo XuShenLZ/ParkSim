@@ -1,0 +1,325 @@
+MAP_SIZE: {'x': 140, 'y': 80}
+
+PARKING_AREAS: {
+    'A': { # top
+        'bounds': [
+            [28.53, 73.73],
+            [138.42, 73.73],
+            [138.42, 68.51],
+            [28.53, 68.51]],
+        'areas': [
+            {
+                'shape': [1, 42],
+                'coords': null
+            }
+        ]},
+    'B': { # left, 1st down
+        'bounds': [ 
+            [7.71, 61.4],
+            [76.54, 61.4],
+            [76.54, 50.4],
+            [7.71, 50.4]],
+        'areas': [
+            {
+                'shape': [2, 25],
+                'coords': null
+            }
+        ]},
+    'C': { # right, 1st down
+        'bounds': [ 
+            [83.82, 61.4],
+            [138.42, 61.4],
+            [138.42, 50.4],
+            [83.82, 50.4]],
+        'areas': [
+            {
+                'shape': [2, 21],
+                'coords': null
+            }
+        ]},
+    'D': { # left, 2nd down
+        'bounds': [ 
+            [7.71, 43.24],
+            [76.54, 43.24],
+            [76.54, 31.93],
+            [7.71, 31.93]],
+        'areas': [
+            {
+                'shape': [2, 25],
+                'coords': null
+            }
+        ]},
+    'E': { # right, 2nd down
+        'bounds': [ 
+            [83.82, 43.24],
+            [138.42, 43.24],
+            [138.42, 31.93],
+            [83.82, 31.93]],
+        'areas': [
+            {
+                'shape': [2, 21],
+                'coords': null
+            }
+        ]},
+    'F': { # left, 3rd down
+        'bounds': [ 
+            [7.71, 24.68],
+            [76.54, 24.68],
+            [76.54, 13.51],
+            [7.71, 13.51]],
+        'areas': [
+            {
+                'shape': [2, 25],
+                'coords': null
+            }
+        ]},
+    'G': { # right, 3rd down
+        'bounds': [ 
+            [83.82, 24.68],
+            [138.42, 24.68],
+            [138.42, 13.51],
+            [83.82, 13.51]],
+        'areas': [
+            {
+                'shape': [2, 21],
+                'coords': null
+            }
+        ]},
+    'H': { # left, 4th down
+        'bounds': [ 
+            [7.71, 6.48],
+            [76.54, 6.48],
+            [76.54, 0.95],
+            [7.71, 0.95]],
+        'areas': [
+            {
+                'shape': [1, 25],
+                'coords': null
+            }
+        ]},
+    'I': { # right, 4th down
+        'bounds': [ 
+            [83.82, 6.48],
+            [138.42, 6.48],
+            [138.42, 0.95],
+            [83.82, 0.95]],
+        'areas': [
+            {
+                'shape': [1, 21],
+                'coords': null
+            }
+        ]}
+}
+
+WAYPOINTS: {
+    'R1L': { # 1st row, left
+        'bounds': [
+            [80.45, 64.95],
+            [9.09, 64.95]
+        ],
+        'nums': 27
+    },
+    'R1R': { # 1st row, right
+        'bounds': [
+            [137.12, 64.95],
+            [85.12, 64.95]
+        ],
+        'nums': 21
+    },
+    'R2L': { # 2nd row, left
+        'bounds': [
+            [75.16, 46.82],
+            [9.09, 46.82]
+        ],
+        'nums': 25
+    },
+    'R2R': { # 2st row, right
+        'bounds': [
+            [137.12, 46.82],
+            [85.12, 46.82]
+        ],
+        'nums': 21
+    },
+    'R3L': { # 3rd row, left
+        'bounds': [
+            [75.16, 28.3],
+            [9.09, 28.3]
+        ],
+        'nums': 25
+    },
+    'R3R': { # 3rd row, right
+        'bounds': [
+            [137.12, 28.3],
+            [85.12, 28.3]
+        ],
+        'nums': 21
+    },
+    'R4': { # 4st row, right
+        'bounds': [
+            [137.12, 9.99],
+            [9.09, 9.99]
+        ],
+        'nums': 47
+    },
+    'C1': { # 1st column (left one)
+        'bounds': [
+            [3.07, 60.66],
+            [3.07, 13.55]
+        ],
+        'nums': 11
+    },
+    'C2': { # 2nd column (right one)
+        'bounds': [
+            [80.18, 60.72],
+            [80.18, 14.2]
+        ],
+        'nums': 11
+    },
+    'R1C1BR': { # bottom-right intersection of row 1 and column 1
+        'bounds': [
+            [4.6, 63.05],
+            [6.6, 64.35]
+        ],
+        'nums': 2
+    },
+    'R2C1TR': { # top-right intersection of row 2 and column 1
+        'bounds': [
+            [4.6, 48.7],
+            [6.6, 47.2]
+        ],
+        'nums': 2
+    },
+    'R2C1BR': { 
+        'bounds': [
+            [4.6, 44.82],
+            [6.6, 46.32]
+        ],
+        'nums': 2
+    },
+    'R3C1TR': {
+        'bounds': [
+            [4.6, 30],
+            [6.6, 28.5]
+        ],
+        'nums': 2
+    },
+    'R3C1BR': {
+        'bounds': [
+            [4.6, 26.4],
+            [6.6, 27.9]
+        ],
+        'nums': 2
+    },
+    'R4C1TR': {
+        'bounds': [
+            [4.6, 11.8],
+            [6.6, 10.5]
+        ],
+        'nums': 2
+    },
+    'R1C2BL': { # bottom-left intersection of row 1 and column 2
+        'bounds': [
+            [78.65, 63.05],
+            [76.65, 64.35]
+        ],
+        'nums': 2
+    },
+    'R2C2TL': { # top-left intersection of row 2 and column 2
+        'bounds': [
+            [78.65, 48.7],
+            [76.65, 47.2]
+        ],
+        'nums': 2
+    },
+    'R2C2BL': { 
+        'bounds': [
+            [78.65, 44.82],
+            [76.65, 46.32]
+        ],
+        'nums': 2
+    },
+    'R3C2TL': {
+        'bounds': [
+            [78.65, 30],
+            [76.65, 28.5]
+        ],
+        'nums': 2
+    },
+    'R3C2BL': {
+        'bounds': [
+            [78.65, 26.4],
+            [76.65, 27.9]
+        ],
+        'nums': 2
+    },
+    'R4C2TL': {
+        'bounds': [
+            [78.65, 12.5],
+            [76.65, 11]
+        ],
+        'nums': 2
+    },
+    'R1C2BR': { # bottom-right intersection of row 1 and column 2
+        'bounds': [
+            [81.7, 63.05],
+            [83.7, 64.35]
+        ],
+        'nums': 2
+    },
+    'R2C2TR': { # top-right intersection of row 2 and column 2
+        'bounds': [
+            [81.7, 48.7],
+            [83.7, 47.2]
+        ],
+        'nums': 2
+    },
+    'R2C2BR': { 
+        'bounds': [
+            [81.7, 44.82],
+            [83.7, 46.32]
+        ],
+        'nums': 2
+    },
+    'R3C2TR': {
+        'bounds': [
+            [81.7, 30],
+            [83.7, 28.5]
+        ],
+        'nums': 2
+    },
+    'R3C2BR': {
+        'bounds': [
+            [81.7, 26.4],
+            [83.7, 27.9]
+        ],
+        'nums': 2
+    },
+    'R4C2TR': {
+        'bounds': [
+            [81.7, 12.5],
+            [83.7, 11]
+        ],
+        'nums': 2
+    },
+    'EXT': { # exit / entrance
+        'bounds': [
+            [14.38, 76.21],
+            [14.38, 70.9]
+        ],
+        'nums': 2
+    },
+    'EXTL': { #lrft exit curve
+        'bounds': [
+            [11.88, 67],
+            [11.88, 67]
+        ],
+        'nums': 1
+    },
+    'EXTR': { #right exit curve
+        'bounds': [
+            [16.88, 67],
+            [16.88, 67]
+        ],
+        'nums': 1
+    },
+}

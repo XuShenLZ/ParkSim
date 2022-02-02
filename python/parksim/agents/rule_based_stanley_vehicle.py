@@ -13,10 +13,13 @@ from parksim.pytypes import VehiclePrediction, VehicleState
 from parksim.route_planner.a_star import AStarPlanner
 from parksim.route_planner.graph import WaypointsGraph
 from parksim.utils.spline import calc_spline_course
+from parksim.utils.get_corners import get_vehicle_corners
 from parksim.vehicle_types import VehicleBody, VehicleConfig
+from parksim.intent_predict.cnnV2.predictor import Predictor, PredictionResponse
+from parksim.intent_predict.cnnV2.visualizer.instance_centric_generator import InstanceCentricGenerator
 
 class RuleBasedStanleyVehicle(AbstractAgent):
-    def __init__(self, vehicle_id: int, vehicle_body: VehicleBody, vehicle_config: VehicleConfig, controller: StanleyController = StanleyController(), motion_predictor: StanleyController = StanleyController(), intent_predictor = None):
+    def __init__(self, vehicle_id: int, vehicle_body: VehicleBody, vehicle_config: VehicleConfig, controller: StanleyController = StanleyController(), motion_predictor: StanleyController = StanleyController(), intent_predictor = Predictor()):
         self.vehicle_id = vehicle_id
 
         # State and Reference Waypoints
@@ -36,6 +39,7 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         self.controller = controller
         self.motion_predictor = motion_predictor
         self.intent_predictor = intent_predictor
+        self.inst_centric_generator = InstanceCentricGenerator()
 
         self.target_idx = 0
         self.reached_tgt = False
@@ -133,7 +137,12 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         self.overshoot_ranges = overshoot_ranges
 
     def load_intent_model(self, model_path: str):
-        pass
+        """
+        load_graph must be called before load_intent_model.
+        """
+        home_path = str(Path.home())
+        self.intent_predictor.load_model(waypoints=self.graph, model_path=home_path + model_path)
+
 
     def set_anchor(self, going_to_anchor: bool=None, spot_index: int=None, should_overshoot: bool=None, anchor_points: List[int]=None, anchor_spots: List[List[int]]=None):
 
@@ -513,14 +522,7 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         if vehicle_body is None:
             vehicle_body = self.vehicle_body
 
-        center = np.array([state.x.x, state.x.y])
-        psi = state.e.psi
-
-        R = np.array([[np.cos(psi), -np.sin(psi)], [np.sin(psi), np.cos(psi)]])
-
-        corners = (R @ vehicle_body.V.T).T
-
-        return corners + center
+        return get_vehicle_corners(state=state, vehicle_body=vehicle_body)
 
     def brake(self):
         """
@@ -691,22 +693,14 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         else: 
             self.update_state()
 
-    def predict_intent(self, vehicle_id=None, radius=None):
+    def predict_intent(self, vehicle_id=None):
         """
-        docstring
+        predict the intent of the specific vehicle
         """
         if vehicle_id is None:
-            pass
+            img = self.inst_centric_generator.inst_centric(self.state, self.other_state)
+            return self.intent_predictor.predict(img, np.array([self.state.x.x, self.state.x.y]), self.state.e.psi, self.state.v.v, 1.0)
             # Predicting ourselves
         else:
-            pass
+            raise NotImplementedError("Haven't inplement method for predicting other vehicles")
             # Predicting someone else
-
-        # The list of other vehicle ids can be found in self.other_vehicles
-        # Using self.other_state[vehicle_id] to get the state of other vehicles. State is of type VehicleState
-
-        # Filter the states that is inside the radius
-        
-        # Construct the instance centric view
-        # Run through the intent_predictor
-        # Return prob at each spot location

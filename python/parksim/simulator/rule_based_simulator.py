@@ -19,8 +19,7 @@ np.random.seed(44) # ones with interesting cases: 20, 33, 44, 60
 parking_spaces_path = '/ParkSim/parking_spaces.npy'
 offline_maneuver_path = '/ParkSim/parking_maneuvers.pickle'
 waypoints_graph_path = '/ParkSim/waypoints_graph.pickle'
-# Add the model path here
-# intent_model_path = ''
+intent_model_path = '/ParkSim/python/parksim/intent_predict/cnnV2/models/smallRegularizedCNN_L0.068_01-29-2022_19-50-35.pth'
 entrance_coords = [14.38, 76.21]
 
 overshoot_ranges = {'pointed_right': [(42, 48), (67, 69), (92, 94), (113, 115), (134, 136), (159, 161), (184, 186), (205, 207), (226, 228), (251, 253), (276, 278), (297, 299), (318, 320), (343, 345)],
@@ -101,7 +100,7 @@ class RuleBasedSimulator(object):
         vehicle.set_anchor(going_to_anchor=spot_index>0, spot_index=spot_index, should_overshoot=False, anchor_points=anchor_points, anchor_spots=anchor_spots)
         vehicle.load_graph(waypoints_graph_path=waypoints_graph_path, entrance_coords=entrance_coords)
         vehicle.load_maneuver(offline_maneuver_path=offline_maneuver_path, overshoot_ranges=overshoot_ranges)
-        # vehicle.load_intent_model(path=pth)
+        # vehicle.load_intent_model(model_path=intent_model_path)
         vehicle.start_vehicle()
 
         self.num_vehicles += 1
@@ -134,6 +133,7 @@ class RuleBasedSimulator(object):
                 print("No Active Vehicles")
                 break
                 
+            # results = []
             for vehicle_id in active_vehicles:
                 vehicle = active_vehicles[vehicle_id]
 
@@ -143,6 +143,7 @@ class RuleBasedSimulator(object):
 
                 vehicle.solve()
                 # result = vehicle.predict_intent()
+                # results.append(result)
                 
             self.loops += 1
             self.time += 0.1
@@ -164,7 +165,14 @@ class RuleBasedSimulator(object):
                 on_vehicle_text =  str(vehicle.vehicle_id) + ":"
                 on_vehicle_text += "N" if vehicle.priority is None else str(round(vehicle.priority, 3))
                 self.vis.draw_text([vehicle.state.x.x - 2, vehicle.state.x.y + 2], on_vehicle_text, size=25)
-                # self.vis.draw_text([x,y], prob, size, color)
+                
+            # for result in results:
+            #     distribution = result.distribution
+            #     for i in range(len(distribution) - 1):
+            #         coords = result.all_spot_centers[i]
+            #         coords[0] -= 2
+            #         prob = format(distribution[i], '.2f')
+            #         self.vis.draw_text(coords, prob, 15)
             self.vis.render()
 
 def main():
