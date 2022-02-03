@@ -95,7 +95,7 @@ class RuleBasedSimulator(object):
     def add_vehicle(self, spot_index: int, vehicle_body: VehicleBody=VehicleBody(), vehicle_config: VehicleConfig=VehicleConfig()):
 
         # NOTE: These lines are here for now. In the ROS implementation, they will all be in the vehicle node, no the simulator node
-        vehicle = RuleBasedStanleyVehicle(vehicle_id=self.num_vehicles, vehicle_body=vehicle_body, vehicle_config=vehicle_config)
+        vehicle = RuleBasedStanleyVehicle(vehicle_id=self.num_vehicles, vehicle_body=vehicle_body, vehicle_config=vehicle_config, inst_centric_generator=None, intent_predictor=None)
         vehicle.load_parking_spaces(parking_spaces_path=parking_spaces_path, north_spot_idx_ranges=north_spot_idx_ranges, spot_y_offset=spot_y_offset)
         vehicle.set_anchor(going_to_anchor=spot_index>0, spot_index=spot_index, should_overshoot=False, anchor_points=anchor_points, anchor_spots=anchor_spots)
         vehicle.load_graph(waypoints_graph_path=waypoints_graph_path, entrance_coords=entrance_coords)
@@ -133,7 +133,7 @@ class RuleBasedSimulator(object):
                 print("No Active Vehicles")
                 break
                 
-            # results = []
+            # intent_pred_results = []
             for vehicle_id in active_vehicles:
                 vehicle = active_vehicles[vehicle_id]
 
@@ -143,7 +143,7 @@ class RuleBasedSimulator(object):
 
                 vehicle.solve()
                 # result = vehicle.predict_intent()
-                # results.append(result)
+                # intent_pred_results.append(result)
                 
             self.loops += 1
             self.time += 0.1
@@ -161,18 +161,20 @@ class RuleBasedSimulator(object):
                     fill = (0, 255, 0, 255)
 
                 self.vis.draw_vehicle(state=vehicle.state, fill=fill)
-                self.vis.draw_line(points=np.array([vehicle.x_ref, vehicle.y_ref]).T, color=(39,228,245, 193))
+                # self.vis.draw_line(points=np.array([vehicle.x_ref, vehicle.y_ref]).T, color=(39,228,245, 193))
                 on_vehicle_text =  str(vehicle.vehicle_id) + ":"
                 on_vehicle_text += "N" if vehicle.priority is None else str(round(vehicle.priority, 3))
-                self.vis.draw_text([vehicle.state.x.x - 2, vehicle.state.x.y + 2], on_vehicle_text, size=25)
+                # self.vis.draw_text([vehicle.state.x.x - 2, vehicle.state.x.y + 2], on_vehicle_text, size=25)
                 
-            # for result in results:
+            # likelihood_radius = 15
+            # for result in intent_pred_results:
             #     distribution = result.distribution
             #     for i in range(len(distribution) - 1):
             #         coords = result.all_spot_centers[i]
-            #         coords[0] -= 2
             #         prob = format(distribution[i], '.2f')
-            #         self.vis.draw_text(coords, prob, 15)
+            #         self.vis.draw_circle(center=coords, radius=likelihood_radius*distribution[i], color=(255,65,255,255))
+            #         self.vis.draw_text([coords[0]-2, coords[1]], prob, 15)
+            
             self.vis.render()
 
 def main():
