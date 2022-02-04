@@ -26,7 +26,15 @@ overshoot_ranges = {'pointed_right': [(42, 48), (67, 69), (92, 94), (113, 115), 
                     'pointed_left': [(64, 66), (89, 91), (156, 158), (181, 183), (248, 250), (273, 275), (340, 342)]}
 
 anchor_points = [47, 93, 135, 185, 227, 277, 319, 344] # for now, second spot at the start of a row
-anchor_spots = [list(range(21)) + list(range(42, 67)), list(range(21, 42)) + list(range(92, 113)), list(range(67, 92)) + list(range(134, 159)), list(range(113, 134)) + list(range(184, 205)), list(range(159, 184)) + list(range(226, 251)), list(range(205, 226)) + list(range(276, 297)), list(range(251, 276)) + list(range(318, 343)), list(range(297, 318)) + list(range(343, 364))]
+spot_edge_buffer = 3
+anchor_spots = [list(range(spot_edge_buffer, 21 - spot_edge_buffer)) + list(range(42 + spot_edge_buffer, 67 - spot_edge_buffer)), \
+    list(range(21 + spot_edge_buffer, 42 - spot_edge_buffer)) + list(range(92 + spot_edge_buffer, 113 - spot_edge_buffer)), \
+    list(range(67 + spot_edge_buffer, 92 - spot_edge_buffer)) + list(range(134 + spot_edge_buffer, 159 - spot_edge_buffer)), \
+    list(range(113 + spot_edge_buffer, 134 - spot_edge_buffer)) + list(range(184 + spot_edge_buffer, 205 - spot_edge_buffer)), \
+    list(range(159 + spot_edge_buffer, 184 - spot_edge_buffer)) + list(range(226 + spot_edge_buffer, 251 - spot_edge_buffer)), \
+    list(range(205 + spot_edge_buffer, 226 - spot_edge_buffer)) + list(range(276 + spot_edge_buffer, 297 - spot_edge_buffer)), \
+    list(range(251 + spot_edge_buffer, 276 - spot_edge_buffer)) + list(range(318 + spot_edge_buffer, 343 - spot_edge_buffer)), \
+    list(range(297 + spot_edge_buffer, 318 - spot_edge_buffer)) + list(range(343 + spot_edge_buffer, 364 - spot_edge_buffer))]
 
 north_spot_idx_ranges = [(0, 41), (67, 91), (113, 133), (159, 183), (205, 225), (251, 275), (297, 317)]
 spot_y_offset = 5
