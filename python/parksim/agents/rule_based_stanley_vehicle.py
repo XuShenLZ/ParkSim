@@ -3,6 +3,7 @@ import numpy as np
 from pathlib import Path
 import pickle
 import time
+import array
 
 from parksim.path_planner.offline_maneuver import OfflineManeuver
 
@@ -14,7 +15,7 @@ from parksim.route_planner.a_star import AStarPlanner
 from parksim.route_planner.graph import WaypointsGraph
 from parksim.utils.spline import calc_spline_course
 from parksim.utils.get_corners import get_vehicle_corners
-from parksim.vehicle_types import VehicleBody, VehicleConfig
+from parksim.vehicle_types import VehicleBody, VehicleConfig, VehicleInfo
 from parksim.intent_predict.cnnV2.predictor import Predictor, PredictionResponse
 from parksim.intent_predict.cnnV2.visualizer.instance_centric_generator import InstanceCentricGenerator
 
@@ -24,6 +25,7 @@ class RuleBasedStanleyVehicle(AbstractAgent):
 
         # State and Reference Waypoints
         self.state: VehicleState = VehicleState() # state
+        self.info: VehicleInfo = VehicleInfo() # Info
 
         self.x_ref = [] # x coordinates for waypoints
         self.y_ref = [] # y coordinates for waypoints
@@ -311,6 +313,29 @@ class RuleBasedStanleyVehicle(AbstractAgent):
             method(idx, new_value)
         else:
             method[idx] = new_value
+
+    def get_info(self):
+        # TODO: Encapsule everything into self.info
+        self.info.ref_pose.x = array.array('d', self.x_ref)
+        self.info.ref_pose.y = array.array('d', self.y_ref)
+        self.info.ref_pose.psi = array.array('d', self.yaw_ref)
+        self.info.ref_v = self.v_ref
+        self.info.target_idx = self.target_idx
+        self.info.priority = self.priority
+        self.info.parking_flag = self.parking_flag
+
+        if self.is_parking():
+            self.info.parking_progress = "PARKING"
+        elif self.is_unparking():
+            self.info.parking_progress = "UNPARKING"
+        else:
+            self.info.parking_progress = None
+
+        self.info.is_braking = self.is_braking
+        self.info.parking_start_time = self.parking_start_time
+        self.info.waiting_for = self.waiting_for
+
+        return self.info
 
     def get_other_info(self, active_vehicles: Dict[int, AbstractAgent]):
         """

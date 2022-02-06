@@ -2,8 +2,10 @@
 
 from dataclasses import dataclass, field
 import re
+from typing import Set
 
 import rclpy
+from rclpy.handle import InvalidHandle
 
 import numpy as np
 
@@ -11,22 +13,9 @@ from std_msgs.msg import Float64, String, Int16, Bool, Int16MultiArray
 from parksim.msg import VehicleStateMsg, VehicleInfoMsg
 from parksim.srv import OccupancySrv
 from parksim.pytypes import PythonMsg, VehiclePrediction, VehicleState, NodeParamTemplate
-from parksim.vehicle_types import VehicleBody, VehicleConfig
+from parksim.vehicle_types import VehicleBody, VehicleConfig, VehicleInfo
 from parksim.base_node import MPClabNode
 from parksim.agents.rule_based_stanley_vehicle import RuleBasedStanleyVehicle
-
-@dataclass
-class VehicleInfo(PythonMsg):
-    ref_pose: VehiclePrediction = field(default=None)
-    ref_v: float = field(default=0)
-    target_idx: int = field(default=None)
-    priority: int = field(default=None)
-    parking_flag: str = field(default=None)
-    parking_progress: str = field(default=None)
-    is_braking: bool = field(default=None)
-    parking_start_time: float = field(default=None)
-    waiting_for: int = field(default=None)
-
 
 class VehicleNodeParams(NodeParamTemplate):
     """
@@ -112,6 +101,8 @@ class VehicleNode(MPClabNode):
             info = VehicleInfo()
             self.unpack_msg(msg, info)
 
+            self.vehicle.other_vehicles.add(vehicle_id)
+
             self.vehicle.other_ref_pose[vehicle_id] = info.ref_pose
             self.vehicle.other_ref_v[vehicle_id] = info.ref_v
             self.vehicle.other_target_idx[vehicle_id] = info.target_idx
@@ -145,8 +136,6 @@ class VehicleNode(MPClabNode):
     def update_subs(self):
         topic_list_types = self.get_topic_names_and_types()
 
-        active_ids = set()
-
         for topic_name, _ in topic_list_types:
             state_name_pattern = re.match("/vehicle_([1-9][0-9]*)/state", topic_name)
             info_name_pattern = re.match("/vehicle_([1-9][0-9]*)/info", topic_name)
@@ -158,8 +147,15 @@ class VehicleNode(MPClabNode):
 
                 if vehicle_id not in self.state_subs:
                     self.state_subs[vehicle_id] = self.create_subscription(VehicleStateMsg, topic_name, self.vehicle_state_cb(vehicle_id), 10)
+                    self.get_logger().info("State subscriber to vehicle %d is built." % vehicle_id)
+                elif not self.get_publishers_info_by_topic(topic_name=topic_name):
+                    # If there is no publisher
+                    self.destroy_subscription(self.state_subs[vehicle_id])
+                    self.state_subs.pop(vehicle_id)
+                    self.get_logger().info("Vehicle %d is not publishing anymore. State subscriber is destroyed." % vehicle_id)
 
-                active_ids.add(vehicle_id)
+                    self.vehicle.other_vehicles.discard(vehicle_id)
+
 
             elif info_name_pattern:
                 vehicle_id = int(info_name_pattern.group(1))
@@ -168,16 +164,21 @@ class VehicleNode(MPClabNode):
 
                 if vehicle_id not in self.info_subs:
                     self.info_subs[vehicle_id] = self.create_subscription(VehicleInfoMsg, topic_name, self.vehicle_info_cb(vehicle_id), 10)
+                    self.get_logger().info("Info subscriber to vehicle %d is built." % vehicle_id)
+                elif not self.get_publishers_info_by_topic(topic_name=topic_name):
+                    # If there is no publisher
+                    self.destroy_subscription(self.info_subs[vehicle_id])
+                    self.info_subs.pop(vehicle_id)
+                    self.get_logger().info("Vehicle %d is not publishing anymore. Info ubscriber is destroyed." % vehicle_id)
 
-                active_ids.add(vehicle_id)
+                    self.vehicle.other_vehicles.discard(vehicle_id)
 
             else:
                 continue
 
-        self.vehicle.other_vehicles = active_ids
-
     def timer_callback(self):
         if self.vehicle.is_all_done():
+            self.get_logger().info("Vehicle %d is done. Destroying node." % self.vehicle_id)
             self.destroy_node()
 
         self.update_subs()
@@ -187,17 +188,24 @@ class VehicleNode(MPClabNode):
         self.populate_msg(state_msg, self.vehicle.state)
         self.state_pub.publish(state_msg)
 
+        info_msg = VehicleInfoMsg()
+        self.populate_msg(info_msg, self.vehicle.get_info())
+        self.info_pub.publish(info_msg)
+
 
 def main(args=None):
     rclpy.init(args=args)
 
     vehicle = VehicleNode()
 
-    rclpy.spin(vehicle)
+    try:
+        rclpy.spin(vehicle)
+    except InvalidHandle as e:
+        print(e)
+        print("Vehicle node is destroyed cleanly.")
+    finally:
 
-    vehicle.destroy_node()
-
-    rclpy.shutdown()
+        rclpy.shutdown()
 
 if __name__ == "__main__":
     main()
