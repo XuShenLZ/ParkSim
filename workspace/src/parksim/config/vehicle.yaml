@@ -1,3 +1,9 @@
 /**:
   ros__parameters:
-    timer_period: 0.05
+    timer_period: 0.1
+
+    # Offline data to load
+    spots_data_path: '/ParkSim/data/spots_data.pickle'
+    offline_maneuver_path: '/ParkSim/data/parking_maneuvers.pickle'
+    waypoints_graph_path: '/ParkSim/data/waypoints_graph.pickle'
+    intent_model_path: '/ParkSim/data/smallRegularizedCNN_L0.068_01-29-2022_19-50-35.pth'

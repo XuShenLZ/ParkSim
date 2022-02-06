@@ -5,6 +5,8 @@ from dlp.visualizer import Visualizer as DlpVisualizer
 
 from pathlib import Path
 
+import pickle
+
 import numpy as np
 
 from parksim.vehicle_types import VehicleBody, VehicleConfig
@@ -16,10 +18,10 @@ from parksim.agents.rule_based_stanley_vehicle import RuleBasedStanleyVehicle
 np.random.seed(44) # ones with interesting cases: 20, 33, 44, 60
 
 # These parameters should all become ROS param for simulator and vehicle
-parking_spaces_path = '/ParkSim/parking_spaces.npy'
-offline_maneuver_path = '/ParkSim/parking_maneuvers.pickle'
-waypoints_graph_path = '/ParkSim/waypoints_graph.pickle'
-intent_model_path = '/ParkSim/python/parksim/intent_predict/cnnV2/models/smallRegularizedCNN_L0.068_01-29-2022_19-50-35.pth'
+spots_data_path = '/ParkSim/data/spots_data.pickle'
+offline_maneuver_path = '/ParkSim/data/parking_maneuvers.pickle'
+waypoints_graph_path = '/ParkSim/data/waypoints_graph.pickle'
+intent_model_path = '/ParkSim/data/smallRegularizedCNN_L0.068_01-29-2022_19-50-35.pth'
 entrance_coords = [14.38, 76.21]
 
 overshoot_ranges = {'pointed_right': [(42, 48), (67, 69), (92, 94), (113, 115), (134, 136), (159, 161), (184, 186), (205, 207), (226, 228), (251, 253), (276, 278), (297, 299), (318, 320), (343, 345)],
@@ -42,15 +44,38 @@ class RuleBasedSimulator(object):
         self.graph = WaypointsGraph()
         self.graph.setup_with_vis(self.dlpvis)
 
+
         # anchor spots
         self.anchor_points = anchor_points
 
-        # spawn stuff
-        self.spawn_wait = 50 # number of timesteps between cars spawning
+        # Save
+        # with open('waypoints_graph.pickle', 'wb') as f:
+        #     data_to_save = {'graph': self.graph, 
+        #                     'entrance_coords': entrance_coords}
+        #     pickle.dump(data_to_save, f)
 
-        self.spawn_entering = 3 # number of vehicles to enter
-        self.spawn_exiting = 3 # number of vehicles to exit
-        self.spawn_exiting_loops = np.random.choice(range(self.spawn_exiting * self.spawn_wait), self.spawn_exiting)
+        # with open('spots_data.pickle', 'wb') as f:
+        #     data_to_save = {'parking_spaces': self.parking_spaces, 
+        #                     'overshoot_ranges': overshoot_ranges, 
+        #                     'anchor_points': anchor_points,
+        #                     'anchor_spots': anchor_spots,
+        #                     'north_spot_idx_ranges': north_spot_idx_ranges,
+        #                     'spot_y_offset': spot_y_offset}
+        #     pickle.dump(data_to_save, f)
+
+        # spawn stuff
+        
+        spawn_interval_mean = 5 # Mean time for exp distribution
+        spawn_interval_min = 2 # Min time for each spawn
+
+        spawn_entering = 3 # number of vehicles to enter
+        spawn_exiting = 3 # number of vehicles to exit
+
+        self.spawn_entering_time = sorted(np.random.exponential(spawn_interval_mean, spawn_entering))
+        for i in range(spawn_entering):
+            self.spawn_entering_time[i] += i * spawn_interval_min
+
+        self.spawn_exiting_time = sorted(np.random.exponential(spawn_interval_mean, spawn_exiting))
 
         self.num_vehicles = 0
         self.vehicles: List[RuleBasedStanleyVehicle] = []
@@ -96,10 +121,10 @@ class RuleBasedSimulator(object):
 
         # NOTE: These lines are here for now. In the ROS implementation, they will all be in the vehicle node, no the simulator node
         vehicle = RuleBasedStanleyVehicle(vehicle_id=self.num_vehicles, vehicle_body=vehicle_body, vehicle_config=vehicle_config, inst_centric_generator=None, intent_predictor=None)
-        vehicle.load_parking_spaces(parking_spaces_path=parking_spaces_path, north_spot_idx_ranges=north_spot_idx_ranges, spot_y_offset=spot_y_offset)
-        vehicle.set_anchor(going_to_anchor=spot_index>0, spot_index=spot_index, should_overshoot=False, anchor_points=anchor_points, anchor_spots=anchor_spots)
-        vehicle.load_graph(waypoints_graph_path=waypoints_graph_path, entrance_coords=entrance_coords)
-        vehicle.load_maneuver(offline_maneuver_path=offline_maneuver_path, overshoot_ranges=overshoot_ranges)
+        vehicle.load_parking_spaces(spots_data_path=spots_data_path)
+        vehicle.load_graph(waypoints_graph_path=waypoints_graph_path)
+        vehicle.load_maneuver(offline_maneuver_path=offline_maneuver_path)
+        vehicle.set_anchor(going_to_anchor=spot_index>0, spot_index=spot_index, should_overshoot=False)
         # vehicle.load_intent_model(model_path=intent_model_path)
         vehicle.start_vehicle()
 
@@ -113,23 +138,25 @@ class RuleBasedSimulator(object):
 
             # clear visualizer
             self.vis.clear_frame()
-            
+
             # spawn vehicles
-            if self.loops % self.spawn_wait == 0 and self.spawn_entering > 0: # entering
+            if self.spawn_entering_time and self.time > self.spawn_entering_time[0]:
                 self.add_vehicle(np.random.choice(self.anchor_points)) # pick from the anchor points at random
-                self.spawn_entering -= 1
-            if self.loops in self.spawn_exiting_loops: # spawn in random empty spot
+                self.spawn_entering_time.pop(0)
+            
+            if self.spawn_exiting_time and self.time > self.spawn_exiting_time[0]:
                 empty_spots = [i for i in range(len(self.occupied)) if not self.occupied[i]]
                 chosen_spot = np.random.choice(empty_spots)
                 self.add_vehicle(-1 * chosen_spot)
                 self.occupied[chosen_spot] = True
+                self.spawn_exiting_time.pop(0)
 
             active_vehicles: Dict[int, RuleBasedStanleyVehicle] = {}
             for vehicle in self.vehicles:
                 if not vehicle.is_all_done():
                     active_vehicles[vehicle.vehicle_id] = vehicle
 
-            if not active_vehicles:
+            if not self.spawn_entering_time and not self.spawn_exiting_time and not active_vehicles:
                 print("No Active Vehicles")
                 break
                 
@@ -138,7 +165,7 @@ class RuleBasedSimulator(object):
                 vehicle = active_vehicles[vehicle_id]
 
                 vehicle.get_other_info(active_vehicles)
-                vehicle.set_method_to_get_central_occupancy(self.occupied)
+                vehicle.get_central_occupancy(self.occupied)
                 vehicle.set_method_to_change_central_occupancy(self.occupied)
 
                 vehicle.solve()

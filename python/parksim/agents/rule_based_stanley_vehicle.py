@@ -95,7 +95,6 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         self.other_waiting_for: Dict[int, int] = {}
 
         # ============== Method to exchange information
-        self.method_to_get_central_occupancy = None
         self.method_to_change_central_occupancy = None
 
     def set_ref_pose(self, x_ref: List[float], y_ref: List[float], yaw_ref: List[float]):
@@ -112,29 +111,33 @@ class RuleBasedStanleyVehicle(AbstractAgent):
     def set_target_idx(self, target_idx: int):
         self.target_idx = target_idx
 
-    def load_parking_spaces(self, parking_spaces_path: str, north_spot_idx_ranges: List[Tuple[int, int]], spot_y_offset: float):
+    def load_parking_spaces(self, spots_data_path: str):
         home_path = str(Path.home())
-        self.parking_spaces = np.load(home_path + parking_spaces_path)
+        with open(home_path + spots_data_path, 'rb') as f:
+            data = pickle.load(f)
+            self.parking_spaces = data['parking_spaces']
+            self.overshoot_ranges = data['overshoot_ranges']
+            self.anchor_points = data['anchor_points']
+            self.anchor_spots = data['anchor_spots']
+            self.north_spot_idx_ranges = data['north_spot_idx_ranges']
+            self.spot_y_offset = data['spot_y_offset']
 
-        self.north_spot_idx_ranges = north_spot_idx_ranges
-        self.spot_y_offset = spot_y_offset
-
-    def load_graph(self, waypoints_graph_path: str, entrance_coords: List[float]):
+    def load_graph(self, waypoints_graph_path: str):
         """
         waypoints_graph_path: path to WaypointGraph object pickle
         entrance_coords: The (x,y) coordinates of the entrance
         """
         home_path = str(Path.home())
         with open(home_path + waypoints_graph_path, 'rb') as f:
-            self.graph = pickle.load(f)
+            data = pickle.load(f)
+            self.graph = data['graph']
+            entrance_coords = data['entrance_coords']
 
         self.entrance_vertex = self.graph.search(entrance_coords)
 
-    def load_maneuver(self, offline_maneuver_path: str, overshoot_ranges: Dict[str, List[Tuple[int]]]):
+    def load_maneuver(self, offline_maneuver_path: str):
         home_path = str(Path.home())
         self.offline_maneuver = OfflineManeuver(pickle_file=home_path+offline_maneuver_path)
-
-        self.overshoot_ranges = overshoot_ranges
 
     def load_intent_model(self, model_path: str):
         """
@@ -144,7 +147,7 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         self.intent_predictor.load_model(waypoints=self.graph, model_path=home_path + model_path)
 
 
-    def set_anchor(self, going_to_anchor: bool=None, spot_index: int=None, should_overshoot: bool=None, anchor_points: List[int]=None, anchor_spots: List[List[int]]=None):
+    def set_anchor(self, going_to_anchor: bool=None, spot_index: int=None, should_overshoot: bool=None):
 
         if going_to_anchor is not None:
             self.going_to_anchor = going_to_anchor
@@ -156,11 +159,6 @@ class RuleBasedStanleyVehicle(AbstractAgent):
 
         if should_overshoot is not None:
             self.should_overshoot = should_overshoot
-        
-        if anchor_points is not None:
-            self.anchor_points = anchor_points
-        if anchor_spots is not None:
-            self.anchor_spots = anchor_spots
 
     # starts from an anchor point, goes to an arbitrary spot
     def plan_from_anchor(self, new_spot_index):
@@ -294,23 +292,14 @@ class RuleBasedStanleyVehicle(AbstractAgent):
     def num_waypoints(self):
         return len(self.x_ref)
 
-    def set_method_to_get_central_occupancy(self, method):
-        self.method_to_get_central_occupancy = method
-
     def set_method_to_change_central_occupancy(self, method):
         self.method_to_change_central_occupancy = method
 
-    def get_central_occupancy(self):
+    def get_central_occupancy(self, occupancy):
         """
-        Get the parking spaces and occupancy
+        Get the parking occupancy
         """
-        method = self.method_to_get_central_occupancy
-        if callable(method):
-            # Call ROS service to get occupancy
-            self.occupancy = method()
-        else:
-            # Otherwise, for testing, method is occupancy from simulator
-            self.occupancy = method
+        self.occupancy = occupancy
 
     def change_central_occupancy(self, idx, new_value):
         """
@@ -654,8 +643,6 @@ class RuleBasedStanleyVehicle(AbstractAgent):
             # if gotten near anchor point, figure out where to go next
             if self.going_to_anchor and self.spot_index > 0 and self.target_idx > self.num_waypoints() - 10:
                 # TODO: This "10" should be replaced
-                self.get_central_occupancy()
-
                 possible_spots = [i for i in self.anchor_spots[self.anchor_points.index(self.spot_index)] if not self.occupancy[i]]
 
                 new_spot_index = np.random.choice(possible_spots)

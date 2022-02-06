@@ -38,6 +38,10 @@ class VehiclePublisher(MPClabNode):
 
         self.i = np.random.rand()
 
+        self.declare_parameter('spot_index', 0)
+        self.spot_index = self.get_parameter('spot_index').get_parameter_value().integer_value
+        self.get_logger().info(str(self.spot_index))
+
     def timer_callback(self):
         msg = VehicleStateMsg()
 

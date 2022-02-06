@@ -47,6 +47,8 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/EncoderMsg.msg"
   "msg/PredictionMsg.msg"
   "msg/VehicleActuationMsg.msg"
+  "msg/VehicleInfoMsg.msg"
+  "srv/OccupancySrv.srv"
   DEPENDENCIES builtin_interfaces std_msgs
   )
 ament_export_dependencies(rosidl_default_runtime)
@@ -54,6 +56,8 @@ ament_export_dependencies(rosidl_default_runtime)
 install(PROGRAMS
   src/visualizer_node.py
   src/test_vehicle_node.py
+  src/simulator_node.py
+  src/vehicle_node.py
   DESTINATION lib/${PROJECT_NAME}
 )
 

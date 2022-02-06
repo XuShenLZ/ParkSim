@@ -1,4 +1,5 @@
 from launch import LaunchDescription
+from launch.actions import TimerAction
 from launch_ros.actions import Node
 
 from ament_index_python.packages import get_package_share_directory
@@ -23,21 +24,15 @@ def generate_launch_description():
             output='screen'
         ),
 
-        Node(
-            package='parksim',
-            namespace='vehicle_1',
-            executable='test_vehicle_node.py',
-            name='vehicle',
-            parameters=[os.path.join(config_dir, 'vehicle.yaml')]+global_params,
-            output='screen'
-        ),
-
-        Node(
-            package='parksim',
-            namespace='vehicle_2',
-            executable='test_vehicle_node.py',
-            name='vehicle',
-            parameters=[os.path.join(config_dir, 'vehicle.yaml')]+global_params,
-            output='screen'
-        )
+        # Delay simulator so that the visualization is ready
+        TimerAction(period=3.0,
+            actions=[
+                Node(
+                    package='parksim',
+                    executable='simulator_node.py',
+                    name='simulator',
+                    parameters=[os.path.join(config_dir, 'simulator.yaml')]+global_params,
+                    output='screen'
+                )
+            ])
     ])
