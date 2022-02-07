@@ -6,8 +6,8 @@
     spots_data_path: '/ParkSim/data/spots_data.pickle'
 
     # ======== Spawn
-    spawn_entering: 3
-    spawn_exiting: 3
+    spawn_entering: 5
+    spawn_exiting: 5
     spawn_interval_min: 2 # (s)
     spawn_interval_mean: 5 # (s)
 

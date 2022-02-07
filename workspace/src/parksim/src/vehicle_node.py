@@ -1,18 +1,16 @@
 #!/usr/bin/env python3
 
-from dataclasses import dataclass, field
 import re
-from typing import Set
 
 import rclpy
 from rclpy.handle import InvalidHandle
 
 import numpy as np
 
-from std_msgs.msg import Float64, String, Int16, Bool, Int16MultiArray
+from std_msgs.msg import Int16MultiArray
 from parksim.msg import VehicleStateMsg, VehicleInfoMsg
 from parksim.srv import OccupancySrv
-from parksim.pytypes import PythonMsg, VehiclePrediction, VehicleState, NodeParamTemplate
+from parksim.pytypes import VehicleState, NodeParamTemplate
 from parksim.vehicle_types import VehicleBody, VehicleConfig, VehicleInfo
 from parksim.base_node import MPClabNode
 from parksim.agents.rule_based_stanley_vehicle import RuleBasedStanleyVehicle
@@ -94,14 +92,16 @@ class VehicleNode(MPClabNode):
             self.unpack_msg(msg, state)
             self.vehicle.other_state[vehicle_id] = state
 
+            if vehicle_id in self.vehicle.other_is_braking:
+                # Add vehicle only when we both have state and info available
+                self.vehicle.other_vehicles.add(vehicle_id)
+
         return callback
 
     def vehicle_info_cb(self, vehicle_id):
         def callback(msg):
             info = VehicleInfo()
             self.unpack_msg(msg, info)
-
-            self.vehicle.other_vehicles.add(vehicle_id)
 
             self.vehicle.other_ref_pose[vehicle_id] = info.ref_pose
             self.vehicle.other_ref_v[vehicle_id] = info.ref_v
@@ -112,6 +112,10 @@ class VehicleNode(MPClabNode):
             self.vehicle.other_is_braking[vehicle_id] = info.is_braking
             self.vehicle.other_parking_start_time[vehicle_id] = info.parking_start_time
             self.vehicle.other_waiting_for[vehicle_id] = info.waiting_for
+
+            if vehicle_id in self.vehicle.other_state:
+                # Add vehicle only when we both have state and info available
+                self.vehicle.other_vehicles.add(vehicle_id)
 
         return callback
 
@@ -145,14 +149,17 @@ class VehicleNode(MPClabNode):
                 if vehicle_id == self.vehicle_id:
                     continue
 
-                if vehicle_id not in self.state_subs:
+                publisher = self.get_publishers_info_by_topic(topic_name=topic_name)
+
+                if vehicle_id not in self.state_subs and publisher:
+                    # If there is publisher, but we haven't subscribed to it
                     self.state_subs[vehicle_id] = self.create_subscription(VehicleStateMsg, topic_name, self.vehicle_state_cb(vehicle_id), 10)
-                    self.get_logger().info("State subscriber to vehicle %d is built." % vehicle_id)
-                elif not self.get_publishers_info_by_topic(topic_name=topic_name):
-                    # If there is no publisher
+                    # self.get_logger().info("State subscriber to vehicle %d is built." % vehicle_id)
+                elif vehicle_id in self.state_subs and not publisher:
+                    # If we have subscribed to it, but there is no publisher anymore
                     self.destroy_subscription(self.state_subs[vehicle_id])
                     self.state_subs.pop(vehicle_id)
-                    self.get_logger().info("Vehicle %d is not publishing anymore. State subscriber is destroyed." % vehicle_id)
+                    # self.get_logger().info("Vehicle %d is not publishing anymore. State subscriber is destroyed." % vehicle_id)
 
                     self.vehicle.other_vehicles.discard(vehicle_id)
 
@@ -162,14 +169,17 @@ class VehicleNode(MPClabNode):
                 if vehicle_id == self.vehicle_id:
                     continue
 
-                if vehicle_id not in self.info_subs:
+                publisher = self.get_publishers_info_by_topic(topic_name=topic_name)
+
+                if vehicle_id not in self.info_subs and publisher:
+                    # If there is publisher, but we haven't subscribed to it
                     self.info_subs[vehicle_id] = self.create_subscription(VehicleInfoMsg, topic_name, self.vehicle_info_cb(vehicle_id), 10)
-                    self.get_logger().info("Info subscriber to vehicle %d is built." % vehicle_id)
-                elif not self.get_publishers_info_by_topic(topic_name=topic_name):
-                    # If there is no publisher
+                    # self.get_logger().info("Info subscriber to vehicle %d is built." % vehicle_id)
+                elif vehicle_id in self.info_subs and not publisher:
+                    # If we have subscribed to it, but there is no publisher anymore
                     self.destroy_subscription(self.info_subs[vehicle_id])
                     self.info_subs.pop(vehicle_id)
-                    self.get_logger().info("Vehicle %d is not publishing anymore. Info ubscriber is destroyed." % vehicle_id)
+                    # self.get_logger().info("Vehicle %d is not publishing anymore. Info ubscriber is destroyed." % vehicle_id)
 
                     self.vehicle.other_vehicles.discard(vehicle_id)
 
@@ -202,7 +212,7 @@ def main(args=None):
         rclpy.spin(vehicle)
     except InvalidHandle as e:
         print(e)
-        print("Vehicle node is destroyed cleanly.")
+        print("Vehicle %d node is destroyed cleanly." % vehicle.vehicle_id)
     finally:
 
         rclpy.shutdown()

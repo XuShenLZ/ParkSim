@@ -26,6 +26,8 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         # State and Reference Waypoints
         self.state: VehicleState = VehicleState() # state
         self.info: VehicleInfo = VehicleInfo() # Info
+        
+        self.state_hist: List[VehicleState] = [] # State history
 
         self.x_ref = [] # x coordinates for waypoints
         self.y_ref = [] # y coordinates for waypoints
@@ -704,6 +706,8 @@ class RuleBasedStanleyVehicle(AbstractAgent):
             self.update_state_unparking(should_go)
         else: 
             self.update_state()
+
+        self.state_hist.append(self.state.copy())
 
     def predict_intent(self, vehicle_id=None):
         """

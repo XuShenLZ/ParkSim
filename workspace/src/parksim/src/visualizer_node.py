@@ -91,11 +91,14 @@ class VisualizerNode(MPClabNode):
             if state_name_pattern:
                 vehicle_id = int(state_name_pattern.group(1))
 
-                if vehicle_id not in self.state_subs:
+                publisher = self.get_publishers_info_by_topic(topic_name=topic_name)
+
+                if vehicle_id not in self.state_subs and publisher:
+                    # If there is publisher, but we haven't subscribed to it
                     self.state_subs[vehicle_id] = self.create_subscription(VehicleStateMsg, topic_name, self.vehicle_state_cb(vehicle_id), 10)
                     self.get_logger().info("State subscriber to vehicle %d is built." % vehicle_id)
-                elif not self.get_publishers_info_by_topic(topic_name=topic_name):
-                    # If there is no publisher
+                elif vehicle_id in self.state_subs and not publisher:
+                    # If we have subscribed to it, but there is no publisher anymore
                     self.destroy_subscription(self.state_subs[vehicle_id])
                     self.state_subs.pop(vehicle_id)
                     self.get_logger().info("Vehicle %d is not publishing anymore. State subscriber is destroyed." % vehicle_id)
@@ -104,11 +107,14 @@ class VisualizerNode(MPClabNode):
             elif info_name_pattern:
                 vehicle_id = int(info_name_pattern.group(1))
 
-                if vehicle_id not in self.info_subs:
+                publisher = self.get_publishers_info_by_topic(topic_name=topic_name)
+
+                if vehicle_id not in self.info_subs and publisher:
+                    # If there is publisher, but we haven't subscribed to it
                     self.info_subs[vehicle_id] = self.create_subscription(VehicleInfoMsg, topic_name, self.vehicle_info_cb(vehicle_id), 10)
                     self.get_logger().info("Info subscriber to vehicle %d is built." % vehicle_id)
-                elif not self.get_publishers_info_by_topic(topic_name=topic_name):
-                    # If there is no publisher
+                elif vehicle_id in self.info_subs and not publisher:
+                    # If we have subscribed to it, but there is no publisher anymore
                     self.destroy_subscription(self.info_subs[vehicle_id])
                     self.info_subs.pop(vehicle_id)
                     self.infos.pop(vehicle_id)
