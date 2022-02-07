@@ -18,10 +18,10 @@ from parksim.agents.rule_based_stanley_vehicle import RuleBasedStanleyVehicle
 np.random.seed(39) # ones with interesting cases: 20, 33, 44, 60
 
 # These parameters should all become ROS param for simulator and vehicle
-spots_data_path = '/ParkSim/data/spots_data.pickle'
-offline_maneuver_path = '/ParkSim/data/parking_maneuvers.pickle'
-waypoints_graph_path = '/ParkSim/data/waypoints_graph.pickle'
-intent_model_path = '/ParkSim/data/smallRegularizedCNN_L0.068_01-29-2022_19-50-35.pth'
+spots_data_path = 'ParkSim/data/spots_data.pickle'
+offline_maneuver_path = 'ParkSim/data/parking_maneuvers.pickle'
+waypoints_graph_path = 'ParkSim/data/waypoints_graph.pickle'
+intent_model_path = 'ParkSim/data/smallRegularizedCNN_L0.068_01-29-2022_19-50-35.pth'
 entrance_coords = [14.38, 76.21]
 
 overshoot_ranges = {'pointed_right': [(42, 48), (67, 69), (92, 94), (113, 115), (134, 136), (159, 161), (184, 186), (205, 207), (226, 228), (251, 253), (276, 278), (297, 299), (318, 320), (343, 345)],
@@ -43,6 +43,8 @@ class RuleBasedSimulator(object):
 
         self.graph = WaypointsGraph()
         self.graph.setup_with_vis(self.dlpvis)
+
+        self.history = []
 
 
         # anchor spots
@@ -68,8 +70,8 @@ class RuleBasedSimulator(object):
         spawn_interval_mean = 5 # Mean time for exp distribution
         spawn_interval_min = 2 # Min time for each spawn
 
-        spawn_entering = 3 # number of vehicles to enter
-        spawn_exiting = 3 # number of vehicles to exit
+        spawn_entering = 1 # number of vehicles to enter
+        spawn_exiting = 0 # number of vehicles to exit
 
         self.spawn_entering_time = sorted(np.random.exponential(spawn_interval_mean, spawn_entering))
         for i in range(spawn_entering):
@@ -120,12 +122,12 @@ class RuleBasedSimulator(object):
     def add_vehicle(self, spot_index: int, vehicle_body: VehicleBody=VehicleBody(), vehicle_config: VehicleConfig=VehicleConfig()):
 
         # NOTE: These lines are here for now. In the ROS implementation, they will all be in the vehicle node, no the simulator node
-        vehicle = RuleBasedStanleyVehicle(vehicle_id=self.num_vehicles, vehicle_body=vehicle_body, vehicle_config=vehicle_config, inst_centric_generator=None, intent_predictor=None)
+        vehicle = RuleBasedStanleyVehicle(vehicle_id=self.num_vehicles, vehicle_body=vehicle_body, vehicle_config=vehicle_config)
         vehicle.load_parking_spaces(spots_data_path=spots_data_path)
         vehicle.load_graph(waypoints_graph_path=waypoints_graph_path)
         vehicle.load_maneuver(offline_maneuver_path=offline_maneuver_path)
         vehicle.set_anchor(going_to_anchor=spot_index>0, spot_index=spot_index, should_overshoot=False)
-        # vehicle.load_intent_model(model_path=intent_model_path)
+        vehicle.load_intent_model(model_path=intent_model_path)
         vehicle.start_vehicle()
 
         self.num_vehicles += 1
@@ -136,9 +138,11 @@ class RuleBasedSimulator(object):
         # while not run out of time and we have not reached the last waypoint yet
         while self.max_simulation_time >= self.time:
 
+
             # clear visualizer
             self.vis.clear_frame()
 
+            
             # spawn vehicles
             if self.spawn_entering_time and self.time > self.spawn_entering_time[0]:
                 self.add_vehicle(np.random.choice(self.anchor_points)) # pick from the anchor points at random
@@ -159,8 +163,15 @@ class RuleBasedSimulator(object):
             if not self.spawn_entering_time and not self.spawn_exiting_time and not active_vehicles:
                 print("No Active Vehicles")
                 break
+
+            # add vehicle states to history
+            current_frame_states = []
+            for vehicle in self.vehicles:
+                current_state_dict = vehicle.get_state_dict()
+                current_frame_states.append(current_state_dict)
+            self.history.append(current_frame_states)
                 
-            # intent_pred_results = []
+            intent_pred_results = []
             for vehicle_id in active_vehicles:
                 vehicle = active_vehicles[vehicle_id]
 
@@ -169,8 +180,8 @@ class RuleBasedSimulator(object):
                 vehicle.set_method_to_change_central_occupancy(self.occupied)
 
                 vehicle.solve()
-                # result = vehicle.predict_intent()
-                # intent_pred_results.append(result)
+                #result = vehicle.predict_intent(vehicle_id, self.history)
+                #intent_pred_results.append(result)
                 
             self.loops += 1
             self.time += 0.1
@@ -201,16 +212,16 @@ class RuleBasedSimulator(object):
             #         prob = format(distribution[i], '.2f')
             #         self.vis.draw_circle(center=coords, radius=likelihood_radius*distribution[i], color=(255,65,255,255))
             #         self.vis.draw_text([coords[0]-2, coords[1]], prob, 15)
-            
+    
             self.vis.render()
 
 def main():
     # Load dataset
     ds = Dataset()
 
-    home_path = str(Path.home())
+    home_path = Path.home() / 'Documents/Github'
     print('Loading dataset...')
-    ds.load(home_path + '/dlp-dataset/data/DJI_0012')
+    ds.load(str(home_path / 'dlp-dataset/data/DJI_0012'))
     print("Dataset loaded.")
 
     vis = RealtimeVisualizer(ds, VehicleBody())
