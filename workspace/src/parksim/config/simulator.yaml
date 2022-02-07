@@ -1,0 +1,15 @@
+/simulator:
+  ros__parameters:
+    timer_period: 0.1
+
+    # Map related
+    spots_data_path: '/ParkSim/data/spots_data.pickle'
+
+    # ======== Spawn
+    spawn_entering: 5
+    spawn_exiting: 5
+    spawn_interval_min: 2 # (s)
+    spawn_interval_mean: 5 # (s)
+
+
+    

@@ -1,0 +1,5 @@
+int16 vehicle_id
+int16 idx
+int16 new_value
+---
+bool status

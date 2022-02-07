@@ -6,6 +6,7 @@ from dlp.visualizer import Visualizer as DlpVis
 from parksim.pytypes import VehicleState
 
 from parksim.vehicle_types import VehicleBody
+from parksim.utils.get_corners import get_vehicle_corners
 
 class RealtimeVisualizer(object):
     """
@@ -126,20 +127,16 @@ class RealtimeVisualizer(object):
         """
         state: array-like with size (3,) for x, y, psi
         """
-        l = self.vehicle_body.l
-        w = self.vehicle_body.w
+        return get_vehicle_corners(state=state, vehicle_body=self.vehicle_body)
 
-        x = state.x.x
-        y = state.x.y
-        th = state.e.psi
+    def draw_circle(self, center: np.ndarray, radius: float, color: tuple):
+        """
+        draw a circle
 
-        # Body
-        p = np.array([[np.cos(th), -np.sin(th)],[np.sin(th), np.cos(th)]]) @ np.array([[l/2,l/2, -l/2, -l/2, l/2],[w/2, -w/2, -w/2, w/2, w/2]])
-        
-        p[0, :] += x
-        p[1, :] += y
-        
-        return p.T
+        center: array-like object with size 2 -- (x, y) coordinates
+        """
+        px, py = self._xy2p(center[0], center[1])
+        dpg.draw_circle(center=[px, py], radius=radius, fill=color, parent=self.frame_canvas)
 
     def draw_line(self, points: np.ndarray, color: tuple):
         """

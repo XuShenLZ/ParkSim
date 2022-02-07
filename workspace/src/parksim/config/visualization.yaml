@@ -1,3 +1,9 @@
 visualizer:
   ros__parameters:
     timer_period: 0.05
+
+    # ======== Color
+    driving_color: [0, 255, 0, 255]
+    parking_color: [255, 128, 0, 255]
+    braking_color: [255, 0, 0, 255]
+    alldone_color: [0, 0, 0, 255]

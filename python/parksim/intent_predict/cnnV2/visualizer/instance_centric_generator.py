@@ -1,14 +1,16 @@
+from typing import Dict
 from PIL import ImageDraw, Image
-from parksim.pytypes import VehicleState
-from parksim.agents.rule_based_stanley_vehicle import RuleBasedStanleyVehicle
 import numpy as np
 import os
 from pathlib import Path
+from parksim.vehicle_types import VehicleBody
 import yaml
 from yaml.loader import SafeLoader
 import matplotlib.pyplot as plt
 import pandas as pd
 
+from parksim.pytypes import VehicleState
+from parksim.utils.get_corners import get_vehicle_corners
 
 _ROOT = Path(os.path.abspath(os.path.dirname(__file__)))
 # Load parking map
@@ -138,13 +140,13 @@ class InstanceCentricGenerator:
 
         return waypoints
 
-    def inst_centric(self, ego_agent: RuleBasedStanleyVehicle, all_agents):
+    def inst_centric(self, ego_state: VehicleState, other_states: Dict[int, VehicleState]):
         """
         crop the local region around an instance and replot it in ego color. The ego instance is always pointing towards the west
 
         img_frame: the image of the SAME frame
         """
-        img = self.plot_frame(all_agents)
+        img = self.plot_frame(other_states)
         draw = ImageDraw.Draw(img)
 
         # Replot this specific instance with the ego color
@@ -153,11 +155,11 @@ class InstanceCentricGenerator:
         #instance_timeline = self.dataset.get_agent_past(inst_token,
         #timesteps=self.steps*self.stride)
         
-        self.plot_instance(draw, self.color['ego'], ego_agent)
+        self.plot_instance(draw, self.color['ego'], ego_state)
         
         # The location of the instance in pixel coordinates, and the angle in degrees
-        center = (np.array([ego_agent.state.x.x, ego_agent.state.x.y]) / self.res).astype('int32')
-        angle_degree = ego_agent.state.e.psi / np.pi * 180
+        center = (np.array([ego_state.x.x, ego_state.x.y]) / self.res).astype('int32')
+        angle_degree = ego_state.e.psi / np.pi * 180
 
         # Firstly crop a larger box which contains all rotations of the actual window
         outer_size = np.ceil(self.inst_ctr_size * np.sqrt(2))
@@ -170,14 +172,14 @@ class InstanceCentricGenerator:
 
         return img_instance
 
-    def plot_frame(self, all_agents):
+    def plot_frame(self, other_states: Dict[int, VehicleState]):
         # Create the binary mask for all moving objects on the map -- static obstacles and moving agents
         occupy_mask = Image.new(mode='1', size=(self.w, self.h))
         mask_draw = ImageDraw.Draw(occupy_mask)
 
         # Firstly register current obstacles and agents on the binary mask
         self.plot_obstacles(draw=mask_draw, fill=1)
-        self.plot_agents(mask_draw, 1, all_agents)
+        self.plot_agents(mask_draw, 1, other_states)
 
         img_frame = self.base_map.copy()
         img_draw = ImageDraw.Draw(img_frame)
@@ -185,7 +187,7 @@ class InstanceCentricGenerator:
         # Then plot everything on the main img
         self.plot_spots(occupy_mask=occupy_mask, draw=img_draw, fill=self.color['spot'])
         self.plot_obstacles(draw=img_draw, fill=self.color['obstacle'])
-        self.plot_agents(img_draw, self.color['agent'], all_agents)
+        self.plot_agents(img_draw, self.color['agent'], other_states)
 
 
         return img_frame
@@ -204,11 +206,11 @@ class InstanceCentricGenerator:
             if self.spot_available(occupy_mask, center, size=8):
                 draw.polygon([tuple(p) for p in p_coords_pixel], fill=fill)
 
-    def plot_instance(self, draw, fill, agent: RuleBasedStanleyVehicle):
+    def plot_instance(self, draw, fill, state: VehicleState):
         """
         plot a single instance at a single frame
         """
-        corners_ground = agent.get_corners()
+        corners_ground = get_vehicle_corners(state=state, vehicle_body=VehicleBody())
         corners_pixel = (corners_ground / self.res).astype('int32')
         draw.polygon([tuple(p) for p in corners_pixel], fill=fill)
 
@@ -225,13 +227,13 @@ class InstanceCentricGenerator:
             draw.polygon([tuple(p) for p in corners_pixel], fill=fill)
 
 
-    def plot_agents(self, draw, fill, all_agents):
+    def plot_agents(self, draw, fill, other_states: Dict[int, VehicleState]):
         """
         plot all moving agents and their history as fading rectangles
         """
         # Plot
-        for agent in all_agents:
-            self.plot_instance(draw, fill, agent)
+        for _, state in other_states.items():
+            self.plot_instance(draw, fill, state)
 
     def spot_available(self, occupy_mask, center, size):
         """

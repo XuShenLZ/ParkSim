@@ -46,7 +46,7 @@ class VehicleBody(BasePolytopeObstacle):
             self.l = self.br + self.bf
 
             self.cf = 2.25
-            self.cr = 1.5
+            self.cr = 2.25
             self.num_circles = 5
         else:
             raise NotImplementedError('Unrecognized vehicle flag: %d'%self.vehicle_flag)
@@ -100,7 +100,7 @@ class VehicleConfig(PythonMsg):
     d_delta_min: float = field(default=-1.5)  # minimum change in steering angle over dt
 
     # Path Following Related
-    v_cruise: float = field(default=5) # Maximum cruising speed
+    v_cruise: float = field(default=3) # Maximum cruising speed
     steps_to_end: int = field(default=30) # The steps towards the end of the ref path to slow down
     v_end: float = field(default=1) # The speed in the final segment of tracking
 
@@ -108,5 +108,21 @@ class VehicleConfig(PythonMsg):
     offset: float = field(default=1.75) # distance off from waypoints
     look_ahead_timesteps: int = field(default=10) # how far to look ahead for crash detection
     crash_check_radius: float = field(default=15) # which vehicles to check crash
-    parking_radius: float = field(default=7) # how much room a vehicle should have to park
+    parking_radius: float = field(default=6) # how much room a vehicle should have to park
+    parking_ahead_angle: float = field(default=np.pi/4)
     leading_trailing_thres: float = field(default=0.25) # Threshold of heading angle difference to check whether two vehicles are leading and trailing. 0.25 is about about 15 degrees
+
+@dataclass
+class VehicleInfo(PythonMsg):
+    ref_pose: VehiclePrediction = field(default=None)
+    ref_v: float = field(default=0)
+    target_idx: int = field(default=None)
+    priority: int = field(default=None)
+    parking_flag: str = field(default=None)
+    parking_progress: str = field(default=None)
+    is_braking: bool = field(default=None)
+    parking_start_time: float = field(default=None)
+    waiting_for: int = field(default=None)
+
+    def __post_init__(self):
+        self.ref_pose = VehiclePrediction()
