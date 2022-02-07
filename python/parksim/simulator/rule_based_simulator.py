@@ -14,7 +14,7 @@ from parksim.visualizer.realtime_visualizer import RealtimeVisualizer
 
 from parksim.agents.rule_based_stanley_vehicle import RuleBasedStanleyVehicle
 
-np.random.seed(44) # ones with interesting cases: 20, 33, 44, 60
+np.random.seed(39) # ones with interesting cases: 20, 33, 44, 60
 
 # These parameters should all become ROS param for simulator and vehicle
 parking_spaces_path = 'ParkSim/parking_spaces.npy'
