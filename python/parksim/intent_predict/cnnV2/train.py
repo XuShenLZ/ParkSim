@@ -56,7 +56,7 @@ def train_network():
         running_loss = 0.0
         running_train_accuracy = 0.0
         cnn.train()
-        for data in trainloader:
+        for data in tqdm(trainloader):
             img_feature, non_spatial_feature, labels = data
             img_feature = img_feature.cuda()
             non_spatial_feature = non_spatial_feature.cuda()
