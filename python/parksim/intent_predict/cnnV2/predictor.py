@@ -1,5 +1,5 @@
 from cv2 import norm
-from parksim.intent_predict.cnnV2.network import RegularizedCNN
+from parksim.intent_predict.cnnV2.network import SmallRegularizedCNN
 from parksim.spot_detector.detector import LocalDetector
 import torch
 from torchvision import transforms
@@ -40,9 +40,9 @@ class Predictor:
         self.resolution = resolution
         self.sensing_limit = sensing_limit
 
-    def load_model(self, waypoints: WaypointsGraph, model_path=ROOT_DIR / 'models/regularizedCNN_L0.053_12-06-2021_13-38-13.pth'):
+    def load_model(self, waypoints: WaypointsGraph, model_path=ROOT_DIR / 'models/smallRegularizedCNN_L0.068_01-29-2022_19-50-35.pth'):
         self.waypoints = waypoints
-        model = RegularizedCNN()
+        model = SmallRegularizedCNN()
         if self.use_cuda:
             model_state = torch.load(model_path)
         else:
@@ -66,8 +66,10 @@ class Predictor:
         assert self.model != None, "You must call load_model before trying to predict"
 
 
-        
+        #start = time.time()
         image_features, non_spatial_features, spot_coordinates = self.get_features(instance_centric_view, global_position, heading, speed, time_spent_in_lot)
+        #end = time.time()
+        #print("Feature Gen Time: ", end - start)
         scores = []
         
 
@@ -79,10 +81,10 @@ class Predictor:
         if self.use_cuda:
             img_tensors = img_tensors.cuda()
             non_spatial_tensors = non_spatial_tensors.cuda()
-        start = time.time()
+        #start = time.time()
         preds = self.model(img_tensors, non_spatial_tensors)
-        end = time.time()
-        print("Pred Time: ", end - start)
+        #end = time.time()
+        #print("Pred Time: ", end - start)
         pred_scores = torch.sigmoid(preds.float())
         #exponentiated_scores = np.exp(scores)
         total_score = torch.sum(pred_scores)

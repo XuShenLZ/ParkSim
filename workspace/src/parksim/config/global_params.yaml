@@ -1,3 +1,5 @@
 /**:
   ros__parameters:
     dlp_path: '/dlp-dataset/data/DJI_0012' # Starts from home directory
+
+    random_seed: 44
