@@ -87,6 +87,7 @@ class RuleBasedStanleyVehicle(AbstractAgent):
 
         # ============= Information of other vehicles ===========
         self.other_vehicles: Set(int) = set() # Other vehicle ids
+        self.nearby_vehicles: Set(int) = set() # Nearby vehicles that we are interested
         self.other_state: Dict[int, VehicleState] = {}
         self.other_ref_pose: Dict[int, VehiclePrediction] = {}
         self.other_ref_v: Dict[int, float] = {}
@@ -379,13 +380,11 @@ class RuleBasedStanleyVehicle(AbstractAgent):
             self.other_waiting_for[id] = v.waiting_for
 
     def will_crash_with(self) -> Set[int]:
-        surrounding_ids = [id for id in self.other_vehicles if np.linalg.norm([self.state.x.x - self.other_state[id].x.x, self.state.x.y - self.other_state[id].x.y]) < self.vehicle_config.crash_check_radius]
-
         will_crash_with = set()
 
         # create states for looking ahead
         look_ahead_state = self.state.copy()
-        other_look_ahead_states = [self.other_state[id].copy() for id in surrounding_ids]
+        other_look_ahead_states = [self.other_state[id].copy() for id in self.nearby_vehicles]
 
         # for each time step, looking ahead
         for _ in range(self.vehicle_config.look_ahead_timesteps):
@@ -396,7 +395,7 @@ class RuleBasedStanleyVehicle(AbstractAgent):
             ai, di, _ = self.motion_predictor.solve(look_ahead_state, self.is_braking)
             self.motion_predictor.step(look_ahead_state, ai, di)
 
-            for id, other_look_ahead_state in zip(surrounding_ids, other_look_ahead_states):
+            for id, other_look_ahead_state in zip(self.nearby_vehicles, other_look_ahead_states):
                 if id not in will_crash_with: # for efficiency
                     self.motion_predictor.set_ref_pose(self.other_ref_pose[id].x, self.other_ref_pose[id].y, self.other_ref_pose[id].psi)
                     self.motion_predictor.set_ref_v(self.other_ref_v[id])
@@ -406,7 +405,7 @@ class RuleBasedStanleyVehicle(AbstractAgent):
 
 
             # detect crash
-            for id, other_look_ahead_state in zip(surrounding_ids, other_look_ahead_states):
+            for id, other_look_ahead_state in zip(self.nearby_vehicles, other_look_ahead_states):
                 if id not in will_crash_with: # for efficiency
                     if self.will_collide(look_ahead_state, other_look_ahead_state, self.vehicle_body):
                         # TODO: Here we assume all other vehicles have the same vehicle body as us
@@ -573,11 +572,30 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         """
         
         return (self.parking_flag == "PARKING" and self.parking_maneuver_state is not None and self.parking_step >= len(self.parking_maneuver_state['x'])) or (self.spot_index < 0 and self.reached_tgt)
+    
+    def update_nearby_vehicles(self, radius=None):
+        """
+        radius: (Optional) vehicles inside this radius are considered as "nearby". If left empty, we will use vehicle_config.crash_check_radius
+        """
+        if not radius:
+            radius = self.vehicle_config.crash_check_radius
+
+        self.nearby_vehicles.clear()
+
+        for id in self.other_vehicles:
+            dist = np.linalg.norm([self.state.x.x - self.other_state[id].x.x, self.state.x.y - self.other_state[id].x.y])
+
+            if dist < radius:
+                self.nearby_vehicles.add(id)
+            
 
     def solve(self):
         """
         Having other_vehicle_objects here is just to mimic the ROS service to change values of the other vehicle. Should use this to acquire information
         """
+        # Firstly update the set of nearby_vehicles
+        self.update_nearby_vehicles()
+
         # driving control
 
         if self.parking_flag:
@@ -594,7 +612,7 @@ class RuleBasedStanleyVehicle(AbstractAgent):
                     self.set_ref_v(self.vehicle_config.v_end)
 
                 # detect parking and unparking
-                nearby_parkers = [id for id in self.other_vehicles if (self.other_parking_progress[id] is not None) and self.other_within_parking_box(id)]
+                nearby_parkers = [id for id in self.nearby_vehicles if (self.other_parking_progress[id] is not None) and self.other_within_parking_box(id)]
 
                 if nearby_parkers:
                     # should only be one nearby parker, since they wait for each other
@@ -634,7 +652,7 @@ class RuleBasedStanleyVehicle(AbstractAgent):
             else: # waiting / braking
                 # parking
                 if self.waiting_for is not None and self.other_parking_flag[self.waiting_for] == "PARKING":
-                    if self.waiting_for not in self.other_vehicles:
+                    if self.waiting_for not in self.nearby_vehicles:
                         self.unbrake()
                         
                 elif self.waiting_for is not None and self.waiting_for_unparker:
@@ -652,7 +670,7 @@ class RuleBasedStanleyVehicle(AbstractAgent):
                     else:
                         # TODO: better heuristic for unbraking
                         
-                        if (self.waiting_for not in self.other_vehicles  
+                        if (self.waiting_for not in self.nearby_vehicles  
                             or not self.other_is_braking[self.waiting_for] 
                             and self.has_passed(this_id=self.waiting_for)
                             or np.linalg.norm([self.other_state[self.waiting_for].x.x - self.state.x.x, self.other_state[self.waiting_for].x.y - self.state.x.y]) > 10):
@@ -690,7 +708,7 @@ class RuleBasedStanleyVehicle(AbstractAgent):
             # TODO: this doesn't yet account for a braked vehicle in the way of our parking
             should_go = all([self.other_is_braking[id]
                             or (self.other_parking_flag[id] is not None and self.other_parking_start_time[id] > self.parking_start_time)
-                            or np.linalg.norm([self.state.x.x - self.other_state[id].x.x, self.state.x.y - self.other_state[id].x.y]) >= 2*self.vehicle_config.parking_radius for id in self.other_vehicles])
+                            or np.linalg.norm([self.state.x.x - self.other_state[id].x.x, self.state.x.y - self.other_state[id].x.y]) >= 2*self.vehicle_config.parking_radius for id in self.nearby_vehicles])
 
             if self.park_start_coords is None:
                 self.park_start_coords = (self.state.x.x - self.vehicle_config.offset * np.sin(self.state.e.psi), self.state.x.y + self.vehicle_config.offset * np.cos(self.state.e.psi))
@@ -701,7 +719,7 @@ class RuleBasedStanleyVehicle(AbstractAgent):
             # TODO: this doesn't yet account for a braked / (un)parking vehicle in the way of our parking
             should_go = all([self.other_is_braking[id] 
                             or (self.other_parking_flag[id] is not None and self.other_parking_start_time[id] > self.parking_start_time)
-                            or np.linalg.norm([self.state.x.x - self.other_state[id].x.x, self.state.x.y - self.other_state[id].x.y]) >= 2*self.vehicle_config.parking_radius for id in self.other_vehicles])
+                            or np.linalg.norm([self.state.x.x - self.other_state[id].x.x, self.state.x.y - self.other_state[id].x.y]) >= 2*self.vehicle_config.parking_radius for id in self.nearby_vehicles])
 
             self.update_state_unparking(should_go)
         else: 
