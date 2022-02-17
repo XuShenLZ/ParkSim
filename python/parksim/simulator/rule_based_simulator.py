@@ -29,7 +29,6 @@ overshoot_ranges = {'pointed_right': [(42, 48), (67, 69), (92, 94), (113, 115), 
 
 anchor_points = [47, 93, 135, 185, 227, 277, 319, 344] # for now, second spot at the start of a row
 spot_edge_buffer = 3
-
 anchor_spots = [list(range(spot_edge_buffer, 21 - spot_edge_buffer)) + list(range(42 + spot_edge_buffer, 67 - spot_edge_buffer)), \
     list(range(21 + spot_edge_buffer, 42 - spot_edge_buffer)) + list(range(92 + spot_edge_buffer, 113 - spot_edge_buffer)), \
     list(range(67 + spot_edge_buffer, 92 - spot_edge_buffer)) + list(range(134 + spot_edge_buffer, 159 - spot_edge_buffer)), \
