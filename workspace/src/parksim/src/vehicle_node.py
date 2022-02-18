@@ -80,7 +80,7 @@ class VehicleNode(MPClabNode):
         self.vehicle.load_parking_spaces(spots_data_path=self.spots_data_path)
         self.vehicle.load_graph(waypoints_graph_path=self.waypoints_graph_path)
         self.vehicle.load_maneuver(offline_maneuver_path=self.offline_maneuver_path)
-        self.vehicle.set_anchor(going_to_anchor=self.spot_index>0, spot_index=self.spot_index, should_overshoot=False)
+        self.vehicle.set_spot_idx(spot_index=self.spot_index)
 
         self.vehicle.set_method_to_change_central_occupancy(self.change_occupancy)
 

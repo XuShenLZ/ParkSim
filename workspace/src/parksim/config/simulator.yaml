@@ -5,6 +5,8 @@
     # Map related
     spots_data_path: '/ParkSim/data/spots_data.pickle'
 
+    block_spots: [43, 44, 45] # Spots to be blocked in advance
+
     # ======== Spawn
     spawn_entering: 5
     spawn_exiting: 5

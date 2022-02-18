@@ -25,6 +25,8 @@ class SimulatorNodeParams(NodeParamTemplate):
         self.timer_period = 0.1
         self.random_seed = 0
 
+        self.block_spots = []
+
         self.spawn_entering = 3
         self.spawn_exiting = 3
         self.spawn_interval_min = 2 # (s)
@@ -56,9 +58,8 @@ class SimulatorNode(MPClabNode):
 
         # Parking Spaces
         self.parking_spaces, self.occupied = self._gen_occupancy()
-        with open(home_path + self.spots_data_path, 'rb') as f:
-            data = pickle.load(f)
-            self.anchor_points = data['anchor_points']
+        for idx in self.block_spots:
+            self.occupied[idx] = True
 
         # Spawning
         self.spawn_entering_time = sorted(np.random.exponential(self.spawn_interval_mean, self.spawn_entering))
@@ -127,7 +128,10 @@ class SimulatorNode(MPClabNode):
         current_time = self.get_ros_time()
 
         if self.spawn_entering_time and current_time - self.start_time > self.spawn_entering_time[0]:
-            self.add_vehicle(np.random.choice(self.anchor_points)) # pick from the anchor points at random
+            empty_spots = [i for i in range(len(self.occupied)) if not self.occupied[i]]
+            chosen_spot = np.random.choice(empty_spots)
+            self.add_vehicle(chosen_spot) # pick from empty spots randomly
+            self.occupied[chosen_spot] = True
             self.spawn_entering_time.pop(0)
 
         if self.spawn_exiting_time and current_time - self.start_time > self.spawn_exiting_time[0]:
