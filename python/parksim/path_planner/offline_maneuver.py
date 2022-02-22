@@ -1,6 +1,9 @@
 import pickle
 import matplotlib.pyplot as plt
 import random
+
+from parksim.pytypes import VehiclePrediction
+
 random.seed(0)
 
 class OfflineManeuver(object):
@@ -15,23 +18,22 @@ class OfflineManeuver(object):
                         driving_dir=random.choice(['east', 'west']), 
                         x_position=random.choice(['left', 'right']),
                         spot=random.choice(['north', 'south']),
-                        heading=random.choice(['up', 'down'])):
+                        heading=random.choice(['up', 'down'])) -> VehiclePrediction:
         print('Trajectory requested:', (driving_dir, x_position, spot, heading))
         
         traj = self.lib[(driving_dir, x_position, spot, heading)]
 
-        state = {}
-        state['t'] = traj[0, :]
-        state['x'] = traj[1, :] + xy_offset[0]
-        state['y'] = traj[2, :] + xy_offset[1]
-        state['yaw'] = traj[3, :]
-        state['v'] = traj[4, :]
+        res = VehiclePrediction()
+        res.t = traj[0, :]
+        res.x = traj[1, :] + xy_offset[0]
+        res.y = traj[2, :] + xy_offset[1]
+        res.psi = traj[3, :]
+        res.v = traj[4, :]
 
-        input = {}
-        input['a'] = traj[5, :]
-        input['steer'] = traj[6, :]
+        res.u_a = traj[5, :]
+        res.u_steer = traj[6, :]
 
-        return state, input
+        return res
 
 def main():
     offline_maneuver = OfflineManeuver(pickle_file='parking_maneuvers.pickle')

@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 
 import re
+from parksim.controller.stanley_controller import StanleyController
+
+from parksim.controller_types import StanleyParams
 
 import rclpy
 from rclpy.handle import InvalidHandle
@@ -68,11 +71,19 @@ class VehicleNode(MPClabNode):
         while not self.occupancy_cli.wait_for_service(timeout_sec=1.0):
             self.get_logger().info('service not available, waiting again...')
 
+        vehicle_body = VehicleBody()
+        vehicle_config = VehicleConfig()
+
+        controller_params = StanleyParams(dt=self.timer_period)
+        controller = StanleyController(control_params=controller_params, vehicle_body=vehicle_body, vehicle_config=vehicle_config)
+        motion_predictor = StanleyController(control_params=controller_params, vehicle_body=vehicle_body, vehicle_config=vehicle_config)
 
         self.vehicle = RuleBasedStanleyVehicle(
             vehicle_id=self.vehicle_id, 
-            vehicle_body=VehicleBody(), 
-            vehicle_config=VehicleConfig(), 
+            vehicle_body=vehicle_body, 
+            vehicle_config=vehicle_config, 
+            controller=controller,
+            motion_predictor=motion_predictor,
             inst_centric_generator=None, 
             intent_predictor=None
             )

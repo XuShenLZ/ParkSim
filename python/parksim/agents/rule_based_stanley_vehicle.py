@@ -14,6 +14,7 @@ from parksim.pytypes import VehiclePrediction, VehicleState
 from parksim.route_planner.a_star import AStarGraph, AStarPlanner
 from parksim.route_planner.graph import Vertex, WaypointsGraph
 from parksim.utils.get_corners import get_vehicle_corners
+from parksim.utils.interpolation import interpolate_states_inputs
 from parksim.vehicle_types import VehicleBody, VehicleConfig, VehicleInfo
 from parksim.intent_predict.cnnV2.predictor import Predictor, PredictionResponse
 from parksim.intent_predict.cnnV2.visualizer.instance_centric_generator import InstanceCentricGenerator
@@ -66,13 +67,11 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         self.parking_flag = None # None, "PARKING", "UNPARKING"
         self.parking_start_time = float('inf') # inf means haven't start parking or unparking. Anything above 0 is parking
 
-        self.parking_maneuver_state = None
-        self.parking_maneuver_input = None
+        self.parking_maneuver = None
         self.parking_step = 0
         
         # unparking stuff
-        self.unparking_maneuver_state = None
-        self.unparking_maneuver_input = None
+        self.unparking_maneuver = None
         self.unparking_step = 0
         
         # braking stuff
@@ -423,7 +422,7 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         self.controller.step(self.state, ai, di)
             
     def update_state_parking(self, advance=True):
-        if self.parking_maneuver_state is None: # start parking
+        if self.parking_maneuver is None: # start parking
             # get parking parameters
             direction = 'west' if self.state.e.psi > np.pi / 2 or self.state.e.psi < -np.pi / 2 else 'east'
             if self.should_overshoot:
@@ -434,28 +433,32 @@ class RuleBasedStanleyVehicle(AbstractAgent):
             spot = 'north' if any([self.spot_index >= r[0] and self.spot_index <= r[1] for r in self.north_spot_idx_ranges]) else 'south'
             
             # get parking maneuver
-            self.parking_maneuver_state, self.parking_maneuver_input = self.offline_maneuver.get_maneuver([self.park_start_coords[0] - 4 if location == 'right' else self.park_start_coords[0] + 4, self.park_start_coords[1]], direction, location, spot, pointing)
+            offline_maneuver = self.offline_maneuver.get_maneuver([self.park_start_coords[0] - 4 if location == 'right' else self.park_start_coords[0] + 4, self.park_start_coords[1]], direction, location, spot, pointing)
+
+            time_seq = np.arange(start=offline_maneuver.t[0], stop=offline_maneuver.t[-1], step=self.controller.dt)
+            
+            self.parking_maneuver = interpolate_states_inputs(offline_maneuver, time_seq)
 
             self.parking_start_time = time.time()
             
             
         # idle when done
-        step = min(self.parking_step, len(self.parking_maneuver_state['x']) - 1)
+        step = min(self.parking_step, len(self.parking_maneuver.x) - 1)
             
         # set state
-        self.state.x.x = self.parking_maneuver_state['x'][step]
-        self.state.x.y = self.parking_maneuver_state['y'][step]
-        self.state.e.psi = self.parking_maneuver_state['yaw'][step]
-        self.state.v.v = self.parking_maneuver_state['v'][step]
+        self.state.x.x = self.parking_maneuver.x[step]
+        self.state.x.y = self.parking_maneuver.y[step]
+        self.state.e.psi = self.parking_maneuver.psi[step]
+        self.state.v.v = self.parking_maneuver.v[step]
 
-        self.state.u.u_a = self.parking_maneuver_input['a'][step]
-        self.state.u.u_steer = self.parking_maneuver_input['steer'][step]
+        self.state.u.u_a = self.parking_maneuver.u_a[step]
+        self.state.u.u_steer = self.parking_maneuver.u_steer[step]
         
         # update parking step if advancing
         self.parking_step += 1 if advance else 0
         
     def update_state_unparking(self, advance=True):
-        if self.unparking_maneuver_state is None: # start unparking
+        if self.unparking_maneuver is None: # start unparking
             # get unparking parameters
             direction = 'west' if self.x_ref[0] > self.x_ref[1] else 'east' # if first direction of travel is left, face west
             location = 'right' if np.random.rand() < 0.5 else 'left' # random for diversity
@@ -463,10 +466,14 @@ class RuleBasedStanleyVehicle(AbstractAgent):
             spot = 'north' if any([-self.spot_index >= r[0] and -self.spot_index <= r[1] for r in self.north_spot_idx_ranges]) else 'south'
             
             # get parking maneuver
-            self.unparking_maneuver_state, self.unparking_maneuver_input = self.offline_maneuver.get_maneuver([self.state.x.x if location == 'right' else self.state.x.x, self.state.x.y - 6.25 if spot == 'north' else self.state.x.y + 6.25], direction, location, spot, pointing)
+            offline_maneuver = self.offline_maneuver.get_maneuver([self.state.x.x if location == 'right' else self.state.x.x, self.state.x.y - 6.25 if spot == 'north' else self.state.x.y + 6.25], direction, location, spot, pointing)
+
+            time_seq = np.arange(start=offline_maneuver.t[0], stop=offline_maneuver.t[-1], step=self.controller.dt)
+            
+            self.unparking_maneuver = interpolate_states_inputs(offline_maneuver, time_seq)
             
             # set initial unparking state
-            self.unparking_step = len(self.unparking_maneuver_state['x']) - 1
+            self.unparking_step = len(self.unparking_maneuver.x) - 1
 
             self.parking_start_time = time.time()
             
@@ -474,13 +481,13 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         step = self.unparking_step
             
         # set state
-        self.state.x.x = self.unparking_maneuver_state['x'][step]
-        self.state.x.y = self.unparking_maneuver_state['y'][step]
-        self.state.e.psi = self.unparking_maneuver_state['yaw'][step]
-        self.state.v.v = self.unparking_maneuver_state['v'][step]
+        self.state.x.x = self.unparking_maneuver.x[step]
+        self.state.x.y = self.unparking_maneuver.y[step]
+        self.state.e.psi = self.unparking_maneuver.psi[step]
+        self.state.v.v = self.unparking_maneuver.v[step]
 
-        self.state.u.u_a = self.unparking_maneuver_input['a'][step]
-        self.state.u.u_steer = self.unparking_maneuver_input['steer'][step]
+        self.state.u.u_a = self.unparking_maneuver.u_a[step]
+        self.state.u.u_steer = self.unparking_maneuver.u_steer[step]
         
         if self.unparking_step == 0: # done unparking
             self.parking_flag = None
@@ -523,17 +530,17 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         """
         Are we in the middle of a parking manuever? If this is False, traffic should have the right of way, else this vehicle should have the right of way
         """
-        return self.parking_flag == "PARKING" and self.parking_maneuver_state is not None and self.parking_step > 0 and self.parking_step < len(self.parking_maneuver_state['x']) - 1
+        return self.parking_flag == "PARKING" and self.parking_maneuver is not None and self.parking_step > 0 and self.parking_step < len(self.parking_maneuver.x) - 1
 
     def is_unparking(self):
-        return self.parking_flag == "UNPARKING" and self.unparking_maneuver_state is not None and self.unparking_step < len(self.unparking_maneuver_state['x']) - 11 and self.unparking_step > 0
+        return self.parking_flag == "UNPARKING" and self.unparking_maneuver is not None and self.unparking_step < len(self.unparking_maneuver.x) - 1 and self.unparking_step > 0
     
     def is_all_done(self):
         """
         Have we finished the parking maneuver or we have reached the exit?
         """
         
-        return (self.parking_flag == "PARKING" and self.parking_maneuver_state is not None and self.parking_step >= len(self.parking_maneuver_state['x'])) or (self.spot_index < 0 and self.reached_tgt)
+        return (self.parking_flag == "PARKING" and self.parking_maneuver is not None and self.parking_step >= len(self.parking_maneuver.x)) or (self.spot_index < 0 and self.reached_tgt)
     
     def update_nearby_vehicles(self, radius=None):
         """
