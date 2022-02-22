@@ -168,11 +168,11 @@ class RuleBasedStanleyVehicle(AbstractAgent):
             else:
                 overshoot_ranges = self.overshoot_ranges['pointed_left']
 
-            should_overshoot = any([self.spot_index >= r[0] and self.spot_index <= r[1] for r in overshoot_ranges])
+            self.should_overshoot = any([self.spot_index >= r[0] and self.spot_index <= r[1] for r in overshoot_ranges])
 
             last_x, last_y = last_edge.v2.coords
 
-            if should_overshoot:
+            if self.should_overshoot:
                 # add point past the final waypoint, that signifies going past the spot by 4 meters, so it parks in the right place
                 # if the last edge was pointed right, offset to the right
                 if pointed_right:
