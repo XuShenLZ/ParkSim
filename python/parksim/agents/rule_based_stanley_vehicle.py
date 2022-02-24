@@ -409,7 +409,6 @@ class RuleBasedStanleyVehicle(AbstractAgent):
     def other_within_parking_box(self, other_id):
         ang = ((np.arctan2(self.other_state[other_id].x.y - self.state.x.y, self.other_state[other_id].x.x - self.state.x.x) - self.state.e.psi) + (2*np.pi)) % (2*np.pi)
         dist = self.dist_from(other_id)
-        
         if ang < self.vehicle_config.parking_ahead_angle or ang > 2 * np.pi - self.vehicle_config.parking_ahead_angle:
             return dist < 2*self.vehicle_config.parking_radius
         else:
@@ -582,6 +581,8 @@ class RuleBasedStanleyVehicle(AbstractAgent):
                     self.set_ref_v(self.vehicle_config.v_max)
                 else:
                     self.set_ref_v(self.vehicle_config.v_end)
+
+                self.disp_text = str([(id, self.other_parking_progress[id], self.other_within_parking_box(id)) for id in self.nearby_vehicles])
 
                 # detect parking and unparking
                 nearby_parkers = [id for id in self.nearby_vehicles if (self.other_parking_progress[id] is not None) and self.other_within_parking_box(id)]
