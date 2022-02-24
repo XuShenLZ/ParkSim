@@ -11,6 +11,7 @@ from dlp.dataset import Dataset
 from dlp.visualizer import Visualizer as DlpVisualizer
 
 from std_msgs.msg import Int16MultiArray
+from parksim.msg import VehicleStateMsg
 from parksim.srv import OccupancySrv
 from parksim.base_node import MPClabNode
 from parksim.pytypes import VehicleState, NodeParamTemplate
@@ -25,11 +26,11 @@ class SimulatorNodeParams(NodeParamTemplate):
         self.timer_period = 0.1
         self.random_seed = 0
 
-        self.block_spots = []
+        self.blocked_spots = []
 
         self.spawn_entering = 3
         self.spawn_exiting = 3
-        self.spawn_interval_min = 2 # (s)
+        self.y_bound_to_resume_spawning = 70
         self.spawn_interval_mean = 5 # (s)
 
         self.spots_data_path = ''
@@ -58,17 +59,22 @@ class SimulatorNode(MPClabNode):
 
         # Parking Spaces
         self.parking_spaces, self.occupied = self._gen_occupancy()
-        for idx in self.block_spots:
+        for idx in self.blocked_spots:
             self.occupied[idx] = True
 
         # Spawning
-        self.spawn_entering_time = sorted(np.random.exponential(self.spawn_interval_mean, self.spawn_entering))
-        for i in range(self.spawn_entering):
-            self.spawn_entering_time[i] += i * self.spawn_interval_min
+        self.spawn_entering_time = list(np.random.exponential(self.spawn_interval_mean, self.spawn_entering))
 
         self.spawn_exiting_time = sorted(np.random.exponential(self.spawn_interval_mean, self.spawn_exiting))
 
+        self.last_enter_id = None
+        self.last_enter_sub = None
+        self.last_enter_state = VehicleState()
+        self.keep_spawn_entering = True
+
         self.start_time = self.get_ros_time()
+
+        self.last_enter_time = self.start_time
 
         self.vehicles = []
         self.num_vehicles = 0
@@ -123,16 +129,31 @@ class SimulatorNode(MPClabNode):
 
         print("Vehicle nodes are down")
 
-    def timer_callback(self):
-        
+    def last_enter_cb(self, msg):
+        self.unpack_msg(msg, self.last_enter_state)
+
+        # If vehicle left entrance area, start spawning another one
+        if self.last_enter_state.x.y < self.y_bound_to_resume_spawning:
+            self.keep_spawn_entering = True
+            self.get_logger().info("Vehicle %d left the entrance area." % self.last_enter_id)
+
+    def try_spawn_entering(self):
         current_time = self.get_ros_time()
 
-        if self.spawn_entering_time and current_time - self.start_time > self.spawn_entering_time[0]:
+        if self.spawn_entering_time and current_time - self.last_enter_time > self.spawn_entering_time[0]:
             empty_spots = [i for i in range(len(self.occupied)) if not self.occupied[i]]
             chosen_spot = np.random.choice(empty_spots)
             self.add_vehicle(chosen_spot) # pick from empty spots randomly
             self.occupied[chosen_spot] = True
             self.spawn_entering_time.pop(0)
+
+            self.last_enter_time = current_time
+            self.last_enter_id = self.num_vehicles
+            self.last_enter_sub = self.create_subscription(VehicleStateMsg, '/vehicle_%d/state' % self.last_enter_id, self.last_enter_cb, 10)
+            self.keep_spawn_entering = False
+
+    def try_spawn_exiting(self):
+        current_time = self.get_ros_time()
 
         if self.spawn_exiting_time and current_time - self.start_time > self.spawn_exiting_time[0]:
             empty_spots = [i for i in range(len(self.occupied)) if not self.occupied[i]]
@@ -140,6 +161,17 @@ class SimulatorNode(MPClabNode):
             self.add_vehicle(-1 * chosen_spot)
             self.occupied[chosen_spot] = True
             self.spawn_exiting_time.pop(0)
+
+    def timer_callback(self):
+        
+        if self.keep_spawn_entering:
+            if self.last_enter_sub:
+                self.destroy_subscription(self.last_enter_sub)
+                self.last_enter_sub = None
+
+            self.try_spawn_entering()
+
+        self.try_spawn_exiting()
 
         occupancy_msg = Int16MultiArray()
         occupancy_msg.data = self.occupied

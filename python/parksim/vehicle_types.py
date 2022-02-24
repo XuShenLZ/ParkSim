@@ -123,6 +123,7 @@ class VehicleInfo(PythonMsg):
     is_braking: bool = field(default=None)
     parking_start_time: float = field(default=None)
     waiting_for: int = field(default=None)
+    disp_text: str = field(default=None)
 
     def __post_init__(self):
         self.ref_pose = VehiclePrediction()

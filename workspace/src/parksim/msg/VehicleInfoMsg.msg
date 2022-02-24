@@ -10,3 +10,4 @@ string                              parking_process # Parking Process (is curren
 bool                                is_braking  # Is braking
 float64                             parking_start_time  # (Un)Parking Start Time
 int16                               waiting_for # The index that vehicle is waiting for
+string                              disp_text # Some custom text to displayed on top of vehicle

@@ -7,3 +7,7 @@ visualizer:
     parking_color: [255, 128, 0, 255]
     braking_color: [255, 0, 0, 255]
     alldone_color: [0, 0, 0, 255]
+
+    # ======== Text display
+    disp_text_offset: [-1, 1]
+    disp_text_size: 25

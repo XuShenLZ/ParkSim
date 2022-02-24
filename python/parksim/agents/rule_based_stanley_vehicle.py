@@ -26,6 +26,7 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         # State and Reference Waypoints
         self.state: VehicleState = VehicleState() # state
         self.info: VehicleInfo = VehicleInfo() # Info
+        self.disp_text: str = str(self.vehicle_id)
         
         self.state_hist: List[VehicleState] = [] # State history
 
@@ -286,6 +287,8 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         self.info.is_braking = self.is_braking
         self.info.parking_start_time = self.parking_start_time
         self.info.waiting_for = self.waiting_for
+
+        self.info.disp_text = self.disp_text
 
         return self.info
 

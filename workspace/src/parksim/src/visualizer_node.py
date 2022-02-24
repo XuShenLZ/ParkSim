@@ -30,6 +30,9 @@ class VisualizerNodeParams(NodeParamTemplate):
         self.braking_color = [255, 0, 0, 255]
         self.alldone_color = [0, 0, 0, 255]
 
+        self.disp_text_offset = [-2, 2]
+        self.disp_text_size = 25
+
 class VisualizerNode(MPClabNode):
     """
     Node class for visualizing everything
@@ -137,6 +140,8 @@ class VisualizerNode(MPClabNode):
                 color = self.driving_color
 
             self.vis.draw_vehicle(state, fill=color)
+            if info and info.disp_text:
+                self.vis.draw_text([state.x.x + self.disp_text_offset[0], state.x.y + self.disp_text_offset[1]], info.disp_text, size=self.disp_text_size)
 
         self.vis.render()
         
