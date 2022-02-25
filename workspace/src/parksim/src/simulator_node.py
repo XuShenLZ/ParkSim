@@ -65,7 +65,7 @@ class SimulatorNode(MPClabNode):
         # Spawning
         self.spawn_entering_time = list(np.random.exponential(self.spawn_interval_mean, self.spawn_entering))
 
-        self.spawn_exiting_time = sorted(np.random.exponential(self.spawn_interval_mean, self.spawn_exiting))
+        self.spawn_exiting_time = list(np.random.exponential(self.spawn_interval_mean, self.spawn_exiting))
 
         self.last_enter_id = None
         self.last_enter_sub = None
@@ -75,6 +75,7 @@ class SimulatorNode(MPClabNode):
         self.start_time = self.get_ros_time()
 
         self.last_enter_time = self.start_time
+        self.last_exit_time = self.start_time
 
         self.vehicles = []
         self.num_vehicles = 0
@@ -155,12 +156,14 @@ class SimulatorNode(MPClabNode):
     def try_spawn_exiting(self):
         current_time = self.get_ros_time()
 
-        if self.spawn_exiting_time and current_time - self.start_time > self.spawn_exiting_time[0]:
+        if self.spawn_exiting_time and current_time - self.last_exit_time > self.spawn_exiting_time[0]:
             empty_spots = [i for i in range(len(self.occupied)) if not self.occupied[i]]
             chosen_spot = np.random.choice(empty_spots)
             self.add_vehicle(-1 * chosen_spot)
             self.occupied[chosen_spot] = True
             self.spawn_exiting_time.pop(0)
+
+            self.last_exit_time = current_time
 
     def timer_callback(self):
         
