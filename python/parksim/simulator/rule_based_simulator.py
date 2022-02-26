@@ -113,6 +113,8 @@ class RuleBasedSimulator(object):
     # goes to an anchor point
     # convention: if entering, spot_index is positive, and if exiting, it's negative
     def add_vehicle(self, spot_index: int, vehicle_body: VehicleBody=VehicleBody(), vehicle_config: VehicleConfig=VehicleConfig()):
+        # Start vehicle indexing from 1
+        self.num_vehicles += 1
 
         # NOTE: These lines are here for now. In the ROS implementation, they will all be in the vehicle node, no the simulator node
         vehicle = RuleBasedStanleyVehicle(vehicle_id=self.num_vehicles, vehicle_body=vehicle_body, vehicle_config=vehicle_config, inst_centric_generator=None, intent_predictor=None)
@@ -123,7 +125,6 @@ class RuleBasedSimulator(object):
         # vehicle.load_intent_model(model_path=intent_model_path)
         vehicle.start_vehicle()
 
-        self.num_vehicles += 1
         self.vehicles.append(vehicle)
     
 

@@ -65,7 +65,7 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         self.offline_maneuver: OfflineManeuver = None
         self.overshoot_ranges: Dict[str, List[Tuple[int]]] = None
 
-        self.parking_flag = None # None, "PARKING", "UNPARKING"
+        self.parking_flag = "" # "", "PARKING", "UNPARKING"
         self.parking_start_time = float('inf') # inf means haven't start parking or unparking. Anything above 0 is parking
 
         self.parking_maneuver = None
@@ -78,8 +78,8 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         # braking stuff
         self.is_braking = False # are we braking?
         self._pre_brake_target_speed = 0 # speed to restore when unbraking
-        self.priority = None # priority for going after braking
-        self.waiting_for: int = None # vehicle waiting for before we go
+        self.priority = 0 # priority for going after braking
+        self.waiting_for: int = 0 # vehicle waiting for before we go. We start indexing vehicles from 1, so 0 means no vehicle
         self.waiting_for_unparker = False # need special handling for waiting for unparker
 
         # ============= Information of other vehicles ===========
@@ -89,7 +89,7 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         self.other_ref_pose: Dict[int, VehiclePrediction] = {}
         self.other_ref_v: Dict[int, float] = {}
         self.other_target_idx: Dict[int, int] = {}
-        self.other_priority: Dict[int, float] = {}
+        self.other_priority: Dict[int, int] = {}
         self.other_parking_flag: Dict[int, str] = {} # The parking flag of other vehicle
         self.other_parking_progress: Dict[int, str] = {} # Other vehicles will broadcast "PARKING" if vehicle.is_parking(), "UNPARKING" if vehicle.is_unparking(), None otherwise
         self.other_parking_start_time: Dict[int, float] = {}
@@ -282,7 +282,7 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         elif self.is_unparking():
             self.info.parking_progress = "UNPARKING"
         else:
-            self.info.parking_progress = None
+            self.info.parking_progress = ""
 
         self.info.is_braking = self.is_braking
         self.info.parking_start_time = self.parking_start_time
@@ -325,7 +325,7 @@ class RuleBasedStanleyVehicle(AbstractAgent):
             elif v.is_unparking():
                 self.other_parking_progress[id] = "UNPARKING"
             else:
-                self.other_parking_progress[id] = None
+                self.other_parking_progress[id] = ""
 
             self.other_is_braking[id] = v.is_braking
             self.other_parking_start_time[id] = v.parking_start_time
@@ -492,7 +492,7 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         self.state.u.u_steer = self.unparking_maneuver.u_steer[step]
         
         if self.unparking_step == 0: # done unparking
-            self.parking_flag = None
+            self.parking_flag = ""
             self.change_central_occupancy(-self.spot_index, False)
         else:
             # update parking step if advancing
@@ -525,8 +525,8 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         if self.is_braking:
             self.v_ref = self._pre_brake_target_speed
             self.is_braking = False
-            self.priority = None
-            self.waiting_for = None
+            self.priority = 0
+            self.waiting_for = 0
     
     def is_parking(self):
         """
@@ -585,7 +585,7 @@ class RuleBasedStanleyVehicle(AbstractAgent):
                 self.disp_text = str([(id, self.other_parking_progress[id], self.other_within_parking_box(id)) for id in self.nearby_vehicles])
 
                 # detect parking and unparking
-                nearby_parkers = [id for id in self.nearby_vehicles if (self.other_parking_progress[id] is not None) and self.other_within_parking_box(id)]
+                nearby_parkers = [id for id in self.nearby_vehicles if self.other_parking_progress[id] and self.other_within_parking_box(id)]
 
                 if nearby_parkers:
                     # should only be one nearby parker, since they wait for each other
@@ -606,29 +606,28 @@ class RuleBasedStanleyVehicle(AbstractAgent):
                         # variable to tell where to go next (default is braking)
                         going_to_brake = True
 
-                        # set priority if not already set for this vehicle
-                        if self.priority is None:
-                            other_id = ids_will_crash_with[0] # TODO: what if there are multiple cars it will crash with?
+                        # set priority
+                        other_id = ids_will_crash_with[0] # TODO: what if there are multiple cars it will crash with?
 
-                            if not any([self.should_go_before(id) for id in ids_will_crash_with]):
-                                going_to_brake = True # go straight to waiting, no priority calculations necessary
+                        if not any([self.should_go_before(id) for id in ids_will_crash_with]):
+                            going_to_brake = True # go straight to waiting, no priority calculations necessary
 
-                                self.priority = self.other_priority[other_id] - 1 if self.other_priority[other_id] is not None else -1 # so cars that may brake behind it can have a priority
+                            self.priority = self.other_priority[other_id] - 1
 
-                                self.waiting_for = other_id
-                            else: # leading car
-                                going_to_brake = False # don't brake
+                            self.waiting_for = other_id
+                        else: # leading car
+                            going_to_brake = False # don't brake
                         
                         if going_to_brake:
                             self.brake()
 
             else: # waiting / braking
                 # parking
-                if self.waiting_for is not None and self.other_parking_flag[self.waiting_for] == "PARKING":
+                if self.waiting_for != 0 and self.other_parking_flag[self.waiting_for] == "PARKING":
                     if self.waiting_for not in self.nearby_vehicles:
                         self.unbrake()
                         
-                elif self.waiting_for is not None and self.waiting_for_unparker:
+                elif self.waiting_for != 0 and self.waiting_for_unparker:
                     if self.other_parking_flag[self.waiting_for] != "UNPARKING":
                         self.waiting_for_unparker = False
                         self.unbrake()
@@ -638,14 +637,14 @@ class RuleBasedStanleyVehicle(AbstractAgent):
 
                     should_unbrake = False
                     # go if going first
-                    if self.waiting_for is None:
+                    if self.waiting_for == 0:
                         should_unbrake = True
                     else:
                         # TODO: better heuristic for unbraking
                         
                         if (self.waiting_for not in self.nearby_vehicles  
-                            or not self.other_is_braking[self.waiting_for] 
-                            and self.has_passed(this_id=self.waiting_for)
+                            or (not self.other_is_braking[self.waiting_for] 
+                            and self.has_passed(this_id=self.waiting_for))
                             or self.dist_from(self.waiting_for) > 10):
                             # TODO: Why this is 10?
                             should_unbrake = True
@@ -670,7 +669,7 @@ class RuleBasedStanleyVehicle(AbstractAgent):
             # everyone within range should be braking or parking or unparking
             # TODO: this doesn't yet account for a braked vehicle in the way of our parking
             should_go = all([self.other_is_braking[id]
-                            or (self.other_parking_flag[id] is not None and self.other_parking_start_time[id] > self.parking_start_time)
+                            or (self.other_parking_flag[id] != "" and self.other_parking_start_time[id] > self.parking_start_time)
                             or self.dist_from(id) >= 2*self.vehicle_config.parking_radius for id in self.nearby_vehicles])
 
             if self.park_start_coords is None:
@@ -681,7 +680,7 @@ class RuleBasedStanleyVehicle(AbstractAgent):
 
             # TODO: this doesn't yet account for a braked / (un)parking vehicle in the way of our parking
             should_go = all([self.other_is_braking[id] 
-                            or (self.other_parking_flag[id] is not None and self.other_parking_start_time[id] > self.parking_start_time)
+                            or (self.other_parking_flag[id] != "" and self.other_parking_start_time[id] > self.parking_start_time)
                             or self.dist_from(id) >= 2*self.vehicle_config.parking_radius for id in self.nearby_vehicles])
 
             self.update_state_unparking(should_go)
