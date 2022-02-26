@@ -197,7 +197,7 @@ class RuleBasedStanleyVehicle(AbstractAgent):
                         if v.coords[0] > new_vertex.coords[0]:
                             last_waypoint = -i-1
                             break
-
+                # print(len(graph_sol.vertices))
                 graph_sol.vertices = graph_sol.vertices[:last_waypoint+1]
                 graph_sol.vertices.append(new_vertex)
 
@@ -391,8 +391,10 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         """
         if this_id is None or this_id == self.vehicle_id:
             this_corners = self.get_corners()
+            this_psi = self.state.e.psi
         else:
             this_corners = self.get_corners(self.other_state[this_id])
+            this_psi = self.other_state[this_id].e.psi
         
         if other_id is None or other_id == self.vehicle_id:
             other_corners = self.get_corners()
@@ -401,7 +403,7 @@ class RuleBasedStanleyVehicle(AbstractAgent):
 
         for this_corner in [this_corners[0], this_corners[1]]:
             for other_corner in [other_corners[2], other_corners[3]]:
-                ang = ((np.arctan2(other_corner[1] - this_corner[1], other_corner[0] - this_corner[0]) - self.state.e.psi) + (2*np.pi)) % (2*np.pi)
+                ang = ((np.arctan2(other_corner[1] - this_corner[1], other_corner[0] - this_corner[0]) - this_psi) + (2*np.pi)) % (2*np.pi)
                 if ang < (np.pi/2) or ang > (3*np.pi)/2:
                     return False
         return True
@@ -446,7 +448,6 @@ class RuleBasedStanleyVehicle(AbstractAgent):
             
         # idle when done
         step = min(self.parking_step, len(self.parking_maneuver.x) - 1)
-            
         # set state
         self.state.x.x = self.parking_maneuver.x[step]
         self.state.x.y = self.parking_maneuver.y[step]
@@ -582,8 +583,6 @@ class RuleBasedStanleyVehicle(AbstractAgent):
                 else:
                     self.set_ref_v(self.vehicle_config.v_end)
 
-                self.disp_text = str([(id, self.other_parking_progress[id], self.other_within_parking_box(id)) for id in self.nearby_vehicles])
-
                 # detect parking and unparking
                 nearby_parkers = [id for id in self.nearby_vehicles if self.other_parking_progress[id] and self.other_within_parking_box(id)]
 
@@ -668,8 +667,12 @@ class RuleBasedStanleyVehicle(AbstractAgent):
             # wait for coast to be clear, then start parking
             # everyone within range should be braking or parking or unparking
             # TODO: this doesn't yet account for a braked vehicle in the way of our parking
+            """
             should_go = all([self.other_is_braking[id]
                             or (self.other_parking_flag[id] != "" and self.other_parking_start_time[id] > self.parking_start_time)
+                            or self.dist_from(id) >= 2*self.vehicle_config.parking_radius for id in self.nearby_vehicles])
+            """
+            should_go = (self.parking_maneuver is not None and self.parking_step > 0) or all([self.has_passed(other_id=id) or (self.other_parking_flag[id] != "" and self.other_parking_start_time[id] > self.parking_start_time)
                             or self.dist_from(id) >= 2*self.vehicle_config.parking_radius for id in self.nearby_vehicles])
 
             if self.park_start_coords is None:
@@ -679,9 +682,15 @@ class RuleBasedStanleyVehicle(AbstractAgent):
             # everyone within range should be braking or parking or unparking
 
             # TODO: this doesn't yet account for a braked / (un)parking vehicle in the way of our parking
+            """
             should_go = all([self.other_is_braking[id] 
                             or (self.other_parking_flag[id] != "" and self.other_parking_start_time[id] > self.parking_start_time)
                             or self.dist_from(id) >= 2*self.vehicle_config.parking_radius for id in self.nearby_vehicles])
+            """
+            should_go = (self.unparking_maneuver is not None and self.unparking_step < len(self.unparking_maneuver.x) - 1) or all([self.has_passed(this_id=id) or (self.other_parking_flag[id] != "" and self.other_parking_start_time[id] > self.parking_start_time)
+                            or self.dist_from(id) >= 2*self.vehicle_config.parking_radius for id in self.nearby_vehicles])
+            # if should_go and self.disp_text == "12":
+            #     self.disp_text = str(self.other_vehicles) + str(self.unparking_maneuver is not None and self.unparking_step < len(self.unparking_maneuver.x) - 1) + str([self.has_passed(this_id=id) for id in self.nearby_vehicles])
 
             self.update_state_unparking(should_go)
         else: 
