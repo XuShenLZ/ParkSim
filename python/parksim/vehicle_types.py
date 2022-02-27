@@ -108,6 +108,7 @@ class VehicleConfig(PythonMsg):
     offset: float = field(default=1.75) # distance off from waypoints
     look_ahead_timesteps: int = field(default=10) # how far to look ahead for crash detection
     crash_check_radius: float = field(default=15) # which vehicles to check crash
+    braking_distance: float = field(default=10)
     parking_radius: float = field(default=6) # how much room a vehicle should have to park
     parking_ahead_angle: float = field(default=np.pi/4)
     leading_trailing_thres: float = field(default=0.25) # Threshold of heading angle difference to check whether two vehicles are leading and trailing. 0.25 is about about 15 degrees

@@ -73,7 +73,7 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         
         # unparking stuff
         self.unparking_maneuver = None
-        self.unparking_step = 0
+        self.unparking_step = -1
         
         # braking stuff
         self.is_braking = False # are we braking?
@@ -237,11 +237,10 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         self.set_ref_v(0)
     
     def reached_target(self):
-        # TODO: need to constantize this
         if not self.reached_tgt:
             dist = np.linalg.norm([self.state.x.x - self.x_ref[-1], self.state.x.y - self.y_ref[-1]])
             ang = ((np.arctan2(self.y_ref[-1] - self.state.x.y, self.x_ref[-1] - self.state.x.x) - self.state.e.psi) + (2*np.pi)) % (2*np.pi)
-            self.reached_tgt = dist < 5 and ang > (np.pi / 2) and ang < (3 * np.pi / 2)
+            self.reached_tgt = dist < self.vehicle_config.braking_distance/2 and ang > (np.pi / 2) and ang < (3 * np.pi / 2)
         return self.reached_tgt
 
     def num_waypoints(self):
@@ -268,7 +267,6 @@ class RuleBasedStanleyVehicle(AbstractAgent):
             method[idx] = new_value
 
     def get_info(self):
-        # TODO: Encapsule everything into self.info
         self.info.ref_pose.x = array.array('d', self.x_ref)
         self.info.ref_pose.y = array.array('d', self.y_ref)
         self.info.ref_pose.psi = array.array('d', self.yaw_ref)
@@ -366,7 +364,7 @@ class RuleBasedStanleyVehicle(AbstractAgent):
             for id, other_look_ahead_state in zip(self.nearby_vehicles, other_look_ahead_states):
                 if id not in will_crash_with: # for efficiency
                     if self.will_collide(look_ahead_state, other_look_ahead_state, self.vehicle_body):
-                        # TODO: Here we assume all other vehicles have the same vehicle body as us
+                        # NOTE: Here we assume all other vehicles have the same vehicle body as us
                         will_crash_with.add(id)
 
         return will_crash_with
@@ -381,7 +379,7 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         other_ang_centered = other_ang if other_ang < np.pi else other_ang - 2 * np.pi
         return abs(this_ang_centered) > abs(other_ang_centered)
 
-    def has_passed(self, this_id: int=None, other_id: int=None):
+    def has_passed(self, this_id: int=None, other_id: int=None, parking_dist_away=None):
         """
         If the rear corners of this vehicle have passed the front corners of the other vehicle, we say this vehicle has passed the other vehicle.
         Old:
@@ -391,20 +389,31 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         """
         if this_id is None or this_id == self.vehicle_id:
             this_corners = self.get_corners()
-            this_psi = self.state.e.psi
+            this_state = self.state
+            this_psi = this_state.e.psi
         else:
             this_corners = self.get_corners(self.other_state[this_id])
-            this_psi = self.other_state[this_id].e.psi
+            this_state = self.other_state[this_id]
+            this_psi = this_state.e.psi
         
         if other_id is None or other_id == self.vehicle_id:
             other_corners = self.get_corners()
+            other_state = self.state
         else:
             other_corners = self.get_corners(self.other_state[other_id]) # NOTE: For now, assume the other vehicle has the same vehicle body
+            other_state = self.other_state[other_id]
 
         for this_corner in [this_corners[0], this_corners[1]]:
             for other_corner in [other_corners[2], other_corners[3]]:
                 ang = ((np.arctan2(other_corner[1] - this_corner[1], other_corner[0] - this_corner[0]) - this_psi) + (2*np.pi)) % (2*np.pi)
                 if ang < (np.pi/2) or ang > (3*np.pi)/2:
+                    return False
+        if parking_dist_away is not None:
+            if this_psi > np.pi / 2 and this_psi < np.pi * 3 / 2: # facing west
+                if this_state.x.x - other_state.x.x > -parking_dist_away:
+                    return False
+            else:
+                if this_state.x.x - other_state.x.x < parking_dist_away:
                     return False
         return True
 
@@ -536,7 +545,7 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         return self.parking_flag == "PARKING" and self.parking_maneuver is not None and self.parking_step > 0 and self.parking_step < len(self.parking_maneuver.x) - 1
 
     def is_unparking(self):
-        return self.parking_flag == "UNPARKING" and self.unparking_maneuver is not None and self.unparking_step < len(self.unparking_maneuver.x) - 1 and self.unparking_step > 0
+        return (self.parking_flag == "UNPARKING" and self.unparking_maneuver is not None and self.unparking_step < len(self.unparking_maneuver.x) - 1 and self.unparking_step > 0) and not (self.parking_flag == "UNPARKING" and self.unparking_step == -1)
     
     def is_all_done(self):
         """
@@ -601,7 +610,6 @@ class RuleBasedStanleyVehicle(AbstractAgent):
 
                     # If will crash
                     if ids_will_crash_with:
-                        
                         # variable to tell where to go next (default is braking)
                         going_to_brake = True
 
@@ -638,14 +646,11 @@ class RuleBasedStanleyVehicle(AbstractAgent):
                     # go if going first
                     if self.waiting_for == 0:
                         should_unbrake = True
-                    else:
-                        # TODO: better heuristic for unbraking
-                        
+                    else:                        
                         if (self.waiting_for not in self.nearby_vehicles  
                             or (not self.other_is_braking[self.waiting_for] 
                             and self.has_passed(this_id=self.waiting_for))
-                            or self.dist_from(self.waiting_for) > 10):
-                            # TODO: Why this is 10?
+                            or self.dist_from(self.waiting_for) > self.vehicle_config.braking_distance):
                             should_unbrake = True
                         elif self.other_waiting_for[self.waiting_for] == self.vehicle_id: # if the vehicle you're waiting for is waiting for you
                             # you should go
@@ -666,31 +671,36 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         if self.parking_flag == "PARKING":
             # wait for coast to be clear, then start parking
             # everyone within range should be braking or parking or unparking
-            # TODO: this doesn't yet account for a braked vehicle in the way of our parking
             """
             should_go = all([self.other_is_braking[id]
                             or (self.other_parking_flag[id] != "" and self.other_parking_start_time[id] > self.parking_start_time)
                             or self.dist_from(id) >= 2*self.vehicle_config.parking_radius for id in self.nearby_vehicles])
             """
-            should_go = (self.parking_maneuver is not None and self.parking_step > 0) or all([self.has_passed(other_id=id) or (self.other_parking_flag[id] != "" and self.other_parking_start_time[id] > self.parking_start_time)
-                            or self.dist_from(id) >= 2*self.vehicle_config.parking_radius for id in self.nearby_vehicles])
+            should_go = (self.parking_maneuver is not None and self.parking_step > 0) \
+                or all([
+                    self.has_passed(other_id=id) 
+                    or (self.other_parking_flag[id] != "" and self.other_parking_start_time[id] > self.parking_start_time)
+                    or self.dist_from(id) >= 2*self.vehicle_config.parking_radius for id in self.nearby_vehicles
+                    ])
 
             if self.park_start_coords is None:
                 self.park_start_coords = (self.state.x.x - self.vehicle_config.offset * np.sin(self.state.e.psi), self.state.x.y + self.vehicle_config.offset * np.cos(self.state.e.psi))
             self.update_state_parking(should_go)
         elif self.parking_flag == "UNPARKING": # wait for coast to be clear, then start unparking
-            # everyone within range should be braking or parking or unparking
-
-            # TODO: this doesn't yet account for a braked / (un)parking vehicle in the way of our parking
+            # to start unparking, everyone within range should be (normal driving and far past us) or (waiting to unpark and spawned after us)
+            # always yields to parkers in the area
             """
             should_go = all([self.other_is_braking[id] 
                             or (self.other_parking_flag[id] != "" and self.other_parking_start_time[id] > self.parking_start_time)
                             or self.dist_from(id) >= 2*self.vehicle_config.parking_radius for id in self.nearby_vehicles])
             """
-            should_go = (self.unparking_maneuver is not None and self.unparking_step < len(self.unparking_maneuver.x) - 1) or all([self.has_passed(this_id=id) or (self.other_parking_flag[id] != "" and self.other_parking_start_time[id] > self.parking_start_time)
-                            or self.dist_from(id) >= 2*self.vehicle_config.parking_radius for id in self.nearby_vehicles])
-            # if should_go and self.disp_text == "12":
-            #     self.disp_text = str(self.other_vehicles) + str(self.unparking_maneuver is not None and self.unparking_step < len(self.unparking_maneuver.x) - 1) + str([self.has_passed(this_id=id) for id in self.nearby_vehicles])
+            should_go = (self.unparking_maneuver is not None and self.unparking_step < len(self.unparking_maneuver.x) - 1) \
+                or all([
+                    (self.other_parking_flag[id] == "" and self.has_passed(this_id=id, parking_dist_away=7)) 
+                    or (self.other_parking_flag[id] == "UNPARKING" 
+                    and self.other_parking_start_time[id] > self.parking_start_time)
+                    or self.dist_from(id) >= 2*self.vehicle_config.parking_radius for id in self.nearby_vehicles
+                    ])
 
             self.update_state_unparking(should_go)
         else: 
