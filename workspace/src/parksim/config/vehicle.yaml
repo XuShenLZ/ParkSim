@@ -2,6 +2,8 @@
   ros__parameters:
     timer_period: 0.1
 
+    warm_start_time: 0.3
+
     # Offline data to load
     spots_data_path: '/ParkSim/data/spots_data.pickle'
     offline_maneuver_path: '/ParkSim/data/parking_maneuvers.pickle'

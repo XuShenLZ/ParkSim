@@ -120,7 +120,8 @@ class VisualizerNode(MPClabNode):
                     # If we have subscribed to it, but there is no publisher anymore
                     self.destroy_subscription(self.info_subs[vehicle_id])
                     self.info_subs.pop(vehicle_id)
-                    self.infos.pop(vehicle_id)
+                    if vehicle_id in self.infos:
+                        self.infos.pop(vehicle_id)
                     self.get_logger().info("Vehicle %d is not publishing anymore. Info ubscriber is destroyed." % vehicle_id)
 
             else:

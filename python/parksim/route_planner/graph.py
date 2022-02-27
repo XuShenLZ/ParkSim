@@ -188,7 +188,7 @@ class WaypointsGraph(object):
         self.connect(vis.waypoints['C1'][8], vis.waypoints['R3C1BR'][0])
         self.connect(vis.waypoints['R3C1BR'][-1], vis.waypoints['R3L'][-1])
         self.connect(vis.waypoints['C1'][10], vis.waypoints['R4C1TR'][0])
-        self.connect(vis.waypoints['R4C1TR'][-1], vis.waypoints['R4'][-1])
+        self.connect(vis.waypoints['R4C1TR'][-1], vis.waypoints['R4L'][-1])
         
         self.connect(vis.waypoints['C2'][0], vis.waypoints['R1C2BL'][0])
         self.connect(vis.waypoints['R1C2BL'][-1], vis.waypoints['R1L'][2])
@@ -201,7 +201,7 @@ class WaypointsGraph(object):
         self.connect(vis.waypoints['C2'][8], vis.waypoints['R3C2BL'][0])
         self.connect(vis.waypoints['R3C2BL'][-1], vis.waypoints['R3L'][0])
         self.connect(vis.waypoints['C2'][10], vis.waypoints['R4C2TL'][0])
-        self.connect(vis.waypoints['R4C2TL'][-1], vis.waypoints['R4'][23])
+        self.connect(vis.waypoints['R4C2TL'][-1], vis.waypoints['R4L'][0])
         
         self.connect(vis.waypoints['C2'][0], vis.waypoints['R1C2BR'][0])
         self.connect(vis.waypoints['R1C2BR'][-1], vis.waypoints['R1R'][-1])
@@ -214,7 +214,7 @@ class WaypointsGraph(object):
         self.connect(vis.waypoints['C2'][8], vis.waypoints['R3C2BR'][0])
         self.connect(vis.waypoints['R3C2BR'][-1], vis.waypoints['R3R'][-1])
         self.connect(vis.waypoints['C2'][10], vis.waypoints['R4C2TR'][0])
-        self.connect(vis.waypoints['R4C2TR'][-1], vis.waypoints['R4'][18])
+        self.connect(vis.waypoints['R4C2TR'][-1], vis.waypoints['R4R'][-1])
 
         self.connect(vis.waypoints['EXT'][1], vis.waypoints['EXTL'][0])
         self.connect(vis.waypoints['EXT'][1], vis.waypoints['EXTR'][0])

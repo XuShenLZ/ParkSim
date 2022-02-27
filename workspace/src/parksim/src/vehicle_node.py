@@ -24,6 +24,7 @@ class VehicleNodeParams(NodeParamTemplate):
     """
     def __init__(self):
         self.timer_period = 0.1
+        self.warm_start_time = 0.2
 
         self.random_seed =0
 
@@ -96,6 +97,8 @@ class VehicleNode(MPClabNode):
         self.vehicle.set_method_to_change_central_occupancy(self.change_occupancy)
 
         self.vehicle.start_vehicle()
+
+        self.start_time = self.get_ros_time()
 
     def vehicle_state_cb(self, vehicle_id):
         def callback(msg):
@@ -203,7 +206,9 @@ class VehicleNode(MPClabNode):
             self.destroy_node()
 
         self.update_subs()
-        self.vehicle.solve()
+        
+        if self.get_ros_time() - self.start_time > self.warm_start_time:
+            self.vehicle.solve()
 
         state_msg = VehicleStateMsg()
         self.populate_msg(state_msg, self.vehicle.state)
