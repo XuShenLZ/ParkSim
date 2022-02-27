@@ -1,3 +1,4 @@
+import time
 import numpy as np
 import dearpygui.dearpygui as dpg
 
@@ -51,6 +52,10 @@ class RealtimeVisualizer(object):
         # Running Status
         self.running = True
         self.running_display = dpg.add_text(default_value="Runing: " + str(self.running), parent=self.control_window)
+        self.fps = 0
+        self.fps_display = dpg.add_text(default_value="FPS: " + str(self.fps), parent=self.control_window)
+
+        self.last_render_time = time.time()
 
         dpg.setup_dearpygui()
         dpg.show_viewport()
@@ -214,9 +219,14 @@ class RealtimeVisualizer(object):
         """
         render a frame after updating contents
         """
+        current_time = time.time()
+        self.fps = round(1.0 / (current_time - self.last_render_time), 1)
+        dpg.set_value(self.fps_display, "FPS: " + str(self.fps))
+        
         if dpg.is_dearpygui_running():
             dpg.render_dearpygui_frame()
 
+        self.last_render_time = current_time
 
 if __name__ == "__main__":
 
