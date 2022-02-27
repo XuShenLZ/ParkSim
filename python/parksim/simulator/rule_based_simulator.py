@@ -1,3 +1,4 @@
+import time
 from typing import Dict, List
 
 from dlp.dataset import Dataset
@@ -131,6 +132,10 @@ class RuleBasedSimulator(object):
     def run(self):
         # while not run out of time and we have not reached the last waypoint yet
         while self.max_simulation_time >= self.time:
+
+            if not self.vis.is_running():
+                self.vis.render()
+                continue
 
             # clear visualizer
             self.vis.clear_frame()

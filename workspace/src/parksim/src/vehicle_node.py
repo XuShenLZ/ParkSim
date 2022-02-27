@@ -10,7 +10,7 @@ from rclpy.handle import InvalidHandle
 
 import numpy as np
 
-from std_msgs.msg import Int16MultiArray
+from std_msgs.msg import Int16MultiArray, Bool
 from parksim.msg import VehicleStateMsg, VehicleInfoMsg
 from parksim.srv import OccupancySrv
 from parksim.pytypes import VehicleState, NodeParamTemplate
@@ -64,6 +64,9 @@ class VehicleNode(MPClabNode):
         self.state_pub = self.create_publisher(VehicleStateMsg, 'state', 10)
         self.info_pub = self.create_publisher(VehicleInfoMsg, 'info', 10)
 
+        self.sim_status_sub = self.create_subscription(Bool, '/sim_status', self.sim_status_cb, 10)
+        self.sim_is_running = True
+
         self.state_subs = {}
         self.info_subs = {}
         self.occupancy_sub = self.create_subscription(Int16MultiArray, '/occupancy', self.occupancy_cb, 10)
@@ -99,6 +102,10 @@ class VehicleNode(MPClabNode):
         self.vehicle.start_vehicle()
 
         self.start_time = self.get_ros_time()
+        self.start_solving = False
+
+    def sim_status_cb(self, msg: Bool):
+        self.sim_is_running = msg.data
 
     def vehicle_state_cb(self, vehicle_id):
         def callback(msg):
@@ -206,8 +213,11 @@ class VehicleNode(MPClabNode):
             self.destroy_node()
 
         self.update_subs()
-        
+
         if self.get_ros_time() - self.start_time > self.warm_start_time:
+            self.start_solving = True
+            
+        if self.start_solving and self.sim_is_running:
             self.vehicle.solve()
 
         state_msg = VehicleStateMsg()

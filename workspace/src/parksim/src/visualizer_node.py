@@ -10,6 +10,7 @@ from pathlib import Path
 
 from dlp.dataset import Dataset
 
+from std_msgs.msg import Bool
 from parksim.msg import VehicleStateMsg, VehicleInfoMsg
 from parksim.pytypes import VehicleState, NodeParamTemplate
 from parksim.vehicle_types import VehicleBody, VehicleInfo
@@ -63,6 +64,8 @@ class VisualizerNode(MPClabNode):
 
         self.timer = self.create_timer(self.timer_period, self.timer_callback)
 
+        self.sim_status_pub = self.create_publisher(Bool, '/sim_status', 10)
+
     def vehicle_state_cb(self, vehicle_id):
         def callback(msg):
             state = VehicleState()
@@ -79,13 +82,8 @@ class VisualizerNode(MPClabNode):
 
         return callback
 
-    def timer_callback(self):
-        """
-        update the list of subscribers and plot
-        """
+    def update_subs(self):
         topic_list_types = self.get_topic_names_and_types()
-
-        self.vis.clear_frame()
 
         for topic_name, _ in topic_list_types:
             state_name_pattern = re.match("/vehicle_([1-9][0-9]*)/state", topic_name)
@@ -127,6 +125,14 @@ class VisualizerNode(MPClabNode):
             else:
                 continue
 
+    def timer_callback(self):
+        """
+        update the list of subscribers and plot
+        """
+        self.update_subs()
+
+        self.vis.clear_frame()
+
         for vehicle_id in self.states:
             state = self.states[vehicle_id]
             info = self.infos[vehicle_id]
@@ -145,6 +151,10 @@ class VisualizerNode(MPClabNode):
                 self.vis.draw_text([state.x.x + self.disp_text_offset[0], state.x.y + self.disp_text_offset[1]], info.disp_text, size=self.disp_text_size)
 
         self.vis.render()
+
+        sim_status_msg = Bool()
+        sim_status_msg.data = self.vis.is_running()
+        self.sim_status_pub.publish(sim_status_msg)
         
 def main(args=None):
     rclpy.init(args=args)

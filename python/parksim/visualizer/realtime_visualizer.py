@@ -49,7 +49,7 @@ class RealtimeVisualizer(object):
         self.start_pause_btn = dpg.add_button(label="Start/Pause", callback=self.running_cb, parent=self.control_window)
 
         # Running Status
-        self.running = False
+        self.running = True
         self.running_display = dpg.add_text(default_value="Runing: " + str(self.running), parent=self.control_window)
 
         dpg.setup_dearpygui()
@@ -61,6 +61,9 @@ class RealtimeVisualizer(object):
     def running_cb(self):
         self.running = not self.running
         dpg.set_value(self.running_display, "Running: " + str(self.running))
+
+    def is_running(self):
+        return self.running
 
     def _xy2p(self, x, y):
         """

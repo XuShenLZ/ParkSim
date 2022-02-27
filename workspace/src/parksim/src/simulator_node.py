@@ -10,7 +10,7 @@ from pathlib import Path
 from dlp.dataset import Dataset
 from dlp.visualizer import Visualizer as DlpVisualizer
 
-from std_msgs.msg import Int16MultiArray
+from std_msgs.msg import Int16MultiArray, Bool
 from parksim.msg import VehicleStateMsg
 from parksim.srv import OccupancySrv
 from parksim.base_node import MPClabNode
@@ -82,9 +82,16 @@ class SimulatorNode(MPClabNode):
 
         self.timer = self.create_timer(self.timer_period, self.timer_callback)
 
+        # Visualizer publish this status since the button is on GUI
+        self.sim_status_sub = self.create_subscription(Bool, '/sim_status', self.sim_status_cb, 10)
+        self.sim_is_running = True
+
         self.occupancy_pub = self.create_publisher(Int16MultiArray, 'occupancy', 10)
 
         self.occupancy_srv = self.create_service(OccupancySrv, 'occupancy', self.occupancy_srv_callback)
+
+    def sim_status_cb(self, msg: Bool):
+        self.sim_is_running = msg.data
 
     def occupancy_srv_callback(self, request, response):
         vehicle_id = request.vehicle_id
@@ -166,15 +173,17 @@ class SimulatorNode(MPClabNode):
             self.last_exit_time = current_time
 
     def timer_callback(self):
+
+        if self.sim_is_running:
         
-        if self.keep_spawn_entering:
-            if self.last_enter_sub:
-                self.destroy_subscription(self.last_enter_sub)
-                self.last_enter_sub = None
+            if self.keep_spawn_entering:
+                if self.last_enter_sub:
+                    self.destroy_subscription(self.last_enter_sub)
+                    self.last_enter_sub = None
 
-            self.try_spawn_entering()
+                self.try_spawn_entering()
 
-        self.try_spawn_exiting()
+            self.try_spawn_exiting()
 
         occupancy_msg = Int16MultiArray()
         occupancy_msg.data = self.occupied
