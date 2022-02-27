@@ -90,6 +90,8 @@ class SimulatorNode(MPClabNode):
 
         self.occupancy_srv = self.create_service(OccupancySrv, 'occupancy', self.occupancy_srv_callback)
 
+        self.occupancy_cli = self.create_client(OccupancySrv, '/occupancy')
+
     def sim_status_cb(self, msg: Bool):
         self.sim_is_running = msg.data
 
@@ -189,6 +191,12 @@ class SimulatorNode(MPClabNode):
         occupancy_msg.data = self.occupied
         self.occupancy_pub.publish(occupancy_msg)
 
+        # Restart service if too busy
+        if not self.occupancy_cli.wait_for_service(timeout_sec=1.0):
+            self.destroy_service(self.occupancy_srv)
+            self.occupancy_srv = self.create_service(OccupancySrv, 'occupancy', self.occupancy_srv_callback)
+
+            self.get_logger().warning('Service not available, restarted.')
 
 def main(args=None):
     rclpy.init(args=args)

@@ -7,6 +7,7 @@ from parksim.controller_types import StanleyParams
 
 import rclpy
 from rclpy.handle import InvalidHandle
+from rclpy.qos import qos_profile_sensor_data
 
 import numpy as np
 
@@ -73,7 +74,7 @@ class VehicleNode(MPClabNode):
 
         self.occupancy_cli = self.create_client(OccupancySrv, '/occupancy')
         while not self.occupancy_cli.wait_for_service(timeout_sec=1.0):
-            self.get_logger().info('service not available, waiting again...')
+            self.get_logger().warning('service not available, waiting again...')
 
         vehicle_body = VehicleBody()
         vehicle_config = VehicleConfig()
