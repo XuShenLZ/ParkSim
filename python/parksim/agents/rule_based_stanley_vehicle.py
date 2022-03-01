@@ -380,10 +380,6 @@ class RuleBasedStanleyVehicle(AbstractAgent):
     def has_passed(self, this_id: int=None, other_id: int=None, parking_dist_away=None):
         """
         If the rear corners of this vehicle have passed the front corners of the other vehicle, we say this vehicle has passed the other vehicle.
-        Old:
-         ang = ((np.arctan2(vehicle.waiting_for.state.x.y - vehicle.state.x.y, vehicle.waiting_for.state.x.x - vehicle.state.x.x) - vehicle.waiting_for.state.e.psi) + (2*np.pi)) % (2*np.pi)
-                                if vehicle.waiting_for.all_done() or (not vehicle.waiting_for.braking() and (((ang > (np.pi/2) and ang < (3*np.pi)/2))) or np.linalg.norm([vehicle.waiting_for.state.x.x - vehicle.state.x.x, vehicle.waiting_for.state.x.y - vehicle.state.x.y]) > 10):
-                                    should_unbrake = True
         """
         if this_id is None or this_id == self.vehicle_id:
             this_corners = self.get_corners()
@@ -669,15 +665,12 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         if self.parking_flag == "PARKING":
             # wait for coast to be clear, then start parking
             # everyone within range should be braking or parking or unparking
-            """
-            should_go = all([self.other_is_braking[id]
-                            or (self.other_parking_flag[id] != "" and self.other_parking_start_time[id] > self.parking_start_time)
-                            or self.dist_from(id) >= 2*self.vehicle_config.parking_radius for id in self.nearby_vehicles])
-            """
+
             should_go = (self.parking_maneuver is not None and self.parking_step > 0) \
                 or all([
-                    self.has_passed(other_id=id) 
-                    or (self.other_parking_flag[id] != "" and self.other_parking_start_time[id] > self.parking_start_time)
+                    self.other_parking_flag[id] == "" and self.has_passed(other_id=id) 
+                    or (self.other_parking_flag[id] == "UNPARKING" and self.other_parking_progress[id] == "")
+                    or (self.other_parking_flag[id] == "PARKING" and self.other_parking_start_time[id] > self.parking_start_time)
                     or self.dist_from(id) >= 2*self.vehicle_config.parking_radius for id in self.nearby_vehicles
                     ])
 
@@ -687,18 +680,14 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         elif self.parking_flag == "UNPARKING": # wait for coast to be clear, then start unparking
             # to start unparking, everyone within range should be (normal driving and far past us) or (waiting to unpark and spawned after us)
             # always yields to parkers in the area
-            """
-            should_go = all([self.other_is_braking[id] 
-                            or (self.other_parking_flag[id] != "" and self.other_parking_start_time[id] > self.parking_start_time)
-                            or self.dist_from(id) >= 2*self.vehicle_config.parking_radius for id in self.nearby_vehicles])
-            """
+
             should_go = (self.unparking_maneuver is not None and self.unparking_step < len(self.unparking_maneuver.x) - 1) \
-                or all([
+                or (all([
                     (self.other_parking_flag[id] == "" and self.has_passed(this_id=id, parking_dist_away=7)) 
-                    or (self.other_parking_flag[id] == "UNPARKING" 
-                    and self.other_parking_start_time[id] > self.parking_start_time)
+                    or (self.other_parking_flag[id] == "UNPARKING" and self.other_parking_start_time[id] > self.parking_start_time)
                     or self.dist_from(id) >= 2*self.vehicle_config.parking_radius for id in self.nearby_vehicles
-                    ])
+                    ]) 
+                    and all([self.other_parking_progress[id] != "UNPARKING" or np.linalg.norm([self.x_ref[0] - self.other_ref_pose[id].x[0], self.y_ref[0] - self.other_ref_pose[id].y[0]]) > 10 for id in self.other_vehicles]))
 
             self.update_state_unparking(should_go)
         else: 
