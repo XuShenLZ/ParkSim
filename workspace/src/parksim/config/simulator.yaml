@@ -8,8 +8,8 @@
     blocked_spots: [43, 44, 45] # Spots to be blocked in advance
 
     # ======== Spawn
-    spawn_entering: 5
-    spawn_exiting: 5
+    spawn_entering: 40
+    spawn_exiting: 40
     spawn_interval_mean: 5 # (s)
 
     y_bound_to_resume_spawning: 70
