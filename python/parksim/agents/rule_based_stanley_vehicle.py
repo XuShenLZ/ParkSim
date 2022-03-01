@@ -682,7 +682,10 @@ class RuleBasedStanleyVehicle(AbstractAgent):
                             or (self.other_parking_flag[id] != "" and self.other_parking_start_time[id] > self.parking_start_time)
                             or self.dist_from(id) >= 2*self.vehicle_config.parking_radius for id in self.nearby_vehicles])
             """
-            should_go = (self.parking_maneuver is not None and self.parking_step > 0) or all([self.has_passed(other_id=id) or (self.other_parking_flag[id] != "" and self.other_parking_start_time[id] > self.parking_start_time)
+            should_go = (self.parking_maneuver is not None and self.parking_step > 0) \
+                or all([(self.other_parking_flag[id] == "" and self.has_passed(other_id=id)) \
+                    or (self.other_parking_flag[id] == "UNPARKING" and self.other_parking_progress[id] == "") \
+                        or (self.other_parking_flag[id] != "PARKING" and self.other_parking_start_time[id] > self.parking_start_time) \
                             or self.dist_from(id) >= 2*self.vehicle_config.parking_radius for id in self.nearby_vehicles])
 
             if self.park_start_coords is None:
@@ -696,8 +699,10 @@ class RuleBasedStanleyVehicle(AbstractAgent):
                             or (self.other_parking_flag[id] != "" and self.other_parking_start_time[id] > self.parking_start_time)
                             or self.dist_from(id) >= 2*self.vehicle_config.parking_radius for id in self.nearby_vehicles])
             """
-            should_go = (self.unparking_maneuver is not None and self.unparking_step < len(self.unparking_maneuver.x) - 1) or all([(self.other_parking_flag[id] == "" and self.has_passed(this_id=id, parking_dist_away=7)) or (self.other_parking_flag[id] == "UNPARKING" and self.other_parking_start_time[id] > self.parking_start_time)
-                            or self.dist_from(id) >= 2*self.vehicle_config.parking_radius for id in self.nearby_vehicles])
+            should_go = (self.unparking_maneuver is not None and self.unparking_step < len(self.unparking_maneuver.x) - 1) \
+                or all([(self.other_parking_flag[id] == "" and self.has_passed(this_id=id, parking_dist_away=7)) \
+                    or (self.other_parking_flag[id] == "UNPARKING" and self.other_parking_start_time[id] > self.parking_start_time) \
+                        or self.dist_from(id) >= 2*self.vehicle_config.parking_radius for id in self.nearby_vehicles])
 
             self.update_state_unparking(should_go)
         else: 
