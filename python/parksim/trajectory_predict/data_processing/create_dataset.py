@@ -22,23 +22,26 @@ def get_data_for_instance(inst_token: str, inst_idx: int, frame_token: str, extr
     returns image, trajectory_history, and trajectory future for given instance
     """
     img_frame = extractor.vis.plot_frame(frame_token)
-    image_feature = np.array(extractor.vis.inst_centric(img_frame, inst_token))
+    image_feature = extractor.vis.inst_centric(img_frame, inst_token)
+    image_feature = extractor.label_target_spot(inst_token, image_feature)
 
     curr_instance = ds.get('instance', inst_token)
-    curr_pose = np.array(curr_instance['coords'] + [curr_instance['heading']])
+    current_state = np.array([curr_instance['coords'][0], curr_instance['coords'][1], curr_instance['heading'], curr_instance['speed']])
     instances_agent_is_in = ds.get_agent_instances(curr_instance['agent_token'])
 
     trajectory_history = []
     for i in range(inst_idx - stride * (history - 1), inst_idx+1, stride):
         instance = instances_agent_is_in[i]
-        pose = np.array(instance['coords'] + [instance['heading']])
-        trajectory_history.append(pose - curr_pose)
+        pose = np.array(instance['coords'])
+        translated_pose = extractor.vis.global_ground_to_local_pixel(current_state, pose)
+        trajectory_history.append(np.array([translated_pose[0], translated_pose[1], instance['heading'] - curr_instance['heading']]))
     
     trajectory_future = []
     for i in range(inst_idx + stride, inst_idx + stride * future + 1, stride):
         instance = instances_agent_is_in[i]
-        pose = np.array(instance['coords'] + [instance['heading']])
-        trajectory_future.append(pose - curr_pose)
+        pose = np.array(instance['coords'])
+        translated_pose = extractor.vis.global_ground_to_local_pixel(current_state, pose)
+        trajectory_future.append(np.array([translated_pose[0], translated_pose[1], instance['heading'] - curr_instance['heading']]))
     
     return image_feature, np.array(trajectory_history), np.array(trajectory_future)
 

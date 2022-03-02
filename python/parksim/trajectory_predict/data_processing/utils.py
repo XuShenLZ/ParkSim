@@ -5,8 +5,6 @@ import PIL
 import traceback
 
 from parksim.spot_detector.detector import LocalDetector
-from parksim.route_planner.graph import WaypointsGraph
-from parksim.route_planner.a_star import AStarPlanner, AStarGraph
 
 from dlp.dataset import Dataset
 from dlp.visualizer import SemanticVisualizer
@@ -20,13 +18,10 @@ class TransformerDataProcessor(object):
         Instantiate the feature extractor
         """
         self.ds = ds
-        self.vis = SemanticVisualizer(ds, steps=10)
+        self.vis = SemanticVisualizer(ds, steps=1)
 
         self.spot_detector = LocalDetector(spot_color_rgb=(0, 255, 0))
         self.agent_detector = LocalDetector(spot_color_rgb=(255, 255, 0))
-
-        # self.waypoints_graph = WaypointsGraph()
-        # self.waypoints_graph.setup_with_vis(self.vis)
     
     def get_instance_index(self, inst_token: str, agent_token: str) -> int:
         """
@@ -61,3 +56,28 @@ class TransformerDataProcessor(object):
                     print("==========\nError occured for instance %s" % inst_token)
                     traceback.print_exc()
         return filtered_tokens, token_indices
+
+    def _get_corners(self, spot):
+        return cv2.boxPoints(spot)
+    
+    def label_target_spot(self, inst_token: str, inst_centric_view: np.array, r=1.25) -> np.array:
+        """
+        Returns image frame with target spot labeled
+        """
+        all_spots = self.spot_detector.detect(inst_centric_view)
+
+        traj = self.vis.dataset.get_future_traj(inst_token)
+        instance = self.ds.get('instance', inst_token)
+        current_state = np.array([instance['coords'][0], instance['coords'][1], instance['heading'], instance['speed']])
+        for spot in all_spots:
+            spot_center_pixel = np.array(spot[0])
+            spot_center = self.vis.local_pixel_to_global_ground(current_state, spot_center_pixel)
+            dist = np.linalg.norm(traj[:, 0:2] - spot_center, axis=1)
+            if np.amin(dist) < r:
+                inst_centric_view_copy = inst_centric_view.copy()
+                corners = self._get_corners(spot)
+                img_draw = PIL.ImageDraw.Draw(inst_centric_view_copy)  
+                img_draw.polygon(corners, fill ="purple", outline ="purple")
+                return inst_centric_view_copy
+        
+        return inst_centric_view
