@@ -97,7 +97,7 @@ class RuleBasedSimulator(object):
         # 276-296 are right fourth row top, 297-317 are right fourth row bottom
         # 318-342 are left fifth row, 343-363 are right fifth row
 
-        # get parking spaces
+        # get parking spaces88888888888
         arr = self.dlpvis.parking_spaces.to_numpy()
         # array of tuples of x-y coords of centers of spots
         parking_spaces = np.array([[round((arr[i][2] + arr[i][4]) / 2, 3), round((arr[i][3] + arr[i][9]) / 2, 3)] for i in range(len(arr))])
