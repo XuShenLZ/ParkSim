@@ -48,7 +48,7 @@ class TransformerDataProcessor(object):
                     if self.ds.get_inst_mode(inst_token) != 'incoming':
                         continue
                     current_inst_idx, max_idx = self.get_instance_index(inst_token, instance['agent_token'])
-                    if current_inst_idx < stride * history or max_idx < current_inst_idx + stride * future:
+                    if current_inst_idx < stride * (history-1) or max_idx < current_inst_idx + stride * future:
                         continue
                     filtered_tokens.append(inst_token)
                     token_indices.append(current_inst_idx)
