@@ -4,6 +4,7 @@ from pathlib import Path
 import pickle
 import time
 import array
+from collections import deque
 
 from parksim.path_planner.offline_maneuver import OfflineManeuver
 
@@ -79,6 +80,8 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         self.priority = 0 # priority for going after braking
         self.waiting_for: int = 0 # vehicle waiting for before we go. We start indexing vehicles from 1, so 0 means no vehicle
         self.waiting_for_unparker = False # need special handling for waiting for unparker
+
+        self.logger = deque(maxlen=100)
 
         # ============= Information of other vehicles ===========
         self.other_vehicles: Set(int) = set() # Other vehicle ids
@@ -694,6 +697,7 @@ class RuleBasedStanleyVehicle(AbstractAgent):
             self.update_state()
 
         self.state_hist.append(self.state.copy())
+        self.logger.append("x = %.2f, y = %.2f" % (self.state.x.x, self.state.x.y))
 
     def predict_intent(self, vehicle_id=None):
         """

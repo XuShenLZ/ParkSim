@@ -3,9 +3,10 @@ import rclpy
 
 import subprocess
 import numpy as np
-import pickle
 
 from pathlib import Path
+import glob
+import os
 
 from dlp.dataset import Dataset
 from dlp.visualizer import Visualizer as DlpVisualizer
@@ -15,7 +16,6 @@ from parksim.msg import VehicleStateMsg
 from parksim.srv import OccupancySrv
 from parksim.base_node import MPClabNode
 from parksim.pytypes import VehicleState, NodeParamTemplate
-from parksim.route_planner.graph import WaypointsGraph
 
 class SimulatorNodeParams(NodeParamTemplate):
     """
@@ -35,6 +35,9 @@ class SimulatorNodeParams(NodeParamTemplate):
 
         self.spots_data_path = ''
 
+        self.write_log = True
+        self.log_path = '/ParkSim/vehicle_log'
+
 class SimulatorNode(MPClabNode):
     """
     Node class for simulation
@@ -49,6 +52,17 @@ class SimulatorNode(MPClabNode):
         self.autoload_parameters(param_template, namespace)
 
         np.random.seed(self.random_seed)
+
+        # Clean up the log folder if needed
+        if self.write_log:
+            log_dir_path = str(Path.home()) + self.log_path
+
+            if not os.path.exists(log_dir_path):
+                os.mkdir(log_dir_path)
+            log_files = glob.glob(log_dir_path+'/*.log')
+            for f in log_files:
+                os.remove(f)
+            self.get_logger().info("Logs will be saved in %s. Old logs are cleared." % log_dir_path)
 
         # DLP
         home_path = str(Path.home())

@@ -7,9 +7,9 @@ from parksim.controller_types import StanleyParams
 
 import rclpy
 from rclpy.handle import InvalidHandle
-from rclpy.qos import qos_profile_sensor_data
 
-import numpy as np
+from pathlib import Path
+import os
 
 from std_msgs.msg import Int16MultiArray, Bool
 from parksim.msg import VehicleStateMsg, VehicleInfoMsg
@@ -33,6 +33,9 @@ class VehicleNodeParams(NodeParamTemplate):
         self.offline_maneuver_path = '/ParkSim/data/parking_maneuvers.pickle'
         self.waypoints_graph_path = '/ParkSim/data/waypoints_graph.pickle'
         self.intent_model_path = '/ParkSim/data/smallRegularizedCNN_L0.068_01-29-2022_19-50-35.pth'
+
+        self.write_log = True
+        self.log_path = '/ParkSim/vehicle_log'
 
 class VehicleNode(MPClabNode):
     """
@@ -218,8 +221,18 @@ class VehicleNode(MPClabNode):
         if self.get_ros_time() - self.start_time > self.warm_start_time:
             self.start_solving = True
             
-        if self.start_solving and self.sim_is_running:
-            self.vehicle.solve()
+        if self.sim_is_running:
+            if self.start_solving:
+                self.vehicle.solve()
+        elif self.write_log and len(self.vehicle.logger) > 0:
+            # write logs
+            log_dir_path = str(Path.home()) + self.log_path
+            if not os.path.exists(log_dir_path):
+                os.mkdir(log_dir_path)
+            
+            with open(log_dir_path + "/vehicle_%d.log" % self.vehicle_id, 'a') as f:
+                f.writelines('\n'.join(self.vehicle.logger))
+                self.vehicle.logger.clear()
 
         state_msg = VehicleStateMsg()
         self.populate_msg(state_msg, self.vehicle.state)
