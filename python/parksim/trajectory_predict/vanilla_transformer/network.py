@@ -26,12 +26,157 @@ class PositionalEncoding(nn.Module):
         """
         x = x + self.pe[:x.size(0)]
         return self.dropout(x)
+        
+class SmallRegularizedCNN(nn.Module):
+    """
+    Simple CNN.
+    """
+    def __init__(self, output_size=16, dropout_p = 0.2):
+        """
+        Instantiate the model
+        """
+        super(SmallRegularizedCNN, self).__init__()
+        
+        self.image_layers = []
+
+        self.image_layers.append(nn.Sequential(
+            nn.Conv2d(in_channels=3, out_channels=8, kernel_size=7),
+            nn.Dropout(dropout_p),
+            nn.LeakyReLU(negative_slope=0.01, inplace=True),
+            nn.BatchNorm2d(num_features=8),
+            nn.MaxPool2d(2),
+        ))
+
+        self.image_layers.append(nn.Sequential(
+            nn.Conv2d(in_channels=8, out_channels=8, kernel_size=5),
+            nn.Dropout(dropout_p),
+            nn.LeakyReLU(negative_slope=0.01, inplace=True),
+            nn.BatchNorm2d(num_features=8),
+            nn.MaxPool2d(2),
+        ))
+        
+        self.image_layers.append(nn.Sequential(
+            nn.Conv2d(in_channels=8, out_channels=3, kernel_size=5),
+            nn.Dropout(dropout_p),
+            nn.LeakyReLU(negative_slope=0.01, inplace=True),
+            nn.BatchNorm2d(num_features=3),
+            nn.MaxPool2d(2),
+        ))
+
+        self.image_layers.append(nn.Sequential(
+            nn.Conv2d(in_channels=3, out_channels=3, kernel_size=3),
+            nn.Dropout(dropout_p),
+            nn.LeakyReLU(negative_slope=0.01, inplace=True),
+            nn.BatchNorm2d(num_features=3),
+            nn.MaxPool2d(2),
+        ))
+
+        self.image_layers.append(nn.Sequential(
+            nn.Conv2d(in_channels=3, out_channels=3, kernel_size=3),
+            nn.Dropout(dropout_p),
+            nn.LeakyReLU(negative_slope=0.01, inplace=True),
+            nn.BatchNorm2d(num_features=3),
+            nn.MaxPool2d(2),
+        ))
+        self.image_layers.append(nn.Sequential(
+            nn.Conv2d(in_channels=3, out_channels=1, kernel_size=3),
+            nn.Dropout(dropout_p),
+            nn.LeakyReLU(negative_slope=0.01, inplace=True),
+            nn.BatchNorm2d(num_features=1),
+            nn.MaxPool2d(2),
+        ))
+
+        self.image_layer = nn.Sequential(*self.image_layers)
+
+        self.flatten_layer = nn.Sequential(
+            nn.Flatten(),
+        )
+        
+        IMG_LAYER_OUTPUT_SIZE = 16
+        NON_SPATIAL_FEATURE_SIZE = 0
+        
+        
+        self.linear_layer1 = nn.Sequential(
+            nn.Linear(IMG_LAYER_OUTPUT_SIZE + NON_SPATIAL_FEATURE_SIZE, output_size),
+            nn.LayerNorm(output_size)
+        )
+
+    def forward(self, img_feature):
+        """
+        forward method
+        """
+        x = self.image_layer(img_feature)
+        x = self.flatten_layer(x)
+        #non_spatial_feature = self.flatten_layer(non_spatial_feature)
+        #x = torch.cat([x, non_spatial_feature], 1)
+        x = self.linear_layer1(x)
+        return x
+
+class TrajectoryPredictTransformerV1(nn.Module):
+    def __init__(
+        self
+    ):
+        super().__init__()
+
+        # INFO
+        CNN_OUTPUT_FEATURE_SIZE = 16
+        TRAJECTORY_FEATURE_SIZE = 3 
+        self.cnn = SmallRegularizedCNN(output_size=CNN_OUTPUT_FEATURE_SIZE, dropout_p=0.2)
+        self.transformer = Transformer(dim_model=16, dim_feature_in=CNN_OUTPUT_FEATURE_SIZE + TRAJECTORY_FEATURE_SIZE, dim_feature_out=TRAJECTORY_FEATURE_SIZE, num_heads=8, num_encoder_layers=6, num_decoder_layers=6, dropout_p=0.2)
+
+    def forward(self, instance_centric_img, trajectories_past, trajectories_future=None):
+        """
+        instance_centric_img:   (N, 1, 400, 400)
+                                N = batch size
+                                Image corresponding to the instance centric view
+                                for the current timestep. Agent should be at the
+                                center of the image.
+        trajectories_past:      (N, T_1, 3)     
+                                N = batch size
+                                T_1 = timesteps of history
+                                3 = (x_coord, y_coord, heading)
+
+        trajectories_future:    (N, T_2, 3)     
+                                N = batch size
+                                T_2 = timesteps of future
+                                3 = (x_coord, y_coord, heading)
+                                If value is None (such as during test time),
+                                then the model will enter predict mode, and
+                                generate output appropriately.
+
+
+        Returns - 
+
+        output:                 (N, T_2, 3)
+                                N = batch size
+                                T_2 = timesteps of output
+                                3 = (x_coord, y_coord, heading)
+
+        """
+
+        if trajectories_future is None:
+            print("Test time evaluation not yet implemented. Please pass in trajectories_future to train model.")
+            return None
+
+        img_feaure = self.cnn(instance_centric_img) # (N, 16)
+        _, T_1, _ = trajectories_past.shape
+        _, T_2, _ = trajectories_future.shape
+        concat_aligned_img_feature = img_feaure[:, None, :].repeat(1, T_1, 1)
+        concatenated_features = torch.concat((trajectories_past, concat_aligned_img_feature), dim=2) # (N, T_1, 3 + 16)
+        future_mask = self.transformer.generate_square_subsequent_mask(T_2)
+        output = self.transformer(src=concatenated_features, tgt=trajectories_future, tgt_mask=future_mask) # (N, T_2, 3)
+        return output
+
+
+
+
 
 class Transformer(nn.Module):
     def __init__(
         self,
         dim_model,
-        dim_feature,
+        dim_feature_in,
+        dim_feature_out,
         num_heads,
         num_encoder_layers,
         num_decoder_layers,
@@ -53,12 +198,11 @@ class Transformer(nn.Module):
             num_encoder_layers=num_encoder_layers,
             num_decoder_layers=num_decoder_layers,
             dropout=dropout_p,
+            batch_first=True
         )
-        self.out = nn.Sequential(
-            nn.Linear(dim_model, dim_feature),
-            
-        )
-        self.proj = nn.Linear(dim_feature, dim_model)
+        self.proj_enc_in = nn.Linear(dim_feature_in, dim_model)
+        self.proj_dec_in = nn.Linear(dim_feature_out, dim_model)
+        self.out =  nn.Linear(dim_model, dim_feature_out)
 
     def generate_square_subsequent_mask(self, size) -> torch.tensor:
         # Generates a squeare matrix where the each row allows one word more to be seen
@@ -81,16 +225,11 @@ class Transformer(nn.Module):
         # Tgt size must be (batch_size, tgt sequence length)
         # Embedding + positional encoding - Out size = (batch_size, sequence length, dim_model)
 
-        src = self.proj(src)
-        tgt = self.proj(tgt)
+        src = self.proj_enc_in(src)
+        tgt = self.proj_dec_in(tgt)
 
         src = self.positional_encoder(src)
         tgt = self.positional_encoder(tgt)
-        
-        # We could use the parameter batch_first=True, but our KDL version doesn't support it yet, so we permute
-        # to obtain size (sequence length, batch_size, dim_model),
-        src = src.permute(1,0,2)
-        tgt = tgt.permute(1,0,2)
 
         
         # Transformer blocks - Out size = (sequence length, batch_size, num_tokens)
