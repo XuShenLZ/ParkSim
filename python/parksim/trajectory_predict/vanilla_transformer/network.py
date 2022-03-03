@@ -124,7 +124,7 @@ class TrajectoryPredictTransformerV1(nn.Module):
         self.cnn = SmallRegularizedCNN(output_size=CNN_OUTPUT_FEATURE_SIZE, dropout_p=0.2)
         self.transformer = Transformer(dim_model=16, dim_feature_in=CNN_OUTPUT_FEATURE_SIZE + TRAJECTORY_FEATURE_SIZE, dim_feature_out=TRAJECTORY_FEATURE_SIZE, num_heads=8, num_encoder_layers=6, num_decoder_layers=6, dropout_p=0.2)
 
-    def forward(self, instance_centric_img, trajectories_past, trajectories_future=None):
+    def forward(self, instance_centric_img, trajectories_past, trajectories_future=None, tgt_mask=None):
         """
         instance_centric_img:   (N, 1, 400, 400)
                                 N = batch size
@@ -163,8 +163,7 @@ class TrajectoryPredictTransformerV1(nn.Module):
         _, T_2, _ = trajectories_future.shape
         concat_aligned_img_feature = img_feaure[:, None, :].repeat(1, T_1, 1)
         concatenated_features = torch.concat((trajectories_past, concat_aligned_img_feature), dim=2) # (N, T_1, 3 + 16)
-        future_mask = self.transformer.generate_square_subsequent_mask(T_2)
-        output = self.transformer(src=concatenated_features, tgt=trajectories_future, tgt_mask=future_mask) # (N, T_2, 3)
+        output = self.transformer(src=concatenated_features, tgt=trajectories_future, tgt_mask=tgt_mask) # (N, T_2, 3)
         return output
 
 
