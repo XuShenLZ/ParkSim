@@ -586,6 +586,7 @@ class RuleBasedStanleyVehicle(AbstractAgent):
                 else:
                     self.set_ref_v(self.vehicle_config.v_end)
 
+                # TODO: we shouldn't brake when there's a nearby parker, but we've already passed them
                 # detect parking and unparking
                 nearby_parkers = [id for id in self.nearby_vehicles if self.other_parking_progress[id] and self.other_within_parking_box(id)]
 
@@ -681,6 +682,7 @@ class RuleBasedStanleyVehicle(AbstractAgent):
             # to start unparking, everyone within range should be (normal driving and far past us) or (waiting to unpark and spawned after us)
             # always yields to parkers in the area
 
+            # TODO: what if instead of nearby vehicles, we checked vehicles near the first waypoint? This would make it so we don't care about vehicles in the stall across from us, for instance
             should_go = (self.unparking_maneuver is not None and self.unparking_step < len(self.unparking_maneuver.x) - 1) \
                 or (all([
                     (self.other_parking_flag[id] == "" and self.has_passed(this_id=id, parking_dist_away=7)) 
