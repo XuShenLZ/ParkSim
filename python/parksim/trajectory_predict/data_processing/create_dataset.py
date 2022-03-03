@@ -4,7 +4,7 @@ import numpy as np
 import os
 
 from dlp.dataset import Dataset
-from itertools import product
+from math import cos, sin
 from parksim.trajectory_predict.data_processing.utils import TransformerDataProcessor
 from pathlib import Path
 from tqdm import tqdm
@@ -26,22 +26,24 @@ def get_data_for_instance(inst_token: str, inst_idx: int, frame_token: str, extr
     image_feature = extractor.label_target_spot(inst_token, image_feature)
 
     curr_instance = ds.get('instance', inst_token)
-    current_state = np.array([curr_instance['coords'][0], curr_instance['coords'][1], curr_instance['heading'], curr_instance['speed']])
+    curr_heading = curr_instance['heading']
+    curr_pos = np.array(curr_instance['coords'])
+    rot = np.array([[cos(-curr_heading), -sin(-curr_heading)], [sin(-curr_heading), cos(-curr_heading)]])
     instances_agent_is_in = ds.get_agent_instances(curr_instance['agent_token'])
 
     trajectory_history = []
     for i in range(inst_idx - stride * (history - 1), inst_idx+1, stride):
         instance = instances_agent_is_in[i]
-        pose = np.array(instance['coords'])
-        translated_pose = extractor.vis.global_ground_to_local_pixel(current_state, pose)
-        trajectory_history.append(np.array([translated_pose[0], translated_pose[1], instance['heading'] - curr_instance['heading']]))
+        pos = np.array(instance['coords'])
+        translated_pos = np.dot(rot, pos-curr_pos)
+        trajectory_history.append(np.array([translated_pos[0], translated_pos[1], instance['heading'] - curr_heading]))
     
     trajectory_future = []
     for i in range(inst_idx + stride, inst_idx + stride * future + 1, stride):
         instance = instances_agent_is_in[i]
-        pose = np.array(instance['coords'])
-        translated_pose = extractor.vis.global_ground_to_local_pixel(current_state, pose)
-        trajectory_future.append(np.array([translated_pose[0], translated_pose[1], instance['heading'] - curr_instance['heading']]))
+        pos = np.array(instance['coords'])
+        translated_pos = np.dot(rot, pos-curr_pos)
+        trajectory_future.append(np.array([translated_pos[0], translated_pos[1], instance['heading'] - curr_heading]))
     
     return image_feature, np.array(trajectory_history), np.array(trajectory_future)
 
