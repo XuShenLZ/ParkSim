@@ -10,9 +10,9 @@ from pathlib import Path
 from tqdm import tqdm
 from typing import Tuple
 
-stride = 25
-history = 3
-future = 3
+stride = 10
+history = 10
+future = 10
 
 _CURRENT = os.path.abspath(os.path.dirname(__file__))
 DATA_PATH = os.path.join(_CURRENT, '..', 'data')
@@ -69,7 +69,6 @@ def create_dataset(path, name):
         frame_token = all_frames[frame_idx]
         all_instance_tokens, all_instance_indices = extractor.filter_instances(frame_token, stride, history, future)
         num_insts = len(all_instance_tokens)
-        
         with multiprocessing.Pool(processes=os.cpu_count()) as pool:
             inputs = zip(all_instance_tokens, all_instance_indices, [frame_token]*num_insts, [extractor]*num_insts, [ds]*num_insts)
             results = pool.starmap(get_data_for_instance, inputs)
@@ -103,7 +102,12 @@ if __name__ == '__main__':
     history = args.before
     future = args.future
 
-    # names = ["DJI_0007", "DJI_0008", "DJI_0009", "DJI_0010", "DJI_0011"]
+    #names = ["DJI_" + str(i+1).zfill(4) for i in range(30)]
+    #names = ["DJI_0007", "DJI_0008", "DJI_0009", "DJI_0010", "DJI_0011"]
     names = ["DJI_0012"]
     for name in names:
-        create_dataset(path, name)
+        try:
+            create_dataset(path, name)
+        except Exception as err:
+            print(name, "failed")
+            print(err)
