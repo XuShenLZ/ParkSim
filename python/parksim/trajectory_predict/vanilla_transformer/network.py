@@ -172,7 +172,7 @@ class TrajectoryPredictTransformerV1(nn.Module):
 
 
         concat_aligned_img_feature = img_feaure[:, None, :].repeat(1, T_1, 1)
-        concatenated_features = torch.concat((trajectories_past, concat_aligned_img_feature), dim=2) # (N, T_1, 3 + 16)
+        concatenated_features = torch.cat((trajectories_past, concat_aligned_img_feature), dim=2) # (N, T_1, 3 + 16)
         output = self.transformer(src=concatenated_features, tgt=trajectories_future, tgt_mask=tgt_mask) # (N, T_2, 3)
         return output
 
