@@ -93,7 +93,7 @@ def create_dataset(path, name):
 
 if __name__ == '__main__':    
     parser = argparse.ArgumentParser()
-    parser.add_argument('-s', '--stride', default=100, help='stride size for saving images. e.g. 10 means save one image per 10 timesteps', type=int)
+    parser.add_argument('-s', '--stride', default=300, help='stride size for saving images. e.g. 10 means save one image per 10 timesteps', type=int)
     parser.add_argument('-p', '--path', default=f"{Path.home()}/MPCLab/dlp-dataset/data/", help='absolute path to JSON files, e.g. ~/dlp-dataset/data/', type=str)
     parser.add_argument('-b', '--before', default=5, help='number of previous observations to store in motion history for input', type=int)
     parser.add_argument('-f', '--future', default=5, help='number of future observations to store as trajectory output', type=int)

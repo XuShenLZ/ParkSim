@@ -1,4 +1,5 @@
-from utils import CNNTransformerDataset
+from time import time
+from utils import CNNTransformerDatasetMulti
 import numpy as np
 import torch
 from vanilla_transformer.network import TrajectoryPredictTransformerV1
@@ -6,6 +7,10 @@ from torchvision import transforms
 from torch.utils.data import DataLoader
 from torch import nn
 import matplotlib.pyplot as plt
+import os
+from datetime import datetime
+
+_CURRENT = os.path.abspath(os.path.dirname(__file__))
 
 def train_loop(model, opt, loss_fn, data_loader, device):
     model.train()
@@ -48,7 +53,7 @@ def validation_loop(model, loss_fn, dataloader, device):
             total_loss += loss.detach().item()
     return total_loss / len(dataloader)
 
-def fit(model, opt, loss_fn, train_data_loader, val_data_loader, epochs, print_every=10, device="cuda"):
+def fit(model, opt, loss_fn, train_data_loader, val_data_loader, epochs, print_every=10, save_every=100, device="cuda"):
     
     # Used for plotting later on
     train_loss_list, validation_loss_list = [], []
@@ -68,35 +73,55 @@ def fit(model, opt, loss_fn, train_data_loader, val_data_loader, epochs, print_e
             train_loss_list += [train_loss]
             validation_loss = validation_loop(model, loss_fn, val_data_loader, device)
             validation_loss_list += [validation_loss]
+        if epoch % save_every == save_every - 1:
+            if not os.path.exists(_CURRENT + '/models'):
+                os.mkdir(_CURRENT + '/models')
+            timestamp = datetime.now().strftime("%m-%d-%Y_%H-%M-%S")
+            PATH = _CURRENT + f'/models/CNN_Transformer_{timestamp}.pth'
+            torch.save(model.state_dict(), PATH)
+
     return train_loss_list, validation_loss_list
 
-def train_model(model, dataset_nums, device):
+def train_model(model, dataset_nums, epochs, save_every, device):
 
-    # TODO train on all dataset nums in dataset_nums
-    dataset_num = dataset_nums[0]
     val_proportion = 0.25
     seed = 42
-
     model = model.to(device)
 
-
-
-    dataset = CNNTransformerDataset(f"data/DJI_{dataset_num}", img_transform=transforms.ToTensor()) 
+    dataset = CNNTransformerDatasetMulti(dataset_nums, img_transform=transforms.ToTensor())
+    val_proportion = 0.20
     val_size = int(val_proportion * len(dataset))
     train_size = len(dataset) - val_size
     validation_dataset, train_dataset = torch.utils.data.random_split(dataset, [val_size, train_size], generator=torch.Generator().manual_seed(seed))
     trainloader = DataLoader(train_dataset, batch_size=32, shuffle=True, num_workers=12)
     testloader = DataLoader(validation_dataset, batch_size=32, shuffle=True, num_workers=12)
+
     loss_fn = nn.MSELoss()
-    opt = torch.optim.SGD(model.parameters(), lr=1e-1)
-    fit(model=model, opt=opt, loss_fn=loss_fn, train_data_loader=trainloader, val_data_loader=testloader, epochs=50, print_every=5)
+    opt = torch.optim.SGD(model.parameters(), lr=1e-2)
+    fit(model=model, opt=opt, loss_fn=loss_fn, train_data_loader=trainloader, val_data_loader=testloader, epochs=epochs, print_every=10, save_every=save_every, device=device)
+    print('Finished Training')
+
+
+    if not os.path.exists(_CURRENT + '/models'):
+        os.mkdir(_CURRENT + '/models')
+    timestamp = datetime.now().strftime("%m-%d-%Y_%H-%M-%S")
+    PATH = _CURRENT + f'/models/CNN_Transformer_{timestamp}.pth'
+    torch.save(model.state_dict(), PATH)
 
 
 if __name__ == '__main__':
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(device)
     print()
-    dataset_num = ['0009']
-    model = TrajectoryPredictTransformerV1()
-    train_model(model, dataset_num, device)
+
+
+    #dataset_nums = ['data/DJI_0008', 'data/DJI_0009', 'data/DJI_0010', 'data/DJI_0011', 'data/DJI_0012']
+    dataset_nums = ['data/DJI_0009']
+    epochs = 100
+
+    model_state = torch.load('models/CNN_Transformer_03-04-2022_13-58-49.pth')
+    model = TrajectoryPredictTransformerV1().to(device)
+    model.load_state_dict(model_state)
+
+    train_model(model=model, dataset_nums=dataset_nums, epochs=epochs, save_every=50, device=device)
 
