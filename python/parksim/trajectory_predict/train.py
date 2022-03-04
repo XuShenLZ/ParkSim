@@ -105,7 +105,7 @@ def train_model(model, dataset_nums, epochs, save_every, device):
     if not os.path.exists(_CURRENT + '/models'):
         os.mkdir(_CURRENT + '/models')
     timestamp = datetime.now().strftime("%m-%d-%Y_%H-%M-%S")
-    PATH = _CURRENT + f'/models/CNN_Transformer_{timestamp}.pth'
+    PATH = _CURRENT + f'/models/CNN_Transformer_all_data_{timestamp}.pth'
     torch.save(model.state_dict(), PATH)
 
 
@@ -115,13 +115,13 @@ if __name__ == '__main__':
     print()
 
 
-    #dataset_nums = ['data/DJI_0008', 'data/DJI_0009', 'data/DJI_0010', 'data/DJI_0011', 'data/DJI_0012']
-    dataset_nums = ['data/DJI_0009']
-    epochs = 100
+    dataset_nums = ['data/DJI_0008', 'data/DJI_0009', 'data/DJI_0010', 'data/DJI_0011', 'data/DJI_0012']
+    #dataset_nums = ['data/DJI_0009']
+    epochs = 600
 
-    model_state = torch.load('models/CNN_Transformer_03-04-2022_13-58-49.pth')
+    #model_state = torch.load('models/CNN_Transformer_03-04-2022_13-58-49.pth')
     model = TrajectoryPredictTransformerV1().to(device)
-    model.load_state_dict(model_state)
+    #model.load_state_dict(model_state)
 
     train_model(model=model, dataset_nums=dataset_nums, epochs=epochs, save_every=50, device=device)
 
