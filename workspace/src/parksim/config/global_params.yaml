@@ -1,4 +1,4 @@
-dlp_path: '/ParkSim/data/dlp_data/sim_DJI_0012' # Starts from home directory
+dlp_path: '/ParkSim/data/dlp_data/sim_DJI_0000' # Starts from home directory
 
 random_seed: 0
 
