@@ -60,15 +60,21 @@ class TransformerDataProcessor(object):
     def _get_corners(self, spot):
         return cv2.boxPoints(spot)
     
-    def label_target_spot(self, inst_token: str, inst_centric_view: np.array, r=1.25) -> np.array:
+    def label_target_spot(self, inst_token: str, inst_centric_view: np.array, center_pose: np.ndarray=None, r=1.25) -> np.array:
         """
         Returns image frame with target spot labeled
+
+        center_pose: If None, the inst_centric_view is assumed to be around the current instance. If a numpy array (x, y, heading) is given, it is the specified center.
         """
         all_spots = self.spot_detector.detect(inst_centric_view)
 
         traj = self.vis.dataset.get_future_traj(inst_token)
         instance = self.ds.get('instance', inst_token)
-        current_state = np.array([instance['coords'][0], instance['coords'][1], instance['heading'], instance['speed']])
+        if center_pose is None:
+            current_state = np.array([instance['coords'][0], instance['coords'][1], instance['heading']])
+        else:
+            current_state = center_pose
+
         for spot in all_spots:
             spot_center_pixel = np.array(spot[0])
             spot_center = self.vis.local_pixel_to_global_ground(current_state, spot_center_pixel)

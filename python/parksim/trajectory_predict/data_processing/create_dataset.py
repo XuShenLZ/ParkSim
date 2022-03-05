@@ -26,24 +26,35 @@ def get_data_for_instance(inst_token: str, inst_idx: int, frame_token: str, extr
     image_feature = extractor.label_target_spot(inst_token, image_feature)
 
     curr_instance = ds.get('instance', inst_token)
-    curr_heading = curr_instance['heading']
-    curr_pos = np.array(curr_instance['coords'])
-    rot = np.array([[cos(-curr_heading), -sin(-curr_heading)], [sin(-curr_heading), cos(-curr_heading)]])
+    curr_pose = np.array([curr_instance['coords'][0],
+                         curr_instance['coords'][1], curr_instance['heading']])
+    rot = np.array([[cos(-curr_pose[2]), -sin(-curr_pose[2])], [sin(-curr_pose[2]), cos(-curr_pose[2])]])
     instances_agent_is_in = ds.get_agent_instances(curr_instance['agent_token'])
 
+
+    # image_history = []
     trajectory_history = []
     for i in range(inst_idx - stride * (history - 1), inst_idx+1, stride):
         instance = instances_agent_is_in[i]
         pos = np.array(instance['coords'])
-        translated_pos = np.dot(rot, pos-curr_pos)
-        trajectory_history.append(np.array([translated_pos[0], translated_pos[1], instance['heading'] - curr_heading]))
+        translated_pos = np.dot(rot, pos-curr_pose[:2])
+        trajectory_history.append(np.array(
+            [translated_pos[0], translated_pos[1], instance['heading'] - curr_pose[2]]))
+
+        # ======= Uncomment the lines below to generate image history
+        # img_frame = extractor.vis.plot_frame(instance['frame_token'])
+        # image_feature = extractor.vis.inst_centric(
+        #     img_frame, instance['instance_token'], curr_pose)
+        # image_feature = extractor.label_target_spot(
+        #     inst_token, image_feature, curr_pose)
+        # image_history.append(image_feature)
     
     trajectory_future = []
     for i in range(inst_idx + stride, inst_idx + stride * future + 1, stride):
         instance = instances_agent_is_in[i]
         pos = np.array(instance['coords'])
-        translated_pos = np.dot(rot, pos-curr_pos)
-        trajectory_future.append(np.array([translated_pos[0], translated_pos[1], instance['heading'] - curr_heading]))
+        translated_pos = np.dot(rot, pos-curr_pose[:2])
+        trajectory_future.append(np.array([translated_pos[0], translated_pos[1], instance['heading'] - curr_pose[2]]))
     
     return image_feature, np.array(trajectory_history), np.array(trajectory_future)
 
