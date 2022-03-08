@@ -383,6 +383,7 @@ class RuleBasedStanleyVehicle(AbstractAgent):
     def has_passed(self, this_id: int=None, other_id: int=None, parking_dist_away=None):
         """
         If the rear corners of this vehicle have passed the front corners of the other vehicle, we say this vehicle has passed the other vehicle.
+        parking_dist_away: additional check, if this_id's x-coordinate is parking_dist_away past other_id's x-coordinate 
         """
         if this_id is None or this_id == self.vehicle_id:
             this_corners = self.get_corners()
@@ -589,9 +590,8 @@ class RuleBasedStanleyVehicle(AbstractAgent):
                 else:
                     self.set_ref_v(self.vehicle_config.v_end)
 
-                # TODO: we shouldn't brake when there's a nearby parker, but we've already passed them
                 # detect parking and unparking
-                nearby_parkers = [id for id in self.nearby_vehicles if self.other_parking_progress[id] and self.other_within_parking_box(id)]
+                nearby_parkers = [id for id in self.nearby_vehicles if self.other_parking_progress[id] and self.other_within_parking_box(id) and not self.has_passed(other_id=id, parking_dist_away=2)]
 
                 if nearby_parkers:
                     # should only be one nearby parker, since they wait for each other
@@ -672,7 +672,7 @@ class RuleBasedStanleyVehicle(AbstractAgent):
 
             should_go = (self.parking_maneuver is not None and self.parking_step > 0) \
                 or all([
-                    self.other_parking_flag[id] == "" and self.has_passed(other_id=id) 
+                    (self.other_parking_flag[id] == "" and self.has_passed(other_id=id)) 
                     or (self.other_parking_flag[id] == "UNPARKING" and self.other_parking_progress[id] == "")
                     or (self.other_parking_flag[id] == "PARKING" and self.other_parking_start_time[id] > self.parking_start_time)
                     or self.dist_from(id) >= 2*self.vehicle_config.parking_radius for id in self.nearby_vehicles
@@ -685,14 +685,18 @@ class RuleBasedStanleyVehicle(AbstractAgent):
             # to start unparking, everyone within range should be (normal driving and far past us) or (waiting to unpark and spawned after us)
             # always yields to parkers in the area
 
-            # TODO: what if instead of nearby vehicles, we checked vehicles near the first waypoint? This would make it so we don't care about vehicles in the stall across from us, for instance
+            unparking_nearby_vehicles = [id for id in self.other_vehicles if np.abs(self.other_state[id].x.x - self.x_ref[0]) < 15 and np.abs(self.other_state[id].x.y - self.y_ref[0]) < 10]
+            # old version
+            # unparking_nearby_vehicles = [id for id in self.nearby_vehicles if self.dist_from(id) >= 2*self.vehicle_config.parking_radius]
             should_go = (self.unparking_maneuver is not None and self.unparking_step < len(self.unparking_maneuver.x) - 1) \
                 or (all([
                     (self.other_parking_flag[id] == "" and self.has_passed(this_id=id, parking_dist_away=7)) 
                     or (self.other_parking_flag[id] == "UNPARKING" and self.other_parking_start_time[id] > self.parking_start_time)
-                    or self.dist_from(id) >= 2*self.vehicle_config.parking_radius for id in self.nearby_vehicles
-                    ]) 
-                    and all([self.other_parking_progress[id] != "UNPARKING" or np.linalg.norm([self.x_ref[0] - self.other_ref_pose[id].x[0], self.y_ref[0] - self.other_ref_pose[id].y[0]]) > 10 for id in self.other_vehicles]))
+                    for id in unparking_nearby_vehicles
+                    ]))
+            """
+            and all([self.other_parking_progress[id] != "UNPARKING" or np.linalg.norm([self.x_ref[0] - self.other_ref_pose[id].x[0], self.y_ref[0] - self.other_ref_pose[id].y[0]]) > 10 for id in self.other_vehicles]))
+            """
 
             self.update_state_unparking(should_go)
         else: 
