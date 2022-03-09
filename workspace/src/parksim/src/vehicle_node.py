@@ -137,6 +137,7 @@ class VehicleNode(MPClabNode):
             self.vehicle.other_is_braking[vehicle_id] = info.is_braking
             self.vehicle.other_parking_start_time[vehicle_id] = info.parking_start_time
             self.vehicle.other_waiting_for[vehicle_id] = info.waiting_for
+            self.vehicle.other_is_all_done[vehicle_id] = info.is_all_done
 
             if vehicle_id in self.vehicle.other_state:
                 # Add vehicle only when we both have state and info available
@@ -253,6 +254,8 @@ def main(args=None):
     except InvalidHandle as e:
         print(e)
         print("Vehicle %d node is destroyed cleanly." % vehicle.vehicle_id)
+    except:
+        print("Unknown exception")
     finally:
 
         rclpy.shutdown()

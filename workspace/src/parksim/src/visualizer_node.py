@@ -137,7 +137,7 @@ class VisualizerNode(MPClabNode):
             state = self.states[vehicle_id]
             info = self.infos[vehicle_id]
 
-            if not info:
+            if not info or info.is_all_done:
                 color = self.alldone_color
             elif info.is_braking:
                 color = self.braking_color

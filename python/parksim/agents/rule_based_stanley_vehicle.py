@@ -96,6 +96,7 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         self.other_parking_start_time: Dict[int, float] = {}
         self.other_is_braking: Dict[int, str] = {}
         self.other_waiting_for: Dict[int, int] = {}
+        self.other_is_all_done: Dict[int, bool] = {}
 
         # ============== Method to exchange information
         self.method_to_change_central_occupancy = None
@@ -288,6 +289,7 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         self.info.waiting_for = self.waiting_for
 
         self.info.disp_text = self.disp_text
+        self.info.is_all_done = self.is_all_done()
 
         return self.info
 
@@ -562,6 +564,9 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         self.nearby_vehicles.clear()
 
         for id in self.other_vehicles:
+            if self.other_is_all_done[id]:
+                continue
+            
             dist = self.dist_from(id)
 
             if dist < radius:
@@ -685,7 +690,7 @@ class RuleBasedStanleyVehicle(AbstractAgent):
             # to start unparking, everyone within range should be (normal driving and far past us) or (waiting to unpark and spawned after us)
             # always yields to parkers in the area
 
-            unparking_nearby_vehicles = [id for id in self.other_vehicles if np.abs(self.other_state[id].x.x - self.x_ref[0]) < 15 and np.abs(self.other_state[id].x.y - self.y_ref[0]) < 10]
+            unparking_nearby_vehicles = [id for id in self.nearby_vehicles if np.abs(self.other_state[id].x.y - self.y_ref[0]) < self.vehicle_config.parking_radius]
             # old version
             # unparking_nearby_vehicles = [id for id in self.nearby_vehicles if self.dist_from(id) >= 2*self.vehicle_config.parking_radius]
             should_go = (self.unparking_maneuver is not None and self.unparking_step < len(self.unparking_maneuver.x) - 1) \

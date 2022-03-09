@@ -8,6 +8,8 @@ from pathlib import Path
 import glob
 import os
 
+import traceback
+
 from dlp.dataset import Dataset
 from dlp.visualizer import Visualizer as DlpVisualizer
 
@@ -52,6 +54,13 @@ class SimulatorNode(MPClabNode):
         self.autoload_parameters(param_template, namespace)
 
         np.random.seed(self.random_seed)
+
+        # Check whether there are unterminated vehicle processes
+        all_nodes_names = [x[0] for x in self.get_node_names_and_namespaces()]
+        print(all_nodes_names)
+        if 'vehicle' in all_nodes_names:
+            self.get_logger().error("Some vehicle nodes are not shut down cleanly. Please kill those processes first.")
+            raise KeyboardInterrupt()
 
         # Clean up the log folder if needed
         if self.write_log:
@@ -149,7 +158,7 @@ class SimulatorNode(MPClabNode):
 
     def shutdown_vehicles(self):
         for vehicle in self.vehicles:
-            vehicle.terminate()
+            vehicle.kill()
 
         print("Vehicle nodes are down")
 
@@ -221,6 +230,9 @@ def main(args=None):
         rclpy.spin(simulator)
     except KeyboardInterrupt:
         print('Simulation is terminated')
+    except:
+        print('Unknown exception')
+        traceback.print_exc()
     finally:
         simulator.shutdown_vehicles()
         simulator.destroy_node()
