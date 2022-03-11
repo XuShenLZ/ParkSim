@@ -59,15 +59,14 @@ class CNNTransformerDatasetMulti(Dataset):
         """
         #self.image_features = (np.load('%s_image_feature.npy' % file_path) /
         #255).astype(np.single)
-        all_PIL_images = []
+        all_img_history = []
         all_trajectory_history = []
         all_trajectory_future = []
         for file_path in file_paths:
-            image_features_pil = np.load('%s_image_feature.npy' % file_path, allow_pickle=True) #Data is stored as PIL images right now :(
-            all_PIL_images.append(np.array([np.asarray(img) for img in image_features_pil]))
+            all_img_history.append(np.load('%s_image_history.npy' % file_path))
             all_trajectory_history.append(torch.from_numpy(np.load('%s_trajectory_history.npy' % file_path)))
             all_trajectory_future.append(torch.from_numpy(np.load('%s_trajectory_future.npy' % file_path)))
-        self.image_features = np.concatenate(all_PIL_images)
+        self.img_history: np.ndarray = np.concatenate(all_img_history)
         self.trajectory_history = torch.cat(all_trajectory_history)
         self.trajectory_future = torch.cat(all_trajectory_future)
 
@@ -93,17 +92,21 @@ class CNNTransformerDatasetMulti(Dataset):
         """
         Overwrite the get length method for dataset
         """
-        return self.image_features.shape[0]
+        return self.img_history.shape[0]
 
     def __getitem__(self, idx):
         """
         Overwrite the get item method for dataset
         """
-        img_feature = self.image_features[idx]
+        img_history = self.img_history[idx]
         trajectory_history = self.trajectory_history[idx]
         trajectory_future = self.trajectory_future[idx]
+
+        hist_timesteps, h, w, c = img_history.shape
+        img_history_tensor = torch.empty(size=(hist_timesteps, c, h, w))
         if self.img_transform:
-            img_feature = self.img_transform(img_feature)
+            for t in range(hist_timesteps):
+                img_history_tensor[t] = self.img_transform(img_history[t])
         trajectory_future_tgt = torch.cat((trajectory_history[-1:], trajectory_future[:-1])) # This is the tgt that is passed into the decoder, and trajectory_future is the label
             
-        return img_feature, trajectory_history, trajectory_future_tgt, trajectory_future
+        return img_history_tensor, trajectory_history, trajectory_future_tgt, trajectory_future

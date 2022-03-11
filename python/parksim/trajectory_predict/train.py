@@ -1,14 +1,15 @@
 from time import time
-from utils import CNNTransformerDatasetMulti
 import numpy as np
 import torch
-from vanilla_transformer.network import TrajectoryPredictTransformerV1
 from torchvision import transforms
 from torch.utils.data import DataLoader
 from torch import nn
 import matplotlib.pyplot as plt
 import os
 from datetime import datetime
+
+from parksim.trajectory_predict.utils import CNNTransformerDatasetMulti
+from parksim.trajectory_predict.vanilla_transformer.network import TrajectoryPredictTransformerV1
 
 _CURRENT = os.path.abspath(os.path.dirname(__file__))
 

@@ -5,6 +5,9 @@ from torch import nn
 import numpy as np
 import math
 
+# INFO
+CNN_OUTPUT_FEATURE_SIZE = 16
+TRAJECTORY_FEATURE_SIZE = 3
 
 class PositionalEncoding(nn.Module):
 
@@ -92,7 +95,7 @@ class SmallRegularizedCNN(nn.Module):
             nn.Flatten(),
         )
         
-        IMG_LAYER_OUTPUT_SIZE = 16
+        IMG_LAYER_OUTPUT_SIZE = CNN_OUTPUT_FEATURE_SIZE
         NON_SPATIAL_FEATURE_SIZE = 0
         
         
@@ -118,19 +121,17 @@ class TrajectoryPredictTransformerV1(nn.Module):
     ):
         super().__init__()
 
-        # INFO
-        CNN_OUTPUT_FEATURE_SIZE = 16
-        TRAJECTORY_FEATURE_SIZE = 3 
         self.cnn = SmallRegularizedCNN(output_size=CNN_OUTPUT_FEATURE_SIZE, dropout_p=0.2)
         self.transformer = Transformer(dim_model=16, dim_feature_in=CNN_OUTPUT_FEATURE_SIZE + TRAJECTORY_FEATURE_SIZE, dim_feature_out=TRAJECTORY_FEATURE_SIZE, num_heads=8, num_encoder_layers=6, num_decoder_layers=6, dropout_p=0.2)
 
-    def forward(self, instance_centric_img, trajectories_past, trajectories_future=None, tgt_mask=None):
+    def forward(self, images_past, trajectories_past, trajectories_future=None, tgt_mask=None):
         """
-        instance_centric_img:   (N, 1, 400, 400)
+        images_past:            (N, T_1, 3, 100, 100)
                                 N = batch size
-                                Image corresponding to the instance centric view
+                                Image history corresponding to the instance centric view
                                 for the current timestep. Agent should be at the
                                 center of the image.
+                                
         trajectories_past:      (N, T_1, 3)     
                                 N = batch size
                                 T_1 = timesteps of history
@@ -158,20 +159,21 @@ class TrajectoryPredictTransformerV1(nn.Module):
             print("Test time evaluation not yet implemented. Please pass in trajectories_future to train model.")
             return None
 
-        img_feaure = self.cnn(instance_centric_img) # (N, 16)
-        _, T_1, _ = trajectories_past.shape
+        N, T_1, _ = trajectories_past.shape
         _, T_2, _ = trajectories_future.shape
 
+        concat_aligned_img_feature = torch.empty(
+            size=(N, T_1, CNN_OUTPUT_FEATURE_SIZE))
+
+        # img (N, T_1, 3, 100, 100) -> CNN -> (N, T_1, 16)
+        for t in range(T_1):
+            concat_aligned_img_feature[:, t, :] = self.cnn(images_past[:, t, :, :, :])
 
 
-        # img (N, 3, 400, 400) -> CNN -> (N, 16) -> (N, 10, 16)
         # trajectory_history: (N, 10, 3)
 
         # transformer_input: (N, 10, 19)
 
-
-
-        concat_aligned_img_feature = img_feaure[:, None, :].repeat(1, T_1, 1)
         concatenated_features = torch.cat((trajectories_past, concat_aligned_img_feature), dim=2) # (N, T_1, 3 + 16)
         output = self.transformer(src=concatenated_features, tgt=trajectories_future, tgt_mask=tgt_mask) # (N, T_2, 3)
         return output
