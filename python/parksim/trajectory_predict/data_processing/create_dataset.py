@@ -13,6 +13,7 @@ from typing import Tuple
 stride = 10
 history = 10
 future = 10
+img_size = 100
 
 _CURRENT = os.path.abspath(os.path.dirname(__file__))
 DATA_PATH = os.path.join(_CURRENT, '..', 'data')
@@ -23,6 +24,9 @@ def get_data_for_instance(inst_token: str, inst_idx: int, frame_token: str, extr
     """
     img_frame = extractor.vis.plot_frame(frame_token)
     image_feature = extractor.vis.inst_centric(img_frame, inst_token)
+
+    global_intent_pose = extractor.get_intent_pose(inst_token=inst_token, inst_centric_view=image_feature)
+
     image_feature = extractor.label_target_spot(inst_token, image_feature)
 
     curr_instance = ds.get('instance', inst_token)
@@ -31,8 +35,12 @@ def get_data_for_instance(inst_token: str, inst_idx: int, frame_token: str, extr
     rot = np.array([[cos(-curr_pose[2]), -sin(-curr_pose[2])], [sin(-curr_pose[2]), cos(-curr_pose[2])]])
     instances_agent_is_in = ds.get_agent_instances(curr_instance['agent_token'])
 
+    
+    local_intent_coords = np.dot(rot, global_intent_pose[:2]-curr_pose[:2])
+    local_intent_pose = np.array(
+        [local_intent_coords[0], local_intent_coords[1], global_intent_pose[2]-curr_pose[2]])
 
-    # image_history = []
+    image_history = []
     trajectory_history = []
     for i in range(inst_idx - stride * (history - 1), inst_idx+1, stride):
         instance = instances_agent_is_in[i]
@@ -42,12 +50,13 @@ def get_data_for_instance(inst_token: str, inst_idx: int, frame_token: str, extr
             [translated_pos[0], translated_pos[1], instance['heading'] - curr_pose[2]]))
 
         # ======= Uncomment the lines below to generate image history
-        # img_frame = extractor.vis.plot_frame(instance['frame_token'])
-        # image_feature = extractor.vis.inst_centric(
-        #     img_frame, instance['instance_token'], curr_pose)
-        # image_feature = extractor.label_target_spot(
-        #     inst_token, image_feature, curr_pose)
-        # image_history.append(image_feature)
+        img_frame = extractor.vis.plot_frame(instance['frame_token'])
+        image_feature = extractor.vis.inst_centric(
+            img_frame, instance['instance_token'], curr_pose)
+        image_feature = extractor.label_target_spot(
+            inst_token, image_feature, curr_pose)
+        
+        image_history.append(np.asarray(image_feature.resize((img_size, img_size))))
     
     trajectory_future = []
     for i in range(inst_idx + stride, inst_idx + stride * future + 1, stride):
@@ -56,7 +65,7 @@ def get_data_for_instance(inst_token: str, inst_idx: int, frame_token: str, extr
         translated_pos = np.dot(rot, pos-curr_pose[:2])
         trajectory_future.append(np.array([translated_pos[0], translated_pos[1], instance['heading'] - curr_pose[2]]))
     
-    return image_feature, np.array(trajectory_history), np.array(trajectory_future)
+    return np.array(image_history), np.array(trajectory_history), np.array(trajectory_future), local_intent_pose
 
 def create_dataset(path, name):
     ds = Dataset()
@@ -72,9 +81,10 @@ def create_dataset(path, name):
         frame = ds.get('frame', frame_token)
         frame_token = frame['next']
     
-    image_features = []
+    image_history = []
     trajectory_history = []
     trajectory_future = []
+    intent_pose = []
 
     for frame_idx in tqdm(range(stride*history, len(all_frames) - stride*future, stride)):
         frame_token = all_frames[frame_idx]
@@ -83,35 +93,42 @@ def create_dataset(path, name):
         with multiprocessing.Pool(processes=os.cpu_count()) as pool:
             inputs = zip(all_instance_tokens, all_instance_indices, [frame_token]*num_insts, [extractor]*num_insts, [ds]*num_insts)
             results = pool.starmap(get_data_for_instance, inputs)
-            [image_features.append(feature) for feature, _, _ in results]
-            [trajectory_history.append(feature) for _, feature, _ in results]
-            [trajectory_future.append(future) for _, _, future in results]
+            [image_history.append(feature) for feature, _, _, _ in results]
+            [trajectory_history.append(feature) for _, feature, _, _ in results]
+            [trajectory_future.append(feature) for _, _, feature, _ in results]
+            [intent_pose.append(feature) for _, _, _, feature in results]
         
-    image_features = np.array(image_features)
+    image_history = np.array(image_history)
     trajectory_history = np.array(trajectory_history)
     trajectory_future = np.array(trajectory_future)
-    print('img shape', image_features.shape)
+    intent_pose = np.array(intent_pose)
+    print('img history shape', image_history.shape)
     print('history shape', trajectory_history.shape)
     print('future shape', trajectory_future.shape)
+    print('intent pose shape', intent_pose.shape)
 
     if not os.path.exists(DATA_PATH):
         os.mkdir(DATA_PATH)
-    np.save(DATA_PATH + '/%s_image_feature.npy' % name, image_features)
+    np.save(DATA_PATH + '/%s_image_history.npy' % name, image_history)
     np.save(DATA_PATH + '/%s_trajectory_history.npy' % name, trajectory_history)
     np.save(DATA_PATH + '/%s_trajectory_future.npy' % name, trajectory_future)
+    np.save(DATA_PATH + '/%s_intent_pose.npy' % name, intent_pose)
 
 
 if __name__ == '__main__':    
     parser = argparse.ArgumentParser()
-    parser.add_argument('-s', '--stride', default=300, help='stride size for saving images. e.g. 10 means save one image per 10 timesteps', type=int)
+    parser.add_argument('-s', '--stride', default=10, help='stride size. e.g. 10 means get one data per 10 timesteps', type=int)
     parser.add_argument('-p', '--path', default=f"{Path.home()}/MPCLab/dlp-dataset/data/", help='absolute path to JSON files, e.g. ~/dlp-dataset/data/', type=str)
     parser.add_argument('-b', '--before', default=5, help='number of previous observations to store in motion history for input', type=int)
     parser.add_argument('-f', '--future', default=5, help='number of future observations to store as trajectory output', type=int)
+    parser.add_argument('-i', '--img_size', default=100,
+                        help='size of the image feature', type=int)
     args = parser.parse_args()
     stride = args.stride
     path = args.path
     history = args.before
     future = args.future
+    img_size = args.img_size
 
     #names = ["DJI_" + str(i+1).zfill(4) for i in range(30)]
     #names = ["DJI_0007", "DJI_0008", "DJI_0009", "DJI_0010", "DJI_0011"]

@@ -87,3 +87,45 @@ class TransformerDataProcessor(object):
                 return inst_centric_view_copy
         
         return inst_centric_view
+
+    def get_intent_pose(self, inst_token: str, inst_centric_view: np.array, center_pose: np.ndarray = None, r=1.25) -> np.ndarray:
+        """
+        returns global pose (x, y, heading) coordinates of the intent. 
+        
+        If the future traj goes inside a spot, use the spot center + vehicle pose as result. If the traj goes outside of the view, use the last visible state as result
+        """
+        all_spots = self.spot_detector.detect(inst_centric_view)
+
+        traj = self.vis.dataset.get_future_traj(inst_token)
+        instance = self.ds.get('instance', inst_token)
+        if center_pose is None:
+            current_state = np.array(
+                [instance['coords'][0], instance['coords'][1], instance['heading']])
+        else:
+            current_state = center_pose
+
+        # If it is ever inside a spot
+        for spot in all_spots:
+            spot_center_pixel = np.array(spot[0])
+            spot_center = self.vis.local_pixel_to_global_ground(
+                current_state, spot_center_pixel)
+            dist = np.linalg.norm(traj[:, 0:2] - spot_center, axis=1)
+            if np.amin(dist) < r:
+                argmin_idx = np.argmin(dist)
+                return np.array([spot_center[0], spot_center[1], traj[argmin_idx, 2]])
+
+        # If it won't go into a spot
+
+        # Check whether the final point of the trajetory is inside the window
+        if self.vis._is_visible(current_state, traj[-1]):
+            # If the final point is inside the window (instance-centric crop)
+            return traj[-1, 0:3]
+        else:
+            # If the final point is outside the window
+            # Find the first index that goes outside the window
+            first_outside_idx = 1
+            while self.vis._is_visible(current_state, traj[first_outside_idx]):
+                first_outside_idx += 1
+
+            return traj[first_outside_idx-1, 0:3]
+
