@@ -116,8 +116,8 @@ if __name__ == '__main__':
     print()
 
 
-    dataset_nums = ['data/DJI_0008', 'data/DJI_0009', 'data/DJI_0010', 'data/DJI_0011', 'data/DJI_0012']
-    #dataset_nums = ['data/DJI_0009']
+    # dataset_nums = ['data/DJI_0008', 'data/DJI_0009', 'data/DJI_0010', 'data/DJI_0011', 'data/DJI_0012']
+    dataset_nums = ['data/DJI_0012']
     epochs = 600
 
     #model_state = torch.load('models/CNN_Transformer_03-04-2022_13-58-49.pth')

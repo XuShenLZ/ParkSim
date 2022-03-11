@@ -66,21 +66,21 @@ class SmallRegularizedCNN(nn.Module):
             nn.MaxPool2d(2),
         ))
 
-        self.image_layers.append(nn.Sequential(
-            nn.Conv2d(in_channels=3, out_channels=3, kernel_size=3),
-            nn.Dropout(dropout_p),
-            nn.LeakyReLU(negative_slope=0.01, inplace=True),
-            nn.BatchNorm2d(num_features=3),
-            nn.MaxPool2d(2),
-        ))
+        # self.image_layers.append(nn.Sequential(
+        #     nn.Conv2d(in_channels=3, out_channels=3, kernel_size=3),
+        #     nn.Dropout(dropout_p),
+        #     nn.LeakyReLU(negative_slope=0.01, inplace=True),
+        #     nn.BatchNorm2d(num_features=3),
+        #     nn.MaxPool2d(2),
+        # ))
 
-        self.image_layers.append(nn.Sequential(
-            nn.Conv2d(in_channels=3, out_channels=3, kernel_size=3),
-            nn.Dropout(dropout_p),
-            nn.LeakyReLU(negative_slope=0.01, inplace=True),
-            nn.BatchNorm2d(num_features=3),
-            nn.MaxPool2d(2),
-        ))
+        # self.image_layers.append(nn.Sequential(
+        #     nn.Conv2d(in_channels=3, out_channels=3, kernel_size=3),
+        #     nn.Dropout(dropout_p),
+        #     nn.LeakyReLU(negative_slope=0.01, inplace=True),
+        #     nn.BatchNorm2d(num_features=3),
+        #     nn.MaxPool2d(2),
+        # ))
         self.image_layers.append(nn.Sequential(
             nn.Conv2d(in_channels=3, out_channels=1, kernel_size=3),
             nn.Dropout(dropout_p),
@@ -95,7 +95,7 @@ class SmallRegularizedCNN(nn.Module):
             nn.Flatten(),
         )
         
-        IMG_LAYER_OUTPUT_SIZE = CNN_OUTPUT_FEATURE_SIZE
+        IMG_LAYER_OUTPUT_SIZE = 9
         NON_SPATIAL_FEATURE_SIZE = 0
         
         
@@ -163,7 +163,7 @@ class TrajectoryPredictTransformerV1(nn.Module):
         _, T_2, _ = trajectories_future.shape
 
         concat_aligned_img_feature = torch.empty(
-            size=(N, T_1, CNN_OUTPUT_FEATURE_SIZE))
+            size=(N, T_1, CNN_OUTPUT_FEATURE_SIZE)).to(trajectories_past.device)
 
         # img (N, T_1, 3, 100, 100) -> CNN -> (N, T_1, 16)
         for t in range(T_1):
