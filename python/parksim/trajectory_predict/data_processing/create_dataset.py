@@ -39,6 +39,7 @@ def get_data_for_instance(inst_token: str, inst_idx: int, frame_token: str, extr
     local_intent_coords = np.dot(rot, global_intent_pose[:2]-curr_pose[:2])
     local_intent_pose = np.array(
         [local_intent_coords[0], local_intent_coords[1], global_intent_pose[2]-curr_pose[2]])
+    local_intent_pose = np.expand_dims(local_intent_pose, axis=0)
 
     image_history = []
     trajectory_history = []

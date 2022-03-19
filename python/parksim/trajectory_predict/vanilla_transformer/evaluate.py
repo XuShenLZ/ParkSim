@@ -1,6 +1,6 @@
 import torch
-from vanilla_transformer.network import  TrajectoryPredictTransformerV1
-from utils import CNNTransformerDataset
+from parksim.trajectory_predict.vanilla_transformer.network import  TrajectoryPredictTransformerV1
+from parksim.trajectory_predict.vanilla_transformer.dataset import CNNTransformerDataset
 from torch.utils.data import DataLoader
 from torchvision import transforms
 import torch.optim as optim
