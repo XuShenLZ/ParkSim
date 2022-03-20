@@ -80,7 +80,7 @@ def fit(model, opt, loss_fn, train_data_loader, val_data_loader, epochs, print_e
             if not os.path.exists(_CURRENT + '/models'):
                 os.mkdir(_CURRENT + '/models')
             timestamp = datetime.now().strftime("%m-%d-%Y_%H-%M-%S")
-            PATH = _CURRENT + f'../models/Intent_Transformer_{timestamp}.pth'
+            PATH = _CURRENT + f'/models/Intent_Transformer_ep{epoch}_val{validation_loss:.4f}_{timestamp}.pth'
             torch.save(model.state_dict(), PATH)
 
     return train_loss_list, validation_loss_list
@@ -101,7 +101,7 @@ def train_model(model, dataset_nums, epochs, save_every, device):
 
     loss_fn = nn.MSELoss()
     opt = torch.optim.SGD(model.parameters(), lr=1e-2)
-    fit(model=model, opt=opt, loss_fn=loss_fn, train_data_loader=trainloader, val_data_loader=testloader, epochs=epochs, print_every=10, save_every=save_every, device=device)
+    train_loss_list, validation_loss_list = fit(model=model, opt=opt, loss_fn=loss_fn, train_data_loader=trainloader, val_data_loader=testloader, epochs=epochs, print_every=10, save_every=save_every, device=device)
     print('Finished Training')
 
 
@@ -110,6 +110,15 @@ def train_model(model, dataset_nums, epochs, save_every, device):
     timestamp = datetime.now().strftime("%m-%d-%Y_%H-%M-%S")
     PATH = _CURRENT + f'/models/Intent_Transformer_all_data_{timestamp}.pth'
     torch.save(model.state_dict(), PATH)
+
+    plt.figure()
+    plt.plot(train_loss_list, label='train')
+    plt.plot(validation_loss_list, label='val')
+    plt.title('Loss vs Epoch')
+    plt.xlabel('Epoch')
+    plt.ylabel('Loss')
+    plt.legend()
+    plt.show()
 
 
 if __name__ == '__main__':

@@ -3,6 +3,7 @@ from torch import nn, Tensor
 from typing import Optional, Any, Union, Callable
 
 import math
+import copy
 
 import torch.nn.functional as F
 
@@ -243,6 +244,53 @@ class TransformerDecoderLayer(nn.Module):
         x = self.linear2(self.dropout(self.activation(self.linear1(x))))
         return self.dropout4(x)
 
+class TransformerDecoder(nn.Module):
+    """TransformerDecoder is a stack of N decoder layers
+
+    Args:
+        decoder_layer: an instance of the TransformerDecoderLayer() class (required).
+        num_layers: the number of sub-decoder-layers in the decoder (required).
+        norm: the layer normalization component (optional).
+
+    """
+    __constants__ = ['norm']
+
+    def __init__(self, decoder_layer, num_layers, norm=None):
+        super(TransformerDecoder, self).__init__()
+        self.layers = _get_clones(decoder_layer, num_layers)
+        self.num_layers = num_layers
+        self.norm = norm
+
+    def forward(self, tgt: Tensor, memory: Tensor, intent: Tensor, tgt_mask: Optional[Tensor] = None,
+                memory_mask: Optional[Tensor] = None, tgt_key_padding_mask: Optional[Tensor] = None,
+                memory_key_padding_mask: Optional[Tensor] = None) -> Tensor:
+        """Pass the inputs (and mask) through the decoder layer in turn.
+
+        Args:
+            tgt: the sequence to the decoder (required).
+            memory: the sequence from the last layer of the encoder (required).
+            intent: encoding of intent (required).
+            tgt_mask: the mask for the tgt sequence (optional).
+            memory_mask: the mask for the memory sequence (optional).
+            tgt_key_padding_mask: the mask for the tgt keys per batch (optional).
+            memory_key_padding_mask: the mask for the memory keys per batch (optional).
+
+        Shape:
+            see the docs in Transformer class.
+        """
+        output = tgt
+
+        for mod in self.layers:
+            output = mod(output, memory, intent, tgt_mask=tgt_mask,
+                         memory_mask=memory_mask,
+                         tgt_key_padding_mask=tgt_key_padding_mask,
+                         memory_key_padding_mask=memory_key_padding_mask)
+
+        if self.norm is not None:
+            output = self.norm(output)
+
+        return output
+
 
 class IntentFF(nn.Module):
     def __init__(self, d_in: int, d_out: int, d_hidden: int = 16, dropout_p: float = 0.1):
@@ -305,7 +353,7 @@ class TransformerWithIntent(nn.Module):
                             dropout=dropout_p,
                             batch_first=True)
         decoder_norm = nn.LayerNorm(dim_model)
-        self.decoder = nn.TransformerDecoder(
+        self.decoder = TransformerDecoder(
             decoder_layer, num_decoder_layers, decoder_norm)
         
         self.proj_enc_in = nn.Linear(dim_feature_in, dim_model)
@@ -343,7 +391,7 @@ class TransformerWithIntent(nn.Module):
         # Transformer blocks - Out size = (sequence length, batch_size, num_tokens)
         memory = self.encoder(src,
                               src_key_padding_mask=src_pad_mask)
-        transformer_out = self.decoder(tgt, memory, intent, 
+        transformer_out = self.decoder(tgt=tgt, memory=memory, intent=intent, 
                                         tgt_mask=tgt_mask,
                                         tgt_key_padding_mask=tgt_pad_mask)
         out = self.out(transformer_out)
@@ -431,3 +479,7 @@ class TrajectoryPredictorWithIntent(nn.Module):
         output = self.transformer(
             src=concatenated_features, intent=intent, tgt=trajectories_future, tgt_mask=tgt_mask)  # (N, T_2, 3)
         return output
+
+
+def _get_clones(module, N):
+    return nn.ModuleList([copy.deepcopy(module) for i in range(N)])

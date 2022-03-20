@@ -29,16 +29,16 @@ def validation_loop(model, loss_fn, dataloader, device):
     return total_loss / len(dataloader)
 
 def main():
-    MODEL_PATH = "models/Intent_Transformer_03-04-2022_14-10-02.pth"
-    DJI_NUM = "0012"
+    MODEL_PATH = "models/Intent_Transformer_all_data_03-19-2022_20-19-01.pth"
     DEVICE = "cuda"
+    dataset_nums = ['../data/DJI_0012']
 
 
     model = TrajectoryPredictorWithIntent()
     model_state = torch.load(MODEL_PATH)
     model.load_state_dict(model_state)
     model.eval().to(DEVICE)
-    dataset = IntentTransformerDataset(f"../data/DJI_{DJI_NUM}", img_transform = transforms.ToTensor())
+    dataset = IntentTransformerDataset(dataset_nums, img_transform = transforms.ToTensor())
     dataloader = DataLoader(dataset, batch_size=32, num_workers=12)
     loss_fn = nn.MSELoss()    
     validation_loss = validation_loop(model, loss_fn, dataloader, DEVICE)
