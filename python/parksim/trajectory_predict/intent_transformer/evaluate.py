@@ -1,15 +1,10 @@
 import torch
-from parksim.trajectory_predict.intent_transformer.network import  TrajectoryPredictorWithIntent
-from parksim.trajectory_predict.intent_transformer.dataset import IntentTransformerDataset
+from torch import nn
 from torch.utils.data import DataLoader
 from torchvision import transforms
-import torch.optim as optim
-from tqdm import tqdm
 
-import os
-from datetime import datetime
-import numpy as np
-from torch import nn
+from parksim.trajectory_predict.intent_transformer.network import  TrajectoryPredictorWithIntent
+from parksim.trajectory_predict.intent_transformer.dataset import IntentTransformerDataset
 
 def validation_loop(model, loss_fn, dataloader, device):
     model.eval()
@@ -30,12 +25,12 @@ def validation_loop(model, loss_fn, dataloader, device):
 
 def main():
     MODEL_PATH = "models/Intent_Transformer_all_data_03-19-2022_20-19-01.pth"
-    DEVICE = "cuda"
+    DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
     dataset_nums = ['../data/DJI_0012']
 
 
     model = TrajectoryPredictorWithIntent()
-    model_state = torch.load(MODEL_PATH)
+    model_state = torch.load(MODEL_PATH, map_location=DEVICE)
     model.load_state_dict(model_state)
     model.eval().to(DEVICE)
     dataset = IntentTransformerDataset(dataset_nums, img_transform = transforms.ToTensor())

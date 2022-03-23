@@ -1,5 +1,3 @@
-from time import time
-import numpy as np
 import torch
 from torchvision import transforms
 from torch.utils.data import DataLoader
