@@ -1,3 +1,7 @@
+# Video and images
+*.mp4
+*.png
+
 # ROS
 install/
 build/
