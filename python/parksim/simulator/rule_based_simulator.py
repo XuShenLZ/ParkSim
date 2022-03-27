@@ -9,8 +9,9 @@ from pathlib import Path
 import pickle
 
 import numpy as np
+from parksim.pytypes import VehicleState
 
-from parksim.vehicle_types import VehicleBody, VehicleConfig
+from parksim.vehicle_types import VehicleBody, VehicleConfig, VehicleTask
 from parksim.route_planner.graph import WaypointsGraph
 from parksim.visualizer.realtime_visualizer import RealtimeVisualizer
 
@@ -122,9 +123,32 @@ class RuleBasedSimulator(object):
         vehicle.load_parking_spaces(spots_data_path=spots_data_path)
         vehicle.load_graph(waypoints_graph_path=waypoints_graph_path)
         vehicle.load_maneuver(offline_maneuver_path=offline_maneuver_path)
-        vehicle.set_spot_idx(spot_index=spot_index)
         # vehicle.load_intent_model(model_path=intent_model_path)
-        vehicle.start_vehicle()
+
+        task_profile = []
+        if spot_index > 0:
+            cruise_task = VehicleTask(
+                name="CRUISE", v_cruise=5, target_spot_index=spot_index)
+            park_task = VehicleTask(name="PARK")
+            task_profile = [cruise_task, park_task]
+
+            state = VehicleState()
+            state.x.x = entrance_coords[0]
+            state.x.y = entrance_coords[1]
+            state.e.psi = - np.pi/2
+
+            vehicle.set_vehicle_state(state=state)
+            vehicle.set_task_profile(task_profile=task_profile)
+        else:
+            unpark_task = VehicleTask(name="UNPARK")
+            cruise_task = VehicleTask(
+                name="CRUISE", v_cruise=5, target_coords=np.array(entrance_coords))
+            task_profile = [unpark_task, cruise_task]
+
+            vehicle.set_vehicle_state(spot_index=abs(spot_index))
+            vehicle.set_task_profile(task_profile)
+
+        vehicle.execute_next_task()
 
         self.vehicles.append(vehicle)
     
@@ -172,7 +196,7 @@ class RuleBasedSimulator(object):
                 vehicle.get_central_occupancy(self.occupied)
                 vehicle.set_method_to_change_central_occupancy(self.occupied)
 
-                vehicle.solve()
+                vehicle.solve(time=self.time)
                 # result = vehicle.predict_intent()
                 # intent_pred_results.append(result)
                 

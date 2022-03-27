@@ -100,7 +100,7 @@ class VehicleConfig(PythonMsg):
     d_delta_min: float = field(default=-1.5)  # minimum change in steering angle over dt
 
     # Path Following Related
-    v_cruise: float = field(default=3) # Maximum cruising speed
+    v_cruise: float = field(default=5) # Reference cruising speed
     steps_to_end: int = field(default=30) # The steps towards the end of the ref path to slow down
     v_end: float = field(default=1) # The speed in the final segment of tracking
 
@@ -129,3 +129,12 @@ class VehicleInfo(PythonMsg):
 
     def __post_init__(self):
         self.ref_pose = VehiclePrediction()
+
+@dataclass
+class VehicleTask(PythonMsg):
+    name: str = field(default=None) # Can be "CRUISE", "PARK", "UNPARK", "IDLE"
+    state: VehicleState = field(default=None)
+    v_cruise: float = field(default=None)
+    target_spot_index: int = field(default=None)
+    target_coords: np.ndarray = field(default=None)
+    duration: float = field(default=None)

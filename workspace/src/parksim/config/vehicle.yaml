@@ -4,6 +4,8 @@
 
     warm_start_time: 0.3
 
+    entrance_coords: [14.38, 76.21]
+
     # Offline data to load
     spots_data_path: '/ParkSim/data/spots_data.pickle'
     offline_maneuver_path: '/ParkSim/data/parking_maneuvers.pickle'

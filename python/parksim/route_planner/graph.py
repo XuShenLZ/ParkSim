@@ -82,7 +82,7 @@ class WaypointsGraph(object):
         min_idx = None
 
         for idx, v in enumerate(self.vertices):
-            dist = np.linalg.norm(coords - v.coords)
+            dist = np.linalg.norm(np.array(coords)[:2] - v.coords)
             if dist < min_dist:
                 min_idx = idx
                 min_dist = dist

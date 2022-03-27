@@ -1,5 +1,5 @@
 from abc import abstractmethod, ABC
-from typing import List
+from typing import Callable, List
 
 import numpy as np
 
@@ -24,6 +24,19 @@ class AbstractAgent(ABC):
         self.y_ref: List[float] = []
         self.yaw_ref: List[float] = []
         self.v_ref: float = 0.0
+
+        self._printer = None
+
+    # Here we always `self.print(xx)` to print message. Default it is the python built-in `print`. But if we are using ROS, we can all method `set_printer` to change it to `get_logger().info`
+    def print(self, message):
+        if self._printer is None:
+            print(message)
+        else:
+            str_msg = str(message)
+            self._printer(str_msg)
+
+    def set_printer(self, _printer: Callable):
+        self._printer = _printer
 
     def will_collide(self, this_state: VehicleState, other_state: VehicleState, vehicle_body: VehicleBody) -> bool:
         """

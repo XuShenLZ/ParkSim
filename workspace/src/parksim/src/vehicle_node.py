@@ -10,12 +10,13 @@ from rclpy.handle import InvalidHandle
 
 from pathlib import Path
 import os
+import numpy as np
 
 from std_msgs.msg import Int16MultiArray, Bool
 from parksim.msg import VehicleStateMsg, VehicleInfoMsg
 from parksim.srv import OccupancySrv
 from parksim.pytypes import VehicleState, NodeParamTemplate
-from parksim.vehicle_types import VehicleBody, VehicleConfig, VehicleInfo
+from parksim.vehicle_types import VehicleBody, VehicleConfig, VehicleInfo, VehicleTask
 from parksim.base_node import MPClabNode
 from parksim.agents.rule_based_stanley_vehicle import RuleBasedStanleyVehicle
 
@@ -28,6 +29,8 @@ class VehicleNodeParams(NodeParamTemplate):
         self.warm_start_time = 0.2
 
         self.random_seed =0
+
+        self.entrance_coords = [14.38, 76.21]
 
         self.spots_data_path = '/ParkSim/data/spots_data.pickle'
         self.offline_maneuver_path = '/ParkSim/data/parking_maneuvers.pickle'
@@ -99,11 +102,33 @@ class VehicleNode(MPClabNode):
         self.vehicle.load_parking_spaces(spots_data_path=self.spots_data_path)
         self.vehicle.load_graph(waypoints_graph_path=self.waypoints_graph_path)
         self.vehicle.load_maneuver(offline_maneuver_path=self.offline_maneuver_path)
-        self.vehicle.set_spot_idx(spot_index=self.spot_index)
 
         self.vehicle.set_method_to_change_central_occupancy(self.change_occupancy)
 
-        self.vehicle.start_vehicle()
+        task_profile = []
+        if self.spot_index > 0:
+            cruise_task = VehicleTask(
+                name="CRUISE", v_cruise=5, target_spot_index=self.spot_index)
+            park_task = VehicleTask(name="PARK")
+            task_profile = [cruise_task, park_task]
+
+            state = VehicleState()
+            state.x.x = self.entrance_coords[0]
+            state.x.y = self.entrance_coords[1]
+            state.e.psi = - np.pi/2
+
+            self.vehicle.set_vehicle_state(state=state)
+        else:
+            unpark_task = VehicleTask(name="UNPARK")
+            cruise_task = VehicleTask(
+                name="CRUISE", v_cruise=5, target_coords=np.array(self.entrance_coords))
+            task_profile = [unpark_task, cruise_task]
+
+            self.vehicle.set_vehicle_state(spot_index=abs(self.spot_index))
+            
+        self.vehicle.set_task_profile(task_profile=task_profile)
+
+        self.vehicle.execute_next_task()
 
         self.start_time = self.get_ros_time()
         self.start_solving = False
