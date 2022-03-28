@@ -114,7 +114,7 @@ class VehicleNode(MPClabNode):
             task_profile = [cruise_task, park_task]
 
             state = VehicleState()
-            state.x.x = self.entrance_coords[0]
+            state.x.x = self.entrance_coords[0] - vehicle_config.offset
             state.x.y = self.entrance_coords[1]
             state.e.psi = - np.pi/2
 
