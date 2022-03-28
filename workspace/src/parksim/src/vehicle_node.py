@@ -99,6 +99,7 @@ class VehicleNode(MPClabNode):
             intent_predictor=None
             )
         
+        self.vehicle.set_printer(self.get_logger().info)
         self.vehicle.load_parking_spaces(spots_data_path=self.spots_data_path)
         self.vehicle.load_graph(waypoints_graph_path=self.waypoints_graph_path)
         self.vehicle.load_maneuver(offline_maneuver_path=self.offline_maneuver_path)
@@ -157,7 +158,7 @@ class VehicleNode(MPClabNode):
             self.vehicle.other_ref_v[vehicle_id] = info.ref_v
             self.vehicle.other_target_idx[vehicle_id] = info.target_idx
             self.vehicle.other_priority[vehicle_id] = info.priority
-            self.vehicle.other_parking_flag[vehicle_id] = info.parking_flag
+            self.vehicle.other_task[vehicle_id] = info.task
             self.vehicle.other_parking_progress[vehicle_id] = info.parking_progress
             self.vehicle.other_is_braking[vehicle_id] = info.is_braking
             self.vehicle.other_parking_start_time[vehicle_id] = info.parking_start_time
@@ -249,7 +250,7 @@ class VehicleNode(MPClabNode):
             
         if self.sim_is_running:
             if self.start_solving:
-                self.vehicle.solve()
+                self.vehicle.solve(time=self.get_ros_time())
         elif self.write_log and len(self.vehicle.logger) > 0:
             # write logs
             log_dir_path = str(Path.home()) + self.log_path

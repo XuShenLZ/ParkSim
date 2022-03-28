@@ -210,7 +210,7 @@ class RuleBasedSimulator(object):
                     fill = (0, 0, 0, 255)
                 elif vehicle.is_braking:
                     fill = (255, 0, 0, 255)
-                elif vehicle.parking_flag:
+                elif vehicle.current_task in ["PARK", "UNPARK"]:
                     fill = (255, 128, 0, 255)
                 else:
                     fill = (0, 255, 0, 255)

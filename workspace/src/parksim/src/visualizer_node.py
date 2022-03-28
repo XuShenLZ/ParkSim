@@ -141,7 +141,7 @@ class VisualizerNode(MPClabNode):
                 color = self.alldone_color
             elif info.is_braking:
                 color = self.braking_color
-            elif info.parking_flag:
+            elif info.task in ["PARK", "UNPARK"]:
                 color = self.parking_color
             else:
                 color = self.driving_color

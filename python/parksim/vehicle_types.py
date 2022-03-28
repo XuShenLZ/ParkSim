@@ -119,7 +119,7 @@ class VehicleInfo(PythonMsg):
     ref_v: float = field(default=0)
     target_idx: int = field(default=None)
     priority: int = field(default=None)
-    parking_flag: str = field(default=None)
+    task: str = field(default=None)
     parking_progress: str = field(default=None)
     is_braking: bool = field(default=None)
     parking_start_time: float = field(default=None)

@@ -53,7 +53,6 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         self.inst_centric_generator = inst_centric_generator
 
         self.target_idx = 0
-        self.reached_tgt = False
         
         # parking stuff
         self.graph: WaypointsGraph = None
@@ -71,7 +70,6 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         self.offline_maneuver: OfflineManeuver = None
         self.overshoot_ranges: Dict[str, List[Tuple[int]]] = None
 
-        self.parking_flag = "" # "", "PARKING", "UNPARKING"
         self.parking_start_time = float('inf') # inf means haven't start parking or unparking. Anything above 0 is parking
 
         self.parking_maneuver = None
@@ -98,7 +96,7 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         self.other_ref_v: Dict[int, float] = {}
         self.other_target_idx: Dict[int, int] = {}
         self.other_priority: Dict[int, int] = {}
-        self.other_parking_flag: Dict[int, str] = {} # The parking flag of other vehicle
+        self.other_task: Dict[int, str] = {} # The current task of other vehicle
         self.other_parking_progress: Dict[int, str] = {} # Other vehicles will broadcast "PARKING" if vehicle.is_parking(), "UNPARKING" if vehicle.is_unparking(), None otherwise
         self.other_parking_start_time: Dict[int, float] = {}
         self.other_is_braking: Dict[int, str] = {}
@@ -171,11 +169,11 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         home_path = str(Path.home())
         self.intent_predictor.load_model(waypoints=self.graph, model_path=home_path + model_path)
     
-    def compute_ref_path(self, graph_sol: AStarGraph, offset: float = None, go_to_spot: bool = True):
+    def compute_ref_path(self, graph_sol: AStarGraph, offset: float = None, spot_index: int = None):
         if not offset:
             offset = self.vehicle_config.offset
 
-        if not go_to_spot:
+        if spot_index is None:
             # exiting
             x_ref, y_ref, yaw_ref = graph_sol.compute_ref_path(offset)
         else:
@@ -188,7 +186,7 @@ class RuleBasedStanleyVehicle(AbstractAgent):
             else:
                 overshoot_ranges = self.overshoot_ranges['pointed_left']
 
-            self.should_overshoot = any([self.spot_index >= r[0] and self.spot_index <= r[1] for r in overshoot_ranges])
+            self.should_overshoot = any([spot_index >= r[0] and spot_index <= r[1] for r in overshoot_ranges])
 
             last_x, last_y = last_edge.v2.coords
 
@@ -239,8 +237,7 @@ class RuleBasedStanleyVehicle(AbstractAgent):
 
         if task.target_spot_index is not None:
             # Going to a spot
-            self.spot_index = task.target_spot_index
-
+            
             is_north_spot = any([abs(task.target_spot_index) >= r[0] and abs(
                 task.target_spot_index) <= r[1] for r in self.north_spot_idx_ranges])
             y_offset = -self.spot_y_offset if is_north_spot else self.spot_y_offset
@@ -250,14 +247,15 @@ class RuleBasedStanleyVehicle(AbstractAgent):
             graph_sol = AStarPlanner(
                 self.graph.vertices[start_vertex_idx], self.graph.vertices[self.graph.search(waypoint_coords)]).solve()
 
-            x_ref, y_ref, yaw_ref = self.compute_ref_path(graph_sol=graph_sol, go_to_spot=True)
+            x_ref, y_ref, yaw_ref = self.compute_ref_path(
+                graph_sol=graph_sol, spot_index=task.target_spot_index)
 
         elif task.target_coords is not None:
             # Travel to a coordinates
             graph_sol = AStarPlanner(
                 self.graph.vertices[start_vertex_idx], self.graph.vertices[self.graph.search(task.target_coords)]).solve()
 
-            x_ref, y_ref, yaw_ref = self.compute_ref_path(graph_sol=graph_sol, go_to_spot=False)
+            x_ref, y_ref, yaw_ref = self.compute_ref_path(graph_sol=graph_sol, spot_index=None)
 
         self.set_ref_pose(x_ref, y_ref, yaw_ref)
         self.set_ref_v(0)
@@ -269,11 +267,14 @@ class RuleBasedStanleyVehicle(AbstractAgent):
             self.current_task = task.name
 
             if task.name == "CRUISE":
+                if task.target_spot_index is not None:
+                    self.spot_index = task.target_spot_index
+                    
                 self.cruise_planning(task=task)
             elif task.name == "PARK":
-                self.parking_flag = "PARKING"
+                pass
             elif task.name == "UNPARK":
-                self.parking_flag = "UNPARKING"
+                pass
 
                 if self.task_profile[0].name == "CRUISE":
                     # Need to try the next CRUISE task for getting the direction to unpark
@@ -295,11 +296,10 @@ class RuleBasedStanleyVehicle(AbstractAgent):
             self.current_task = "END"
     
     def reached_target(self):
-        if not self.reached_tgt:
-            dist = np.linalg.norm([self.state.x.x - self.x_ref[-1], self.state.x.y - self.y_ref[-1]])
-            ang = ((np.arctan2(self.y_ref[-1] - self.state.x.y, self.x_ref[-1] - self.state.x.x) - self.state.e.psi) + (2*np.pi)) % (2*np.pi)
-            self.reached_tgt = dist < self.vehicle_config.braking_distance/2 and ang > (np.pi / 2) and ang < (3 * np.pi / 2)
-        return self.reached_tgt
+        dist = np.linalg.norm([self.state.x.x - self.x_ref[-1], self.state.x.y - self.y_ref[-1]])
+        ang = ((np.arctan2(self.y_ref[-1] - self.state.x.y, self.x_ref[-1] - self.state.x.x) - self.state.e.psi) + (2*np.pi)) % (2*np.pi)
+        reached_tgt = dist < self.vehicle_config.braking_distance/2 and ang > (np.pi / 2) and ang < (3 * np.pi / 2)
+        return reached_tgt
 
     def num_waypoints(self):
         return len(self.x_ref)
@@ -331,7 +331,7 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         self.info.ref_v = self.v_ref
         self.info.target_idx = self.target_idx
         self.info.priority = self.priority
-        self.info.parking_flag = self.parking_flag
+        self.info.task = self.current_task
 
         if self.is_parking():
             self.info.parking_progress = "PARKING"
@@ -375,8 +375,7 @@ class RuleBasedStanleyVehicle(AbstractAgent):
             self.other_target_idx[id] = v.target_idx
             self.other_priority[id] = v.priority
 
-            # NOTE: distinguish between "mid_park" and "parking"
-            self.other_parking_flag[id] = v.parking_flag
+            self.other_task[id] = v.current_task
             if v.is_parking():
                 self.other_parking_progress[id] = "PARKING"
             elif v.is_unparking():
@@ -524,7 +523,8 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         
         if self.parking_step >= len(self.parking_maneuver.x) - 1:
             # done parking
-            self.parking_flag = ""
+            self.reset_parking_related()
+
             self.execute_next_task()
         else:
             # update parking step if advancing
@@ -563,13 +563,26 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         self.state.u.u_steer = self.unparking_maneuver.u_steer[step]
         
         if self.unparking_step == 0: # done unparking
-            self.parking_flag = ""
             self.change_central_occupancy(self.spot_index, False)
-
+            
+            self.reset_parking_related()
             self.execute_next_task()
         else:
             # update parking step if advancing
             self.unparking_step -= 1 if advance else 0
+
+    def reset_parking_related(self):
+        # inf means haven't start parking or unparking. Anything above 0 is parking
+        self.parking_start_time = float('inf')
+
+        self.parking_maneuver = None
+        self.parking_step = 0
+
+        # unparking stuff
+        self.unparking_maneuver = None
+        self.unparking_step = -1
+
+        self.park_start_coords = None
 
     def get_corners(self, state: VehicleState=None, vehicle_body: VehicleBody=None):
         """
@@ -605,17 +618,16 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         """
         Are we in the middle of a parking manuever? If this is False, traffic should have the right of way, else this vehicle should have the right of way
         """
-        return self.parking_flag == "PARKING" and self.parking_maneuver is not None and self.parking_step > 0 and self.parking_step < len(self.parking_maneuver.x) - 1
+        return self.current_task == "PARK" and self.parking_maneuver is not None and self.parking_step > 0 and self.parking_step < len(self.parking_maneuver.x) - 1
 
     def is_unparking(self):
-        return (self.parking_flag == "UNPARKING" and self.unparking_maneuver is not None and self.unparking_step < len(self.unparking_maneuver.x) - 1 and self.unparking_step > 0) and not (self.parking_flag == "UNPARKING" and self.unparking_step == -1)
+        return (self.current_task == "UNPARK" and self.unparking_maneuver is not None and self.unparking_step < len(self.unparking_maneuver.x) - 1 and self.unparking_step > 0) and not (self.current_task == "UNPARK" and self.unparking_step == -1)
     
     def is_all_done(self):
         """
         Have we finished the parking maneuver or we have reached the exit?
         """
         
-        # return (self.parking_flag == "PARKING" and self.parking_maneuver is not None and self.parking_step >= len(self.parking_maneuver.x)) or (self.spot_index < 0 and self.reached_tgt)
         return self.current_task == "END"
     
     def update_nearby_vehicles(self, radius=None):
@@ -649,7 +661,7 @@ class RuleBasedStanleyVehicle(AbstractAgent):
 
         # driving control
 
-        if self.parking_flag:
+        if self.current_task in ["PARK", "UNPARK"]:
             pass
         elif self.current_task == "IDLE":
             if self.idle_start_time is None:
@@ -680,7 +692,7 @@ class RuleBasedStanleyVehicle(AbstractAgent):
                     self.waiting_for = parker_id
                     self.priority = -1
 
-                    if self.other_parking_flag[parker_id] == "UNPARKING":
+                    if self.other_task[parker_id] == "UNPARK":
                         self.waiting_for_unparker = True
 
                 else: # No one is parking
@@ -708,12 +720,12 @@ class RuleBasedStanleyVehicle(AbstractAgent):
 
             else: # waiting / braking
                 # parking
-                if self.waiting_for != 0 and self.other_parking_flag[self.waiting_for] == "PARKING":
+                if self.waiting_for != 0 and self.other_task[self.waiting_for] == "PARK":
                     if self.waiting_for not in self.nearby_vehicles:
                         self.unbrake()
                         
                 elif self.waiting_for != 0 and self.waiting_for_unparker:
-                    if self.other_parking_flag[self.waiting_for] != "UNPARKING":
+                    if self.other_task[self.waiting_for] != "UNPARK":
                         self.waiting_for_unparker = False
                         self.unbrake()
 
@@ -742,29 +754,26 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         else:
             # if reached target (pre-parking point), start parking
             self.set_ref_v(0)
-            # if self.spot_index > 0:
-            #     self.parking_flag = "PARKING"
-            # self.priority = 1 # high priority for parkers
             self.execute_next_task()
 
         if self.current_task == "IDLE":
             pass
-        elif self.parking_flag == "PARKING":
+        elif self.current_task == "PARK":
             # wait for coast to be clear, then start parking
             # everyone within range should be braking or parking or unparking
 
             should_go = (self.parking_maneuver is not None and self.parking_step > 0) \
                 or all([
-                    (self.other_parking_flag[id] == "" and self.has_passed(other_id=id)) 
-                    or (self.other_parking_flag[id] == "UNPARKING" and self.other_parking_progress[id] == "")
-                    or (self.other_parking_flag[id] == "PARKING" and self.other_parking_start_time[id] > self.parking_start_time)
+                    (self.other_task[id] not in ["UNPARK", "PARK"] and self.has_passed(other_id=id)) 
+                    or (self.other_task[id] == "UNPARK" and self.other_parking_progress[id] == "")
+                    or (self.other_task[id] == "PARK" and self.other_parking_start_time[id] > self.parking_start_time)
                     or self.dist_from(id) >= 2*self.vehicle_config.parking_radius for id in self.nearby_vehicles
                     ])
 
             if self.park_start_coords is None:
                 self.park_start_coords = (self.state.x.x - self.vehicle_config.offset * np.sin(self.state.e.psi), self.state.x.y + self.vehicle_config.offset * np.cos(self.state.e.psi))
             self.update_state_parking(should_go)
-        elif self.parking_flag == "UNPARKING": # wait for coast to be clear, then start unparking
+        elif self.current_task == "UNPARK": # wait for coast to be clear, then start unparking
             # to start unparking, everyone within range should be (normal driving and far past us) or (waiting to unpark and spawned after us)
             # always yields to parkers in the area
 
@@ -773,8 +782,8 @@ class RuleBasedStanleyVehicle(AbstractAgent):
             # unparking_nearby_vehicles = [id for id in self.nearby_vehicles if self.dist_from(id) >= 2*self.vehicle_config.parking_radius]
             should_go = (self.unparking_maneuver is not None and self.unparking_step < len(self.unparking_maneuver.x) - 1) \
                 or (all([
-                    (self.other_parking_flag[id] == "" and self.has_passed(this_id=id, parking_dist_away=7)) 
-                    or (self.other_parking_flag[id] == "UNPARKING" and self.other_parking_start_time[id] > self.parking_start_time)
+                    (self.other_task[id] not in ["PARK", "UNPARK"] and self.has_passed(this_id=id, parking_dist_away=7)) 
+                    or (self.other_task[id] == "UNPARK" and self.other_parking_start_time[id] > self.parking_start_time)
                     for id in unparking_nearby_vehicles
                     ]))
             """
