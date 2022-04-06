@@ -1,6 +1,7 @@
 import torch
 from torch import nn, Tensor
 from typing import Optional, Any, Union, Callable
+from parksim.trajectory_predict.vanilla_transformer.network import SmallRegularizedCNN
 
 import math
 import copy
@@ -37,92 +38,6 @@ class PositionalEncoding(nn.Module):
         x = x + self.pe[:x.size(0)]
         return self.dropout(x)
 
-
-class SmallRegularizedCNN(nn.Module):
-    """
-    Simple CNN.
-    """
-
-    def __init__(self, output_size=16, dropout_p=0.2):
-        """
-        Instantiate the model
-        """
-        super(SmallRegularizedCNN, self).__init__()
-
-        self.image_layers = []
-
-        self.image_layers.append(nn.Sequential(
-            nn.Conv2d(in_channels=3, out_channels=8, kernel_size=7),
-            nn.Dropout(dropout_p),
-            nn.LeakyReLU(negative_slope=0.01, inplace=True),
-            nn.BatchNorm2d(num_features=8),
-            nn.MaxPool2d(2),
-        ))
-
-        self.image_layers.append(nn.Sequential(
-            nn.Conv2d(in_channels=8, out_channels=8, kernel_size=5),
-            nn.Dropout(dropout_p),
-            nn.LeakyReLU(negative_slope=0.01, inplace=True),
-            nn.BatchNorm2d(num_features=8),
-            nn.MaxPool2d(2),
-        ))
-
-        self.image_layers.append(nn.Sequential(
-            nn.Conv2d(in_channels=8, out_channels=3, kernel_size=5),
-            nn.Dropout(dropout_p),
-            nn.LeakyReLU(negative_slope=0.01, inplace=True),
-            nn.BatchNorm2d(num_features=3),
-            nn.MaxPool2d(2),
-        ))
-
-        # self.image_layers.append(nn.Sequential(
-        #     nn.Conv2d(in_channels=3, out_channels=3, kernel_size=3),
-        #     nn.Dropout(dropout_p),
-        #     nn.LeakyReLU(negative_slope=0.01, inplace=True),
-        #     nn.BatchNorm2d(num_features=3),
-        #     nn.MaxPool2d(2),
-        # ))
-
-        # self.image_layers.append(nn.Sequential(
-        #     nn.Conv2d(in_channels=3, out_channels=3, kernel_size=3),
-        #     nn.Dropout(dropout_p),
-        #     nn.LeakyReLU(negative_slope=0.01, inplace=True),
-        #     nn.BatchNorm2d(num_features=3),
-        #     nn.MaxPool2d(2),
-        # ))
-        self.image_layers.append(nn.Sequential(
-            nn.Conv2d(in_channels=3, out_channels=1, kernel_size=3),
-            nn.Dropout(dropout_p),
-            nn.LeakyReLU(negative_slope=0.01, inplace=True),
-            nn.BatchNorm2d(num_features=1),
-            nn.MaxPool2d(2),
-        ))
-
-        self.image_layer = nn.Sequential(*self.image_layers)
-
-        self.flatten_layer = nn.Sequential(
-            nn.Flatten(),
-        )
-
-        IMG_LAYER_OUTPUT_SIZE = 9
-        NON_SPATIAL_FEATURE_SIZE = 0
-
-        self.linear_layer1 = nn.Sequential(
-            nn.Linear(IMG_LAYER_OUTPUT_SIZE +
-                      NON_SPATIAL_FEATURE_SIZE, output_size),
-            nn.LayerNorm(output_size)
-        )
-
-    def forward(self, img_feature):
-        """
-        forward method
-        """
-        x = self.image_layer(img_feature)
-        x = self.flatten_layer(x)
-        #non_spatial_feature = self.flatten_layer(non_spatial_feature)
-        #x = torch.cat([x, non_spatial_feature], 1)
-        x = self.linear_layer1(x)
-        return x
 
 class TransformerDecoderLayer(nn.Module):
     def __init__(self, 
@@ -399,23 +314,23 @@ class TransformerWithIntent(nn.Module):
         return out
 
 class TrajectoryPredictorWithIntent(nn.Module):
-    def __init__(self):
+    def __init__(self, input_shape, dropout=0.2, num_heads=8, num_encoder_layers=6, num_decoder_layers=6, dim_model=16, d_hidden=16, num_conv_layers=2):
         super().__init__()
 
-        self.cnn = SmallRegularizedCNN(
-            output_size=CNN_OUTPUT_FEATURE_SIZE, dropout_p=0.2)
+        self.cnn = SmallRegularizedCNN(input_shape=input_shape,
+            output_size=CNN_OUTPUT_FEATURE_SIZE, dropout_p=dropout, num_conv_layers=num_conv_layers)
 
         self.intentff = IntentFF(
-            d_in=TRAJECTORY_FEATURE_SIZE, d_out=16, dropout_p=0.2)
+            d_in=TRAJECTORY_FEATURE_SIZE, d_out=dim_model, d_hidden=d_hidden, dropout_p=dropout)
 
         self.transformer = TransformerWithIntent(
-                                dim_model=16, 
+                                dim_model=dim_model, 
                                 dim_feature_in=CNN_OUTPUT_FEATURE_SIZE + TRAJECTORY_FEATURE_SIZE, 
                                 dim_feature_out=TRAJECTORY_FEATURE_SIZE, 
-                                num_heads=8,
-                                num_encoder_layers=6,
-                                num_decoder_layers=6,
-                                dropout_p=0.2)
+                                num_heads=num_heads,
+                                num_encoder_layers=num_encoder_layers,
+                                num_decoder_layers=num_decoder_layers,
+                                dropout_p=dropout)
 
     def forward(self, images_past, trajectories_past, intent, trajectories_future=None, tgt_mask=None):
         """

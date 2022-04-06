@@ -5,6 +5,8 @@ from torch import nn
 import numpy as np
 import math
 
+from torch.autograd import Variable
+
 # INFO
 CNN_OUTPUT_FEATURE_SIZE = 16
 TRAJECTORY_FEATURE_SIZE = 3
@@ -34,7 +36,7 @@ class SmallRegularizedCNN(nn.Module):
     """
     Simple CNN.
     """
-    def __init__(self, output_size=16, dropout_p = 0.2):
+    def __init__(self, input_shape, output_size=16, dropout_p = 0.2, num_conv_layers=2):
         """
         Instantiate the model
         """
@@ -50,39 +52,17 @@ class SmallRegularizedCNN(nn.Module):
             nn.MaxPool2d(2),
         ))
 
-        self.image_layers.append(nn.Sequential(
-            nn.Conv2d(in_channels=8, out_channels=8, kernel_size=5),
-            nn.Dropout(dropout_p),
-            nn.LeakyReLU(negative_slope=0.01, inplace=True),
-            nn.BatchNorm2d(num_features=8),
-            nn.MaxPool2d(2),
-        ))
-        
-        self.image_layers.append(nn.Sequential(
-            nn.Conv2d(in_channels=8, out_channels=3, kernel_size=5),
-            nn.Dropout(dropout_p),
-            nn.LeakyReLU(negative_slope=0.01, inplace=True),
-            nn.BatchNorm2d(num_features=3),
-            nn.MaxPool2d(2),
-        ))
+        for _ in range(num_conv_layers):
+            self.image_layers.append(nn.Sequential(
+                nn.Conv2d(in_channels=8, out_channels=8, kernel_size=5),
+                nn.Dropout(dropout_p),
+                nn.LeakyReLU(negative_slope=0.01, inplace=True),
+                nn.BatchNorm2d(num_features=8),
+                #nn.MaxPool2d(2),
+            ))
 
-        # self.image_layers.append(nn.Sequential(
-        #     nn.Conv2d(in_channels=3, out_channels=3, kernel_size=3),
-        #     nn.Dropout(dropout_p),
-        #     nn.LeakyReLU(negative_slope=0.01, inplace=True),
-        #     nn.BatchNorm2d(num_features=3),
-        #     nn.MaxPool2d(2),
-        # ))
-
-        # self.image_layers.append(nn.Sequential(
-        #     nn.Conv2d(in_channels=3, out_channels=3, kernel_size=3),
-        #     nn.Dropout(dropout_p),
-        #     nn.LeakyReLU(negative_slope=0.01, inplace=True),
-        #     nn.BatchNorm2d(num_features=3),
-        #     nn.MaxPool2d(2),
-        # ))
         self.image_layers.append(nn.Sequential(
-            nn.Conv2d(in_channels=3, out_channels=1, kernel_size=3),
+            nn.Conv2d(in_channels=8, out_channels=1, kernel_size=3),
             nn.Dropout(dropout_p),
             nn.LeakyReLU(negative_slope=0.01, inplace=True),
             nn.BatchNorm2d(num_features=1),
@@ -95,7 +75,7 @@ class SmallRegularizedCNN(nn.Module):
             nn.Flatten(),
         )
         
-        IMG_LAYER_OUTPUT_SIZE = 9
+        IMG_LAYER_OUTPUT_SIZE = self._get_conv_output_size(input_shape)
         NON_SPATIAL_FEATURE_SIZE = 0
         
         
@@ -104,12 +84,24 @@ class SmallRegularizedCNN(nn.Module):
             nn.LayerNorm(output_size)
         )
 
+    # generate input sample and forward to get shape
+    def _get_conv_output_size(self, shape):
+        bs = 1
+        input = Variable(torch.rand(bs, *shape))
+        output_feat = self._forward_conv(input)
+        n_size = output_feat.data.view(bs, -1).size(1)
+        return n_size
+
+    def _forward_conv(self, img_feature):
+        x = self.image_layer(img_feature)
+        x = self.flatten_layer(x)
+        return x
+
     def forward(self, img_feature):
         """
         forward method
         """
-        x = self.image_layer(img_feature)
-        x = self.flatten_layer(x)
+        x = self._forward_conv(img_feature)
         #non_spatial_feature = self.flatten_layer(non_spatial_feature)
         #x = torch.cat([x, non_spatial_feature], 1)
         x = self.linear_layer1(x)
@@ -117,12 +109,18 @@ class SmallRegularizedCNN(nn.Module):
 
 class TrajectoryPredictTransformerV1(nn.Module):
     def __init__(
-        self
+        self, input_shape, dropout=0.2, num_heads=8, num_encoder_layers=6, num_decoder_layers=6, dim_model=16, num_conv_layers=2,
     ):
         super().__init__()
 
-        self.cnn = SmallRegularizedCNN(output_size=CNN_OUTPUT_FEATURE_SIZE, dropout_p=0.2)
-        self.transformer = Transformer(dim_model=16, dim_feature_in=CNN_OUTPUT_FEATURE_SIZE + TRAJECTORY_FEATURE_SIZE, dim_feature_out=TRAJECTORY_FEATURE_SIZE, num_heads=8, num_encoder_layers=6, num_decoder_layers=6, dropout_p=0.2)
+        self.cnn = SmallRegularizedCNN(input_shape=input_shape, output_size=CNN_OUTPUT_FEATURE_SIZE, dropout_p=dropout, num_conv_layers=num_conv_layers)
+        self.transformer = Transformer(dim_model=dim_model, 
+                                        dim_feature_in=CNN_OUTPUT_FEATURE_SIZE + TRAJECTORY_FEATURE_SIZE, 
+                                        dim_feature_out=TRAJECTORY_FEATURE_SIZE, 
+                                        num_heads=num_heads, 
+                                        num_encoder_layers=num_encoder_layers, 
+                                        num_decoder_layers=num_decoder_layers, 
+                                        dropout_p=dropout)
 
     def forward(self, images_past, trajectories_past, trajectories_future=None, tgt_mask=None):
         """

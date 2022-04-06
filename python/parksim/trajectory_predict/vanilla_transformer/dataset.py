@@ -2,6 +2,9 @@ from torch.utils.data import Dataset
 from torchvision import transforms
 import numpy as np
 import torch
+import os
+
+_CURRENT = os.path.abspath(os.path.dirname(__file__))
 
 class CNNTransformerDataset(Dataset):
     """
@@ -59,13 +62,14 @@ class CNNTransformerDatasetMulti(Dataset):
         """
         #self.image_features = (np.load('%s_image_feature.npy' % file_path) /
         #255).astype(np.single)
+
         all_img_history = []
         all_trajectory_history = []
         all_trajectory_future = []
         for file_path in file_paths:
-            all_img_history.append(np.load('%s_image_history.npy' % file_path))
-            all_trajectory_history.append(torch.from_numpy(np.load('%s_trajectory_history.npy' % file_path)))
-            all_trajectory_future.append(torch.from_numpy(np.load('%s_trajectory_future.npy' % file_path)))
+            all_img_history.append(np.load(os.path.join(_CURRENT, f'{file_path}_image_history.npy')))
+            all_trajectory_history.append(torch.from_numpy(np.load(os.path.join(_CURRENT, f'{file_path}_trajectory_history.npy'))))
+            all_trajectory_future.append(torch.from_numpy(np.load(os.path.join(_CURRENT, f'{file_path}_trajectory_future.npy'))))
         self.img_history: np.ndarray = np.concatenate(all_img_history)
         self.trajectory_history = torch.cat(all_trajectory_history)
         self.trajectory_future = torch.cat(all_trajectory_future)

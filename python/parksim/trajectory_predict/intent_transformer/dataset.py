@@ -1,6 +1,9 @@
 from torch.utils.data import Dataset
 import numpy as np
 import torch
+import os
+
+_CURRENT = os.path.abspath(os.path.dirname(__file__))
 
 class IntentTransformerDataset(Dataset):
     """
@@ -15,11 +18,12 @@ class IntentTransformerDataset(Dataset):
         all_intent_pose = []
         all_trajectory_future = []
         for file_path in file_paths:
-            all_img_history.append(np.load('%s_image_history.npy' % file_path))
-            all_trajectory_history.append(torch.from_numpy(np.load('%s_trajectory_history.npy' % file_path)))
+
+            all_img_history.append(np.load(os.path.join(_CURRENT, f'{file_path}_image_history.npy')))
+            all_trajectory_history.append(torch.from_numpy(np.load(os.path.join(_CURRENT, f'{file_path}_trajectory_history.npy'))))
+            all_trajectory_future.append(torch.from_numpy(np.load(os.path.join(_CURRENT, f'{file_path}_trajectory_future.npy'))))
             all_intent_pose.append(torch.from_numpy(
-                np.load('%s_intent_pose.npy' % file_path)))
-            all_trajectory_future.append(torch.from_numpy(np.load('%s_trajectory_future.npy' % file_path)))
+                np.load(os.path.join(_CURRENT, f'{file_path}_intent_pose.npy'))))
         self.img_history: np.ndarray = np.concatenate(all_img_history)
         self.trajectory_history = torch.cat(all_trajectory_history)
         self.intent_pose = torch.cat(all_intent_pose)
