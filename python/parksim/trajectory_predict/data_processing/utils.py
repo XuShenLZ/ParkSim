@@ -104,21 +104,20 @@ class TransformerDataProcessor(object):
         else:
             current_state = center_pose
 
-        # If the trajectory goes outside, pick the last step that is still visible
         for idx in range(len(traj)):
+            # If the trajectory goes outside, pick the last step that is still visible
             if not self.vis._is_visible(current_state, traj[idx]):
                 return traj[idx-1, 0:3]
+            
+            # If visible, check whether the vehicle is inside a spot
+            for spot in all_spots:
+                spot_center_pixel = np.array(spot[0])
+                spot_center = self.vis.local_pixel_to_global_ground(
+                    current_state, spot_center_pixel)
+                dist = np.linalg.norm(traj[idx, 0:2] - spot_center)
+                if dist < r:
+                    return np.array([spot_center[0], spot_center[1], traj[idx, 2]])
 
-        # If the fucntion does not return, check whether the vehicle is ever inside a spot
-        for spot in all_spots:
-            spot_center_pixel = np.array(spot[0])
-            spot_center = self.vis.local_pixel_to_global_ground(
-                current_state, spot_center_pixel)
-            dist = np.linalg.norm(traj[:, 0:2] - spot_center, axis=1)
-            if np.amin(dist) < r:
-                argmin_idx = np.argmin(dist)
-                return np.array([spot_center[0], spot_center[1], traj[argmin_idx, 2]])
-
-        # Finally, if it also does not go into a spot, return the last pose
+        # Finally, if the program did not return anything, use the last pose along the trajectory
         return traj[-1, 0:3]
 
