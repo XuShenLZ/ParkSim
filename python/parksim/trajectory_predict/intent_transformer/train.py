@@ -86,8 +86,8 @@ def fit(model, opt, loss_fn, train_data_loader, val_data_loader, epochs, model_n
             print(f"Validation loss: {validation_loss:.4f}")
             print()
         if epoch % save_every == save_every - 1:
-            if not os.path.exists(_CURRENT + '/models'):
-                os.mkdir(_CURRENT + '/models')
+            if not os.path.exists(os.path.join(_CURRENT, 'models')):
+                os.mkdir(os.path.join(_CURRENT, 'models'))
             timestamp = datetime.now().strftime("%m-%d-%Y_%H-%M-%S")
             PATH = os.path.join(_CURRENT, f'models/{model_name}_epoch_{epoch}_{timestamp}.pth')
             torch.save(model.state_dict(), PATH)
@@ -114,9 +114,8 @@ def build_trajectory_predict_from_config(config, input_shape=(3, 100, 100)):
 
 def train_model(config, dataset_nums, epochs, save_every, device, model_name, writer=None, early_stopping=None):
 
-    val_proportion = 0.2
+    val_proportion = 0.15
     seed = 42
-
     model = build_trajectory_predict_from_config(config)
     model = model.to(device)
 
@@ -124,22 +123,25 @@ def train_model(config, dataset_nums, epochs, save_every, device, model_name, wr
         model_state = torch.load(config['previous_path'], map_location=device)
         model.load_state_dict(model_state)
 
+    if config['opt'] == 'Adam':
+        opt = torch.optim.Adam(model.parameters(), lr=config['lr'])
+    elif config['opt'] == 'SGD':
+        opt = torch.optim.SGD(model.parameters(), lr=config['lr'], momentum=0.9)
+
     dataset = IntentTransformerDataset(dataset_nums, img_transform=transforms.ToTensor())
-    val_proportion = 0.20
     val_size = int(val_proportion * len(dataset))
     train_size = len(dataset) - val_size
     validation_dataset, train_dataset = torch.utils.data.random_split(dataset, [val_size, train_size], generator=torch.Generator().manual_seed(seed))
     trainloader = DataLoader(train_dataset, batch_size=32, shuffle=True, num_workers=12)
     testloader = DataLoader(validation_dataset, batch_size=32, shuffle=True, num_workers=12)
-
     loss_fn = nn.MSELoss()
-    opt = torch.optim.Adam(model.parameters(), lr=config['lr'])
+    
     if writer:
         write_model_graph(model, trainloader, writer)
     fit(model=model, opt=opt, loss_fn=loss_fn, train_data_loader=trainloader, val_data_loader=testloader, epochs=epochs, model_name=model_name, print_every=10, save_every=save_every, device=device, early_stopping=early_stopping)
     print('Finished Training')
-    if not os.path.exists(_CURRENT + '/models'):
-        os.mkdir(_CURRENT + '/models')
+    if not os.path.exists(os.path.join(_CURRENT, 'models')):
+        os.mkdir(os.path.join(_CURRENT, 'models'))
     timestamp = datetime.now().strftime("%m-%d-%Y_%H-%M-%S")
     PATH = os.path.join(_CURRENT, f'models/{model_name}_{timestamp}.pth')
     model.load_state_dict(torch.load(early_stopping.path))
@@ -166,19 +168,20 @@ if __name__ == '__main__':
     #HP_NUM_UNITS = hp.HParam('num_units', hp.Discrete([300, 200, 512]))
     
     config={
-        'dim_model' : 24,
-        'num_heads' : 6,
-        'dropout' : 0.41,
-        'num_encoder_layers' : 16,
-        'num_decoder_layers' : 4,
-        'd_hidden' : 512,
-        'num_conv_layers' : 6,
-        'lr' : 0.001,
-        #'previous_path' : 'models/checkpoint.pt'
+            'dim_model' : 52,
+            'num_heads' : 4,
+            'dropout' : 0.1426,
+            'num_encoder_layers' : 16,
+            'num_decoder_layers' : 8,
+            'd_hidden' : 256,
+            'num_conv_layers' : 2,
+            'opt' : 'SGD',
+            'lr' : 0.0025,
+            'loss' : 'L1'
     }
 
-    dataset_nums = ['../data/DJI_0012']
-    epochs = 50
+    dataset_nums = ["../data/DJI_0007", "../data/DJI_0008", "../data/DJI_0009", "../data/DJI_0010", "../data/DJI_0011", "../data/DJI_0013", "../data/DJI_0014"]
+    epochs = 600
     save_every=100
     patience = 100
     early_stopping = EarlyStopping(patience=patience, path='models/checkpoint.pt', verbose=True)

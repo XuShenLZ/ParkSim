@@ -18,6 +18,14 @@ img_size = 100
 _CURRENT = os.path.abspath(os.path.dirname(__file__))
 DATA_PATH = os.path.join(_CURRENT, '..', 'data')
 
+def remove_parked_instances(ds, instances, grace_period=3):
+    filtered_instances = instances
+
+    for instance in instances:
+        ds.get()
+
+    return filtered_instances
+
 def get_data_for_instance(inst_token: str, inst_idx: int, frame_token: str, extractor: TransformerDataProcessor, ds: Dataset) -> Tuple[np.array, np.array, np.array]:
     """
     returns image, trajectory_history, and trajectory future for given instance
@@ -120,8 +128,8 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('-s', '--stride', default=10, help='stride size. e.g. 10 means get one data per 10 timesteps', type=int)
     parser.add_argument('-p', '--path', default=f"{Path.home()}/MPCLab/dlp-dataset/data/", help='absolute path to JSON files, e.g. ~/dlp-dataset/data/', type=str)
-    parser.add_argument('-b', '--before', default=5, help='number of previous observations to store in motion history for input', type=int)
-    parser.add_argument('-f', '--future', default=5, help='number of future observations to store as trajectory output', type=int)
+    parser.add_argument('-b', '--before', default=10, help='number of previous observations to store in motion history for input', type=int)
+    parser.add_argument('-f', '--future', default=10, help='number of future observations to store as trajectory output', type=int)
     parser.add_argument('-i', '--img_size', default=100,
                         help='size of the image feature', type=int)
     args = parser.parse_args()
@@ -132,8 +140,8 @@ if __name__ == '__main__':
     img_size = args.img_size
 
     #names = ["DJI_" + str(i+1).zfill(4) for i in range(30)]
-    #names = ["DJI_0007", "DJI_0008", "DJI_0009", "DJI_0010", "DJI_0011"]
-    names = ["DJI_0012"]
+    names = ["DJI_0007", "DJI_0008", "DJI_0009", "DJI_0010", "DJI_0011", "DJI_0013", "DJI_0014"]
+    #names = ["DJI_0012"]
     for name in names:
         try:
             create_dataset(path, name)

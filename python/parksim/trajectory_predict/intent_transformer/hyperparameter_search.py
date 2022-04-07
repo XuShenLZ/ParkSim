@@ -92,10 +92,10 @@ def fit(model, opt, loss_fn, train_data_loader, val_data_loader, epochs, model_n
             print(f"Validation loss: {validation_loss:.4f}")
             print()
         if epoch % save_every == save_every - 1:
-            if not os.path.exists(_CURRENT + '/models'):
-                os.mkdir(_CURRENT + '/models')
+            if not os.path.exists(os.path.join(_CURRENT, 'models')):
+                os.mkdir(os.path.join(_CURRENT, 'models'))
             timestamp = datetime.now().strftime("%m-%d-%Y_%H-%M-%S")
-            PATH = _CURRENT + f'../models/{model_name}_epoch_{epoch}_{timestamp}.pth'
+            PATH = os.path.join(_CURRENT, f'../models/{model_name}_epoch_{epoch}_{timestamp}.pth')
             torch.save(model.state_dict(), PATH)
 
     return train_loss_list, validation_loss_list
@@ -145,11 +145,11 @@ def train_model(config, dataset_nums, epochs, save_every, device, model_name, ch
 
     fit(model=model, opt=opt, loss_fn=loss_fn, train_data_loader=trainloader, val_data_loader=testloader, epochs=epochs, model_name=model_name, print_every=10, save_every=save_every, device=device)
 
-    if not os.path.exists(_CURRENT + '/models'):
-        os.mkdir(_CURRENT + '/models')
+    if not os.path.exists(os.path.join(_CURRENT, 'models')):
+        os.mkdir(os.path.join(_CURRENT, 'models'))
 
     timestamp = datetime.now().strftime("%m-%d-%Y_%H-%M-%S")
-    PATH = _CURRENT + f'/models/{model_name}_{timestamp}.pth'
+    PATH = os.path.join(_CURRENT, f'models/{model_name}_{timestamp}.pth')
     torch.save(model.state_dict(), PATH)
 
 
@@ -171,17 +171,18 @@ if __name__ == '__main__':
     config={
         'dim_model' : tune.qrandint(16, 64, q=4),
         'num_heads' : tune.sample_from(lambda spec: random.choice(divisors(spec.config.dim_model))),
-        'dropout' : tune.uniform(0.1, 0.5),
-        'num_encoder_layers' : tune.qrandint(4, 32, q=2),
-        'num_decoder_layers' : tune.qrandint(4, 32, q=2),
+        'dropout' : tune.uniform(0.1, 0.4),
+        'num_encoder_layers' : tune.qrandint(4, 32, q=4),
+        'num_decoder_layers' : tune.qrandint(4, 16, q=4),
         'd_hidden' : tune.sample_from(lambda _ : 2 ** random.randint(4, 10)),
         'num_conv_layers' : tune.randint(0, 9),
-        'lr' : tune.loguniform(1e-4, 1e-1),
+        'lr' : 0.0025,
         'opt' : 'SGD',
     }
     
-    epochs = 500
-    NUM_SAMPLES = 500
+    epochs = 50
+    NUM_SAMPLES = 100
+    grace_period=5
 
 
     scheduler = ASHAScheduler(
@@ -189,7 +190,7 @@ if __name__ == '__main__':
         mode="min",
         time_attr="training_iteration",
         max_t=epochs,
-        grace_period=10,
+        grace_period=grace_period,
         reduction_factor=2)
 
     reporter = CLIReporter(

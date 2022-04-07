@@ -138,16 +138,16 @@ if __name__ == '__main__':
     if DEVICE == "cuda":
         torch.cuda.empty_cache()
 
-    MODEL_PATH = "models\Intent_Transformer_04-01-2022_18-09-17.pth"
+    MODEL_PATH = r"C:\Users\rlaca\Documents\GitHub\ParkSim\python\parksim\trajectory_predict\intent_transformer\models\Intent_Transformer_04-07-2022_14-53-56.pth"
     config={
-            'dim_model' : 24,
-            'num_heads' : 6,
-            'dropout' : 0.41,
+            'dim_model' : 52,
+            'num_heads' : 4,
+            'dropout' : 0.1426,
             'num_encoder_layers' : 16,
-            'num_decoder_layers' : 4,
-            'd_hidden' : 512,
-            'num_conv_layers' : 6,
-            'lr' : 0.1
+            'num_decoder_layers' : 8,
+            'd_hidden' : 256,
+            'num_conv_layers' : 2,
+            'lr' : 0.0025
     }
 
     model = build_trajectory_predict_from_config(config)
@@ -167,26 +167,29 @@ if __name__ == '__main__':
     agents = scene['agents']
     for agent_idx in range(len(agents)):
         print(agent_idx)
-        agent_token = agents[agent_idx]
-        agent_type = ds.get('agent', agent_token)['type']
-        if agent_type != "Car":
+        try:
+            agent_token = agents[agent_idx]
+            agent_type = ds.get('agent', agent_token)['type']
+            if agent_type != "Car":
+                continue
+            img, X, intent, y_in, y_label, list_inst_centric_view = generate_data_for_agent(agent_token=agent_token, extractor=extractor)
+            with torch.no_grad():
+                img = img.to(DEVICE).float()
+                X = X.to(DEVICE).float()
+                intent = intent.to(DEVICE).float()
+                y_in = y_in.to(DEVICE).float()
+                y_label = y_label.to(DEVICE).float()
+                tgt_mask = model.transformer.generate_square_subsequent_mask(
+                    y_in.shape[1]).to(DEVICE).float()
+
+                pred = model(img, X, intent, y_in, tgt_mask=tgt_mask)
+            
+            fig = plt.figure()
+
+            anim = animation.FuncAnimation(fig, draw_prediction, frames=pred.shape[0],
+                                        interval=0.1)
+            fname = f'C:\\Users\\rlaca\\Documents\\GitHub\\ParkSim\\python\\parksim\\trajectory_predict\\intent_transformer\\animation-dji-{dji_num}-agent-{agent_idx}.mp4'
+            video_writer = animation.FFMpegWriter(fps=10)
+            anim.save(fname, writer=video_writer)
+        except:
             continue
-        img, X, intent, y_in, y_label, list_inst_centric_view = generate_data_for_agent(agent_token=agent_token, extractor=extractor)
-        with torch.no_grad():
-            img = img.to(DEVICE).float()
-            X = X.to(DEVICE).float()
-            intent = intent.to(DEVICE).float()
-            y_in = y_in.to(DEVICE).float()
-            y_label = y_label.to(DEVICE).float()
-            tgt_mask = model.transformer.generate_square_subsequent_mask(
-                y_in.shape[1]).to(DEVICE).float()
-
-            pred = model(img, X, intent, y_in, tgt_mask=tgt_mask)
-        
-        fig = plt.figure()
-
-        anim = animation.FuncAnimation(fig, draw_prediction, frames=pred.shape[0],
-                                    interval=0.1)
-        fname = f'C:\\Users\\rlaca\\Documents\\GitHub\\ParkSim\\python\\parksim\\trajectory_predict\\intent_transformer\\animation-{agent_idx}.mp4'
-        video_writer = animation.FFMpegWriter(fps=10)
-        anim.save(fname, writer=video_writer)
