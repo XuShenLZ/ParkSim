@@ -94,12 +94,13 @@ def create_dataset(path, name):
     trajectory_history = []
     trajectory_future = []
     intent_pose = []
-
+    cpu_count = os.cpu_count()
+    print("CPU COUNT: ", cpu_count)
     for frame_idx in tqdm(range(stride*history, len(all_frames) - stride*future, stride)):
         frame_token = all_frames[frame_idx]
         all_instance_tokens, all_instance_indices = extractor.filter_instances(frame_token, stride, history, future)
         num_insts = len(all_instance_tokens)
-        with multiprocessing.Pool(processes=os.cpu_count()) as pool:
+        with multiprocessing.Pool(processes=cpu_count) as pool:
             inputs = zip(all_instance_tokens, all_instance_indices, [frame_token]*num_insts, [extractor]*num_insts, [ds]*num_insts)
             results = pool.starmap(get_data_for_instance, inputs)
             [image_history.append(feature) for feature, _, _, _ in results]
@@ -118,10 +119,10 @@ def create_dataset(path, name):
 
     if not os.path.exists(DATA_PATH):
         os.mkdir(DATA_PATH)
-    np.save(DATA_PATH + '/%s_image_history.npy' % name, image_history)
-    np.save(DATA_PATH + '/%s_trajectory_history.npy' % name, trajectory_history)
-    np.save(DATA_PATH + '/%s_trajectory_future.npy' % name, trajectory_future)
-    np.save(DATA_PATH + '/%s_intent_pose.npy' % name, intent_pose)
+    np.save(os.path.join(DATA_PATH, '%s_image_history.npy' % name), image_history)
+    np.save(os.path.join(DATA_PATH,'%s_trajectory_history.npy' % name), trajectory_history)
+    np.save(os.path.join(DATA_PATH, '%s_trajectory_future.npy' % name), trajectory_future)
+    np.save(os.path.join(DATA_PATH, '%s_intent_pose.npy' % name), intent_pose)
 
 
 if __name__ == '__main__':    
@@ -140,7 +141,7 @@ if __name__ == '__main__':
     img_size = args.img_size
 
     #names = ["DJI_" + str(i+1).zfill(4) for i in range(30)]
-    names = ["DJI_0007", "DJI_0008", "DJI_0009", "DJI_0010", "DJI_0011", "DJI_0013", "DJI_0014"]
+    names = ["DJI_0007", "DJI_0008", "DJI_0009", "DJI_0010", "DJI_0011", "DJI_0012", "DJI_0013", "DJI_0014"]
     #names = ["DJI_0012"]
     for name in names:
         try:

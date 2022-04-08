@@ -45,7 +45,7 @@ class TransformerDataProcessor(object):
             agent = self.ds.get('agent', instance['agent_token'])
             if agent['type'] not in {'Pedestrian', 'Undefined'}:
                 try:
-                    if self.ds.get_inst_mode(inst_token) != 'incoming':
+                    if self.ds.get_inst_mode(inst_token) not in ('incoming', 'outgoing'):
                         continue
                     current_inst_idx, max_idx = self.get_instance_index(inst_token, instance['agent_token'])
                     if current_inst_idx < stride * (history-1) or max_idx < current_inst_idx + stride * future:
