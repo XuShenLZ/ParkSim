@@ -120,7 +120,7 @@ class RuleBasedStanleyVehicle(AbstractAgent):
     def set_target_idx(self, target_idx: int):
         self.target_idx = target_idx
 
-    def set_vehicle_state(self, state: VehicleState = None, spot_index: int = None):
+    def set_vehicle_state(self, state: VehicleState = None, spot_index: int = None, heading: float = None):
         if state is not None:
             self.state = state
         elif spot_index is not None:
@@ -130,7 +130,10 @@ class RuleBasedStanleyVehicle(AbstractAgent):
 
             self.state.x.x = self.parking_spaces[spot_index][0]
             self.state.x.y = self.parking_spaces[spot_index][1]
-            self.state.e.psi = np.pi / 2 if np.random.rand() < 0.5 else -np.pi / 2
+            if heading is not None:
+                self.state.e.psi = heading
+            else:
+                self.state.e.psi = np.pi / 2 if np.random.rand() < 0.5 else -np.pi / 2
 
     def set_task_profile(self, task_profile):
         self.task_profile = task_profile

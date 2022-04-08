@@ -10,6 +10,8 @@ import os
 
 import traceback
 
+import pickle
+
 from dlp.dataset import Dataset
 from dlp.visualizer import Visualizer as DlpVisualizer
 
@@ -36,6 +38,9 @@ class SimulatorNodeParams(NodeParamTemplate):
         self.spawn_interval_mean = 5 # (s)
 
         self.spots_data_path = ''
+        self.agents_data_path = ''
+
+        self.use_existing_agents = True
 
         self.write_log = True
         self.log_path = '/ParkSim/vehicle_log'
@@ -84,6 +89,9 @@ class SimulatorNode(MPClabNode):
         self.parking_spaces, self.occupied = self._gen_occupancy()
         for idx in self.blocked_spots:
             self.occupied[idx] = True
+
+        # Agents
+        self.agents_dict = self._gen_agents()
 
         # Spawning
         self.spawn_entering_time = list(np.random.exponential(self.spawn_interval_mean, self.spawn_entering))
@@ -146,15 +154,29 @@ class SimulatorNode(MPClabNode):
 
         return parking_spaces, list(map(int, occupied))
 
+    def _gen_agents(self):
+        with open(self.agents_data_path, 'rb') as f:
+            self.agents_dict = pickle.load(f)
+
     def add_vehicle(self, spot_index: int):
 
         self.num_vehicles += 1
 
         self.vehicles.append(
-            subprocess.Popen(["ros2", "launch", "parksim", "vehicle.launch.py", "vehicle_id:=%d" % self.num_vehicles, "spot_index:=%d" % spot_index])
+            subprocess.Popen(["ros2", "launch", "parksim", "vehicle.launch.py", "vehicle_id:=%d" % self.num_vehicles, "spot_index:=%d" % spot_index, "use_existing:=%b" % False])
         )
 
         self.get_logger().info("A vehicle with id = %d is added with spot_index = %d" % (self.num_vehicles, spot_index))
+
+    def add_existing_vehicle(self, vehicle_id: int):
+
+        self.num_vehicles += 1
+
+        self.vehicles.append(
+            subprocess.Popen(["ros2", "launch", "parksim", "vehicle.launch.py", "vehicle_id:=%d" % self.num_vehicles, "spot_index:=%d" % 0, "use_existing:=%b" % True])
+        )
+
+        self.get_logger().info("An existing vehicle with id = %d is added" % self.num_vehicles)
 
     def shutdown_vehicles(self):
         for vehicle in self.vehicles:
@@ -197,18 +219,33 @@ class SimulatorNode(MPClabNode):
 
             self.last_exit_time = current_time
 
+    def try_spawn_existing(self):
+        current_time = self.get_ros_time()
+        added_vehicles = []
+
+        for agent in self.agents_dict:
+            if self.agents_dict[agent]["init_time"] < current_time:
+                self.add_existing_vehicle(agent)
+                added_vehicles.append(agent)
+
+        for added in added_vehicles:
+            del self.agents_dict[added]
+
     def timer_callback(self):
 
         if self.sim_is_running:
+            if self.use_existing_agents:
         
-            if self.keep_spawn_entering:
-                if self.last_enter_sub:
-                    self.destroy_subscription(self.last_enter_sub)
-                    self.last_enter_sub = None
+                if self.keep_spawn_entering:
+                    if self.last_enter_sub:
+                        self.destroy_subscription(self.last_enter_sub)
+                        self.last_enter_sub = None
 
-                self.try_spawn_entering()
+                    self.try_spawn_entering()
 
-            self.try_spawn_exiting()
+                self.try_spawn_exiting()
+            else:
+                self.try_spawn_existing()
 
         occupancy_msg = Int16MultiArray()
         occupancy_msg.data = self.occupied

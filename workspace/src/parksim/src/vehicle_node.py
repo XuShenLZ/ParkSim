@@ -11,7 +11,7 @@ from rclpy.handle import InvalidHandle
 from pathlib import Path
 import os
 import numpy as np
-
+import pickle
 from std_msgs.msg import Int16MultiArray, Bool
 from parksim.msg import VehicleStateMsg, VehicleInfoMsg
 from parksim.srv import OccupancySrv
@@ -36,6 +36,7 @@ class VehicleNodeParams(NodeParamTemplate):
         self.offline_maneuver_path = '/ParkSim/data/parking_maneuvers.pickle'
         self.waypoints_graph_path = '/ParkSim/data/waypoints_graph.pickle'
         self.intent_model_path = '/ParkSim/data/smallRegularizedCNN_L0.068_01-29-2022_19-50-35.pth'
+        self.agents_data_path = '/ParkSim/data/agents_data.pickle'
 
         self.write_log = True
         self.log_path = '/ParkSim/vehicle_log'
@@ -65,7 +66,13 @@ class VehicleNode(MPClabNode):
         self.declare_parameter('spot_index', 0)
         self.spot_index = self.get_parameter('spot_index').get_parameter_value().integer_value
 
+        self.declare_parameter('use_existing', 0)
+        self.use_existing = self.get_parameter('use_existing').get_parameter_value().boolean_value
+
         self.get_logger().info("Spot Index: " + str(self.spot_index))
+
+        agents = pickle.load(open(self.agents_data_path, "rb"))
+        agent_dict = agents[self.vehicle_id]
 
         # ======== Publishers, Subscribers, Services
         self.state_pub = self.create_publisher(VehicleStateMsg, 'state', 10)
@@ -83,6 +90,11 @@ class VehicleNode(MPClabNode):
             self.get_logger().warning('service not available, waiting again...')
 
         vehicle_body = VehicleBody()
+
+        # TODO: can we do this?
+        vehicle_body.w = agent_dict["width"]
+        vehicle_body.l = agent_dict["length"]
+        
         vehicle_config = VehicleConfig()
 
         controller_params = StanleyParams(dt=self.timer_period)
@@ -105,28 +117,55 @@ class VehicleNode(MPClabNode):
         self.vehicle.load_maneuver(offline_maneuver_path=self.offline_maneuver_path)
 
         self.vehicle.set_method_to_change_central_occupancy(self.change_occupancy)
-
         task_profile = []
-        if self.spot_index > 0:
-            cruise_task = VehicleTask(
-                name="CRUISE", v_cruise=5, target_spot_index=self.spot_index)
-            park_task = VehicleTask(name="PARK")
-            task_profile = [cruise_task, park_task]
 
-            state = VehicleState()
-            state.x.x = self.entrance_coords[0] - vehicle_config.offset
-            state.x.y = self.entrance_coords[1]
-            state.e.psi = - np.pi/2
+        if not self.use_existing:
+            if self.spot_index > 0:
+                cruise_task = VehicleTask(
+                    name="CRUISE", v_cruise=5, target_spot_index=self.spot_index)
+                park_task = VehicleTask(name="PARK")
+                task_profile = [cruise_task, park_task]
 
-            self.vehicle.set_vehicle_state(state=state)
+                state = VehicleState()
+                state.x.x = self.entrance_coords[0] - vehicle_config.offset
+                state.x.y = self.entrance_coords[1]
+                state.e.psi = - np.pi/2
+
+                self.vehicle.set_vehicle_state(state=state)
+            else:
+                unpark_task = VehicleTask(name="UNPARK")
+                cruise_task = VehicleTask(
+                    name="CRUISE", v_cruise=5, target_coords=np.array(self.entrance_coords))
+                task_profile = [unpark_task, cruise_task]
+
+                self.vehicle.set_vehicle_state(spot_index=abs(self.spot_index))
         else:
-            unpark_task = VehicleTask(name="UNPARK")
-            cruise_task = VehicleTask(
-                name="CRUISE", v_cruise=5, target_coords=np.array(self.entrance_coords))
-            task_profile = [unpark_task, cruise_task]
+            raw_tp = agent_dict["task_profile"]
+            for task in raw_tp:
+                if task["name"] == "IDLE":
+                    task_profile.append(VehicleTask(name="IDLE", duration=task["duration"]))
+                elif task["name"] == "PARK":
+                    task_profile.append(VehicleTask(name="PARK", target_spot_index=task["target_spot_index"]))
+                elif task["name"] == "UNPARK":
+                    task_profile.append(VehicleTask(name="UNPARK", target_spot_index=task["target_spot_index"]))
+                elif task["name"] == "CRUISE":
+                    if "target_coords" in task:
+                        task_profile.append(VehicleTask(name="CRUISE", v_cruise=task["v_cruise"], target_coords=task["target_coords"]))
+                    else:
+                        task_profile.append(VehicleTask(name="CRUISE", v_cruise=task["v_cruise"], target_spot_index=task["target_spot_index"]))
 
-            self.vehicle.set_vehicle_state(spot_index=abs(self.spot_index))
-            
+            if "init_spot" in agent_dict:
+                init_spot = agent_dict["init_spot"]
+                init_heading = agent_dict["init_heading"]
+                self.vehicle.set_vehicle_state(spot_index=init_spot, heading=init_heading)
+            else:
+                agent_state = VehicleState()
+                agent_state.x.x = agent_dict["init_coords"][0]
+                agent_state.x.y = agent_dict["init_coords"][1]
+                agent_state.e.psi = agent_dict["init_heading"]
+                agent_state.v.v = agent_dict["init_v"]
+                self.vehicle.set_vehicle_state(state=agent_state)
+
         self.vehicle.set_task_profile(task_profile=task_profile)
 
         self.vehicle.execute_next_task()

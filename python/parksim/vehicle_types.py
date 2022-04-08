@@ -133,7 +133,6 @@ class VehicleInfo(PythonMsg):
 @dataclass
 class VehicleTask(PythonMsg):
     name: str = field(default=None) # Can be "CRUISE", "PARK", "UNPARK", "IDLE"
-    state: VehicleState = field(default=None)
     v_cruise: float = field(default=None)
     target_spot_index: int = field(default=None)
     target_coords: np.ndarray = field(default=None)
