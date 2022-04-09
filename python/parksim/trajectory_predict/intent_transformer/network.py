@@ -13,6 +13,7 @@ import torch.nn.functional as F
 CNN_OUTPUT_FEATURE_SIZE = 16
 TRAJECTORY_FEATURE_SIZE = 3
 TRANSFORMER_FEATURE_SIZE = 16
+INTENT_FEATURE_SIZE = 2
 DROPOUT_P = 0.2
 
 
@@ -321,7 +322,7 @@ class TrajectoryPredictorWithIntent(nn.Module):
             output_size=CNN_OUTPUT_FEATURE_SIZE, dropout_p=dropout, num_conv_layers=num_conv_layers)
 
         self.intentff = IntentFF(
-            d_in=TRAJECTORY_FEATURE_SIZE, d_out=dim_model, d_hidden=d_hidden, dropout_p=dropout)
+            d_in=INTENT_FEATURE_SIZE, d_out=dim_model, d_hidden=d_hidden, dropout_p=dropout)
 
         self.transformer = TransformerWithIntent(
                                 dim_model=dim_model, 
@@ -345,9 +346,9 @@ class TrajectoryPredictorWithIntent(nn.Module):
                                 T_1 = timesteps of history
                                 3 = (x_coord, y_coord, heading)
 
-        intent:                 (N, 3) or (N, 1, 3) ?
+        intent:                 (N, 2) or (N, 1, 2) ?
                                 N = batch size
-                                3 = (x_coord, y_coord, heading)
+                                2 = (x_coord, y_coord)
 
         trajectories_future:    (N, T_2, 3)     
                                 N = batch size
@@ -387,10 +388,10 @@ class TrajectoryPredictorWithIntent(nn.Module):
 
         # trajectory_history: (N, 10, 3)
 
-        # transformer_input: (N, 10, 19)
+        # transformer_input: (N, 10, 18)
 
         concatenated_features = torch.cat(
-            (trajectories_past, concat_aligned_img_feature), dim=2)  # (N, T_1, 3 + 16)
+            (trajectories_past, concat_aligned_img_feature), dim=2)  # (N, T_1, 2 + 16)
         output = self.transformer(
             src=concatenated_features, intent=intent, tgt=trajectories_future, tgt_mask=tgt_mask)  # (N, T_2, 3)
         return output

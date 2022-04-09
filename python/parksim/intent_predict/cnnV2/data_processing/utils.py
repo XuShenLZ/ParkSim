@@ -22,7 +22,7 @@ class CNNDataProcessor(object):
         Instantiate the feature extractor
         """
         self.ds = ds
-        self.vis = SemanticVisualizer(ds, steps=10)
+        self.vis = SemanticVisualizer(ds, steps=10, stride=10)
 
         self.spot_detector = LocalDetector(spot_color_rgb=(0, 255, 0))
         self.agent_detector = LocalDetector(spot_color_rgb=(255, 255, 0))

@@ -44,7 +44,7 @@ class IntentTransformerDataset(Dataset):
         """
         img_history = self.img_history[idx]
         trajectory_history = self.trajectory_history[idx]
-        intent_pose = self.intent_pose[idx]
+        intent_pose = self.intent_pose[idx][:,:-1]
         trajectory_future = self.trajectory_future[idx]
 
         hist_timesteps, h, w, c = img_history.shape

@@ -18,7 +18,7 @@ from itertools import product
 
 
 _CURRENT = os.path.abspath(os.path.dirname(__file__))
-DATA_PATH = os.path.join(_CURRENT, '..', 'data')
+DATA_PATH = os.path.join(_CURRENT, '..', '..', 'data')
 ENTRANCE_TO_PARKING_LOT = np.array([20, 80])
 
 def get_label_for_index(current_index, target_index):

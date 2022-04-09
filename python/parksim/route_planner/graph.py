@@ -10,7 +10,6 @@ class Vertex(object):
     def __init__(self, coords: np.ndarray):
         """
         instantiate the vertex
-
         coords: (x, y) coordinate, numpy array
         """
         self.coords = coords
@@ -26,7 +25,6 @@ class Vertex(object):
     def add_child(self, v: 'Vertex', e: 'Edge'):
         """
         add a vertex as its child
-
         v: the vertex to be added
         e: the connecting edge
         """
@@ -55,7 +53,6 @@ class Edge(object):
     def __init__(self, v1: 'Vertex', v2: 'Vertex', c):
         """
         Instantiate the edge
-
         v1, v2: vertices
         c: cost (distance)
         """
@@ -82,7 +79,7 @@ class WaypointsGraph(object):
         min_idx = None
 
         for idx, v in enumerate(self.vertices):
-            dist = np.linalg.norm(coords - v.coords)
+            dist = np.linalg.norm(np.array(coords)[:2] - v.coords)
             if dist < min_dist:
                 min_idx = idx
                 min_dist = dist
@@ -92,7 +89,6 @@ class WaypointsGraph(object):
     def add_waypoint_list(self, waypoint_list: np.ndarray):
         """
         add a list of waypoints into the graph. Connect them in order
-
         waypoint_list: a Nx2 numpy array of waypoint coordinates
         """
         v_list = []
@@ -188,7 +184,7 @@ class WaypointsGraph(object):
         self.connect(vis.waypoints['C1'][8], vis.waypoints['R3C1BR'][0])
         self.connect(vis.waypoints['R3C1BR'][-1], vis.waypoints['R3L'][-1])
         self.connect(vis.waypoints['C1'][10], vis.waypoints['R4C1TR'][0])
-        self.connect(vis.waypoints['R4C1TR'][-1], vis.waypoints['R4'][-1])
+        self.connect(vis.waypoints['R4C1TR'][-1], vis.waypoints['R4L'][-1])
         
         self.connect(vis.waypoints['C2'][0], vis.waypoints['R1C2BL'][0])
         self.connect(vis.waypoints['R1C2BL'][-1], vis.waypoints['R1L'][2])
@@ -201,7 +197,7 @@ class WaypointsGraph(object):
         self.connect(vis.waypoints['C2'][8], vis.waypoints['R3C2BL'][0])
         self.connect(vis.waypoints['R3C2BL'][-1], vis.waypoints['R3L'][0])
         self.connect(vis.waypoints['C2'][10], vis.waypoints['R4C2TL'][0])
-        self.connect(vis.waypoints['R4C2TL'][-1], vis.waypoints['R4'][23])
+        self.connect(vis.waypoints['R4C2TL'][-1], vis.waypoints['R4L'][0])
         
         self.connect(vis.waypoints['C2'][0], vis.waypoints['R1C2BR'][0])
         self.connect(vis.waypoints['R1C2BR'][-1], vis.waypoints['R1R'][-1])
@@ -214,7 +210,7 @@ class WaypointsGraph(object):
         self.connect(vis.waypoints['C2'][8], vis.waypoints['R3C2BR'][0])
         self.connect(vis.waypoints['R3C2BR'][-1], vis.waypoints['R3R'][-1])
         self.connect(vis.waypoints['C2'][10], vis.waypoints['R4C2TR'][0])
-        self.connect(vis.waypoints['R4C2TR'][-1], vis.waypoints['R4'][18])
+        self.connect(vis.waypoints['R4C2TR'][-1], vis.waypoints['R4R'][-1])
 
         self.connect(vis.waypoints['EXT'][1], vis.waypoints['EXTL'][0])
         self.connect(vis.waypoints['EXT'][1], vis.waypoints['EXTR'][0])
