@@ -18,14 +18,6 @@ img_size = 100
 _CURRENT = os.path.abspath(os.path.dirname(__file__))
 DATA_PATH = os.path.join(_CURRENT, '..', 'data')
 
-def remove_parked_instances(ds, instances, grace_period=3):
-    filtered_instances = instances
-
-    for instance in instances:
-        ds.get()
-
-    return filtered_instances
-
 def get_data_for_instance(inst_token: str, inst_idx: int, frame_token: str, extractor: TransformerDataProcessor, ds: Dataset) -> Tuple[np.array, np.array, np.array]:
     """
     returns image, trajectory_history, and trajectory future for given instance
