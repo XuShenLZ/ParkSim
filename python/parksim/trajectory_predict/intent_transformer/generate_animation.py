@@ -188,7 +188,7 @@ if __name__ == '__main__':
 
             anim = animation.FuncAnimation(fig, draw_prediction, frames=pred.shape[0],
                                         interval=0.1)
-            fname = f'C:\\Users\\rlaca\\Documents\\GitHub\\ParkSim\\python\\parksim\\trajectory_predict\\intent_transformer\\animation-dji-{dji_num}-agent-{agent_idx}.mp4'
+            fname = f'C:\\Users\\rlaca\\Documents\\GitHub\\ParkSim\\python\\parksim\\trajectory_predict\\intent_transformer\\animations\\animation-dji-{dji_num}-agent-{agent_idx}.mp4'
             video_writer = animation.FFMpegWriter(fps=10)
             anim.save(fname, writer=video_writer)
         except:
