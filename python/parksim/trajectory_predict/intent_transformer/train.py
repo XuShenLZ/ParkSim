@@ -13,6 +13,7 @@ from ray import tune
 from ray.tune import CLIReporter
 from ray.tune.schedulers import ASHAScheduler
 from sympy import divisors
+from torch.utils.tensorboard import SummaryWriter
 
 
 from parksim.trajectory_predict.intent_transformer.dataset import IntentTransformerDataset
@@ -70,7 +71,7 @@ def write_model_graph(model, data_loader, writer):
             writer.add_graph(model, input_to_model=batch[0], verbose=False)
             break
 
-def fit(model, opt, loss_fn, train_data_loader, val_data_loader, epochs, model_name, print_every=10, save_every=100, device="cuda", early_stopping=None):
+def fit(model, opt, loss_fn, train_data_loader, val_data_loader, epochs, model_name, print_every=10, save_every=100, device="cuda", early_stopping=None, writer=None):
     
     # Used for plotting later on
     train_loss_list, validation_loss_list = [], []
@@ -80,6 +81,11 @@ def fit(model, opt, loss_fn, train_data_loader, val_data_loader, epochs, model_n
         train_loss_list += [train_loss]
         validation_loss = validation_loop(model, loss_fn, val_data_loader, device)
         validation_loss_list += [validation_loss]
+
+        if writer:
+            writer.add_scalar("Train Loss", train_loss, epoch)
+            writer.add_scalar("Validation Loss", validation_loss, epoch)
+
         if epoch % print_every == print_every - 1:
             print("-"*25, f"Epoch {epoch + 1}","-"*25)
             print(f"Training loss: {train_loss:.4f}")
@@ -114,7 +120,7 @@ def build_trajectory_predict_from_config(config, input_shape=(3, 100, 100)):
 
 def train_model(config, dataset_nums, epochs, save_every, device, model_name, writer=None, early_stopping=None):
 
-    val_proportion = 0.15
+    val_proportion = 0.1
     seed = 42
     model = build_trajectory_predict_from_config(config)
     model = model.to(device)
@@ -132,13 +138,15 @@ def train_model(config, dataset_nums, epochs, save_every, device, model_name, wr
     val_size = int(val_proportion * len(dataset))
     train_size = len(dataset) - val_size
     validation_dataset, train_dataset = torch.utils.data.random_split(dataset, [val_size, train_size], generator=torch.Generator().manual_seed(seed))
-    trainloader = DataLoader(train_dataset, batch_size=32, shuffle=True, num_workers=12)
-    testloader = DataLoader(validation_dataset, batch_size=32, shuffle=True, num_workers=12)
-    loss_fn = nn.MSELoss()
-    
-    if writer:
-        write_model_graph(model, trainloader, writer)
-    fit(model=model, opt=opt, loss_fn=loss_fn, train_data_loader=trainloader, val_data_loader=testloader, epochs=epochs, model_name=model_name, print_every=10, save_every=save_every, device=device, early_stopping=early_stopping)
+    trainloader = DataLoader(train_dataset, batch_size=32, shuffle=True, num_workers=1)
+    testloader = DataLoader(validation_dataset, batch_size=32, shuffle=True, num_workers=1)
+
+    if config['loss'] == "L2":
+        loss_fn = nn.MSELoss()
+    elif config['loss'] == "L1":
+        loss_fn = nn.L1Loss()
+
+    fit(model=model, opt=opt, loss_fn=loss_fn, train_data_loader=trainloader, val_data_loader=testloader, epochs=epochs, model_name=model_name, print_every=10, save_every=save_every, device=device, early_stopping=early_stopping, writer=writer)
     print('Finished Training')
     if not os.path.exists(os.path.join(_CURRENT, 'models')):
         os.mkdir(os.path.join(_CURRENT, 'models'))
@@ -149,14 +157,14 @@ def train_model(config, dataset_nums, epochs, save_every, device, model_name, wr
 
 
 
+
+
 RUN_LABEL = 'v1'
-
-
 if __name__ == '__main__':
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(device)
     print()
-    #writer = SummaryWriter(logdir=f'/runs/{RUN_LABEL}')
+    writer = SummaryWriter(log_dir=f'/runs/{RUN_LABEL}')
 
     # dataset_nums = ['data/DJI_0008', 'data/DJI_0009', 'data/DJI_0010', 'data/DJI_0011', 'data/DJI_0012']
     #print(os.path.exists(dataset_nums[0]))
@@ -170,22 +178,23 @@ if __name__ == '__main__':
     config={
             'dim_model' : 52,
             'num_heads' : 4,
-            'dropout' : 0.1426,
+            'dropout' : 0.15,
             'num_encoder_layers' : 16,
             'num_decoder_layers' : 8,
             'd_hidden' : 256,
             'num_conv_layers' : 2,
             'opt' : 'SGD',
             'lr' : 0.0025,
-            'loss' : 'L1'
+            'loss' : 'L2'
     }
 
-    dataset_nums = ["../data/DJI_0007", "../data/DJI_0008", "../data/DJI_0009", "../data/DJI_0010", "../data/DJI_0011", "../data/DJI_0013", "../data/DJI_0014"]
-    epochs = 600
-    save_every=100
+    dataset_nums = ["../data/DJI_" + str(i).zfill(4) for i in range(7, 23)]
+    epochs = 1000
+    save_every=50
     patience = 100
     early_stopping = EarlyStopping(patience=patience, path='models/checkpoint.pt', verbose=True)
 
-    train_model(config=config, dataset_nums=dataset_nums, epochs=epochs, save_every=save_every, device=device, model_name="Intent_Transformer", early_stopping=early_stopping)
+    train_model(config=config, dataset_nums=dataset_nums, epochs=epochs, save_every=save_every, device=device, model_name="Intent_Transformer", early_stopping=early_stopping, writer=writer)
+    writer.flush()
 
  
