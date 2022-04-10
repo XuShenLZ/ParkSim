@@ -15,10 +15,10 @@ import numpy as np
 
 def main():
     model = SmallRegularizedCNN()
-    model_state = torch.load('models/smallRegularizedCNN_L0.068_01-29-2022_19-50-35.pth')
+    model_state = torch.load('models/SmallRegularizedIntent-4-10-22.pt')
     model.load_state_dict(model_state)
     model.eval().cuda()
-    dataset = CNNDataset("data/DJI_0005", input_transform = transforms.ToTensor())
+    dataset = CNNDataset("../data/DJI_0022", input_transform = transforms.ToTensor())
     dataloader = DataLoader(dataset, batch_size=32, num_workers=12)
     running_accuracy = 0
     for data in tqdm(dataloader):
