@@ -217,7 +217,7 @@ class Predictor:
         return astar_dist, astar_dir
 
 
-    def get_time_spent_in_lot(ds, agent_token, inst_token):
+    def get_time_spent_in_lot(self, ds, agent_token, inst_token):
         SAMPLING_RATE_IN_MINUTES = 0.04 / 60
         instances_agent_is_in = ds.get_agent_instances(agent_token)
         instance_tokens_agent_is_in = [instance['instance_token'] for instance in instances_agent_is_in]
