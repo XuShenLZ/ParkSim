@@ -35,7 +35,7 @@ def count_datasize(dataset_nums):
     val_size = int(val_proportion * total_size)
     train_size = total_size - val_size
 
-    return train_size, train_size, total_size
+    return train_size, val_size, total_size
 
 
 
