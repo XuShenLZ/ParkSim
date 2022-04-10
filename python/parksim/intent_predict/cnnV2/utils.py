@@ -1,6 +1,10 @@
 from torch.utils.data import Dataset
 import numpy as np
 import torch
+from tqdm import tqdm
+from .network import SmallRegularizedCNN
+from torch.utils.data import DataLoader
+from torchvision import transforms
 
 class CNNDataset(Dataset):
     """
@@ -77,3 +81,44 @@ class CNNGroupedDataset(Dataset):
             label = self.target_transform(label)
             
         return img_feature, non_spatial_feature, label
+
+
+def get_predictions(model, dji_path):
+    model.eval().cuda()
+    dataset = CNNGroupedDataset(dji_path, input_transform = transforms.ToTensor())
+    dataloader = DataLoader(dataset, batch_size=1, num_workers=12)
+    data_size = len(dataset)
+    running_top_1_accuracy = 0
+    running_top_3_accuracy = 0
+    running_top_5_accuracy = 0
+    for batch in tqdm(dataloader):
+        all_img_features, all_non_spatial_features, all_labels = batch
+        for img_feature, non_spatial_feature, labels in zip(all_img_features, all_non_spatial_features, all_labels):
+            img_feature = img_feature.cuda()
+            non_spatial_feature = non_spatial_feature.cuda()
+            labels = labels.cuda()
+            num_options = labels.shape[0]
+            #model.forward(img_feature, non_spatial_feature)
+            #inputs, labels = data[0].to(device), data[1].to(device)
+
+            #optimizer.zero_grad()
+
+            preds = model(img_feature, non_spatial_feature)
+            labels = labels.unsqueeze(1)
+            label = torch.argmax(labels)
+            preds = preds.flatten()
+            preds = torch.topk(preds, min(5, num_options))
+            pred_indices = preds.indices
+            if label in pred_indices[:1]:
+                running_top_1_accuracy += 1 / data_size
+            if label in pred_indices[:min(3, num_options)]:
+                running_top_3_accuracy += 1 / data_size
+            if label in pred_indices[:min(5, num_options)]:
+                running_top_5_accuracy += 1 / data_size
+
+            #print(label, pred_indices)
+            
+    #print(f"Top 1 Accuracy: {running_top_1_accuracy}")
+    #print(f"Top 3 Accuracy: {running_top_3_accuracy}")
+    #print(f"Top 5 Accuracy: {running_top_5_accuracy}")
+    return running_top_1_accuracy, running_top_3_accuracy, running_top_5_accuracy

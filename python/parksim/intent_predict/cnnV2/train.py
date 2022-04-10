@@ -7,6 +7,7 @@ from torch.utils.data import DataLoader
 from torchvision import transforms
 import torch.optim as optim
 from tqdm import tqdm
+from .utils import get_predictions
 
 import os
 from datetime import datetime
@@ -28,28 +29,33 @@ def train_network():
     print(device)
     
     # , "0010", "0011", "0012"
-    train_datasets = ["0012", "0013", "0014","0015", "0016"]
-    validation_dataset = "0017"
+    train_datasets = ["0012", "0013", "0014","0015", "0016", "0017"]
+
+
+
+    #validation_dataset = "0017"
+    #full_validation_dataset = CNNDataset(f"../data/DJI_{validation_dataset}", input_transform = transforms.ToTensor())
+    #testloader = DataLoader(full_validation_dataset, batch_size=32, shuffle=True, num_workers=12)
     
     all_train_datasets = [CNNDataset(f"../data/DJI_{ds_num}", input_transform = transforms.ToTensor()) for ds_num in train_datasets]
 
     train_dataset = torch.utils.data.ConcatDataset(all_train_datasets)
     trainloader = DataLoader(train_dataset, batch_size=32, shuffle=True, num_workers=12)
-    full_validation_dataset = CNNDataset(f"../data/DJI_{validation_dataset}", input_transform = transforms.ToTensor())
+    
     #val_size = int(1.0 * len(full_validation_dataset))
     #unused_data_size = len(full_validation_dataset) - val_size
     
     #validation_dataset, _ = torch.utils.data.random_split(full_validation_dataset, [val_size, unused_data_size], generator=torch.Generator().#manual_seed(42))
-    testloader = DataLoader(full_validation_dataset, batch_size=32, shuffle=True, num_workers=12)
+    
 
     cnn = SmallRegularizedCNN()
     cnn = cnn.cuda()
     optimizer = optim.AdamW(cnn.parameters(), lr=1e-3)
     loss_fn = torch.nn.BCEWithLogitsLoss().cuda()
-    patience = 5
+    patience = 10
     early_stopping = EarlyStopping(patience=patience, path= 'models/checkpoint.pt', verbose=True)
     
-    num_epochs = 100
+    num_epochs = 1000
     
 
     for epoch in range(num_epochs):
@@ -78,33 +84,35 @@ def train_network():
             correct = (predictions == labels).float().sum() / labels.shape[0]
             running_train_accuracy += correct / len(trainloader)
         
-        running_val_accuracy = 0
-        cnn.eval()
-        with torch.no_grad():
-                # Iterate over the test data and generate predictions
-                for i, data in enumerate(testloader, 0):
+        # running_val_accuracy = 0
+        # cnn.eval()
+        # with torch.no_grad():
+        #         # Iterate over the test data and generate predictions
+        #         for i, data in enumerate(testloader, 0):
 
-                    img_feature, non_spatial_feature, labels = data
-                    img_feature = img_feature.cuda()
-                    non_spatial_feature = non_spatial_feature.cuda()
-                    labels = labels.cuda().unsqueeze(1)
+        #             img_feature, non_spatial_feature, labels = data
+        #             img_feature = img_feature.cuda()
+        #             non_spatial_feature = non_spatial_feature.cuda()
+        #             labels = labels.cuda().unsqueeze(1)
                     
-                    # Zero the gradients
-                    optimizer.zero_grad()
+        #             # Zero the gradients
+        #             optimizer.zero_grad()
                     
-                    # Perform forward pass
-                    preds = cnn(img_feature, non_spatial_feature)
+        #             # Perform forward pass
+        #             preds = cnn(img_feature, non_spatial_feature)
                     
-                    # Compute loss
-                    loss = loss_fn(preds, labels)
+        #             # Compute loss
+        #             loss = loss_fn(preds, labels)
 
-                    # Set total and correct
-                    predictions = (preds > 0.5).float()
-                    correct = (predictions == labels).float().sum() / labels.shape[0]
-                    running_val_accuracy += correct / len(testloader)
+        #             # Set total and correct
+        #             predictions = (preds > 0.5).float()
+        #             correct = (predictions == labels).float().sum() / labels.shape[0]
+        #             running_val_accuracy += correct / len(testloader)
+        
+        top1, _, _ = get_predictions(cnn, "../data/DJI_0021")
         
         # We subtract 1 because early stopping is based on validation loss decreasing.
-        early_stopping(1 - running_val_accuracy, cnn)
+        early_stopping(1 - top1, cnn)
         
         if early_stopping.early_stop:
             print("Early stopping")
@@ -114,7 +122,7 @@ def train_network():
         
         print('[%d] loss: %.3f' % (epoch + 1, running_loss ))
         print('[%d] train accuracy: %.3f' % (epoch + 1, running_train_accuracy ))
-        print('[%d] validation accuracy: %.3f' % (epoch + 1, running_val_accuracy ))
+        #print('[%d] validation accuracy: %.3f' % (epoch + 1, running_val_accuracy ))
 
     print('Finished Training')
     if not os.path.exists(_CURRENT + '/models'):
