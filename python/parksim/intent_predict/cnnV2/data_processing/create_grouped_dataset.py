@@ -70,7 +70,7 @@ def get_data_for_instance(inst_token, frame, extractor, ds):
     image_features.append(unmarked_img_data)
     non_spatial_features.append(np.array([[0, 0, ego_speed, distance_to_entrance, get_time_spent_in_lot(ds, agent_token, inst_token)]]))
     labels.append(label)
-    return image_features, non_spatial_features, labels
+    return np.array(image_features), np.array(non_spatial_features), np.array(labels)
 
 def filter_instances(ds, instance_tokens):
     filtered_tokens = []
