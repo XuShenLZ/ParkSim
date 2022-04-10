@@ -28,14 +28,14 @@ def train_network():
     print(device)
     
     # , "0010", "0011", "0012"
-    train_datasets = ["0008", "0009", "0010","0011", "0012"]
-    validation_dataset = "0007"
+    train_datasets = ["0012", "0013", "0014","0015", "0016"]
+    validation_dataset = "0017"
     
-    all_train_datasets = [CNNDataset(f"data/DJI_{ds_num}", input_transform = transforms.ToTensor()) for ds_num in train_datasets]
+    all_train_datasets = [CNNDataset(f"../data/DJI_{ds_num}", input_transform = transforms.ToTensor()) for ds_num in train_datasets]
 
     train_dataset = torch.utils.data.ConcatDataset(all_train_datasets)
     trainloader = DataLoader(train_dataset, batch_size=32, shuffle=True, num_workers=12)
-    full_validation_dataset = CNNDataset(f"data/DJI_{validation_dataset}", input_transform = transforms.ToTensor())
+    full_validation_dataset = CNNDataset(f"../data/DJI_{validation_dataset}", input_transform = transforms.ToTensor())
     #val_size = int(1.0 * len(full_validation_dataset))
     #unused_data_size = len(full_validation_dataset) - val_size
     
@@ -49,7 +49,7 @@ def train_network():
     patience = 5
     early_stopping = EarlyStopping(patience=patience, path= 'models/checkpoint.pt', verbose=True)
     
-    num_epochs = 50
+    num_epochs = 100
     
 
     for epoch in range(num_epochs):
