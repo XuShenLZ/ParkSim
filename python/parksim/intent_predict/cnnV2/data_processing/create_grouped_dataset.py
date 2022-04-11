@@ -38,6 +38,10 @@ def get_data_for_instance(inst_token, frame, extractor, ds):
     labels = []
     img_frame = extractor.vis.plot_frame(frame['frame_token'])
     all_spots = extractor.get_parking_spots_from_instance(inst_token, frame)
+
+    if all_spots is None or len(all_spots) == 0:
+        return None, None, None
+
     spot_centers = extractor.detect_center(inst_token, 'spot')
     selected_spot_index = extractor.get_intent_label(inst_token, spot_centers)
     instance = ds.get('instance', inst_token)
@@ -70,7 +74,7 @@ def get_data_for_instance(inst_token, frame, extractor, ds):
     image_features.append(unmarked_img_data)
     non_spatial_features.append(np.array([[0, 0, ego_speed, distance_to_entrance, get_time_spent_in_lot(ds, agent_token, inst_token)]]))
     labels.append(label)
-    return np.array(image_features), np.array(non_spatial_features), np.array(labels)
+    return image_features, non_spatial_features, labels
 
 def filter_instances(ds, instance_tokens):
     filtered_tokens = []
@@ -111,18 +115,24 @@ def create_dataset(stride, path, scene_name):
         with multiprocessing.Pool(processes=os.cpu_count()) as pool:
             inputs = list(product(all_instance_tokens, [frame], [extractor], [ds]))
             results = pool.starmap(get_data_for_instance, inputs)
-            [image_features.append(feature) for feature, _, _ in results]
-            [non_spatial_features.append(feature) for _, feature, _ in results]
-            [labels.append(label) for _, _, label in results]
+            [image_features.append(feature) for feature, _, _ in results if feature is not None]
+            [non_spatial_features.append(feature) for _, feature, _ in results if feature is not None]
+            [labels.append(label) for _, _, label in results if label is not None]
     if not os.path.exists(DATA_PATH):
         os.mkdir(DATA_PATH)
         
-    image_features = np.array(image_features)
-    non_spatial_features = np.array(non_spatial_features)
-    labels = np.array(labels)
+    image_features = np.array(image_features, dtype=object)
     np.save(DATA_PATH + '/%s_image_feature_grouped.npy' % scene_name, image_features)
+    del image_features
+
+
+    non_spatial_features = np.array(non_spatial_features, dtype=object)
     np.save(DATA_PATH + '/%s_non_spatial_feature_grouped.npy' % scene_name, non_spatial_features)
+    del non_spatial_features
+
+    labels = np.array(labels, dtype=object)
     np.save(DATA_PATH + '/%s_label_grouped.npy' % scene_name, labels)
+    del labels
         
         
             
@@ -138,7 +148,7 @@ if __name__ == '__main__':
     path = args.path
     #name = args.name
 
-    names = ["DJI_" + str(i).zfill(4) for i in range(21, 22)]
+    names = ["DJI_" + str(i).zfill(4) for i in range(13, 21)]
     #names = ["DJI_0007", "DJI_0008", "DJI_0009", "DJI_0010", "DJI_0011"]
     for name in names:
         create_dataset(stride, path, name)
