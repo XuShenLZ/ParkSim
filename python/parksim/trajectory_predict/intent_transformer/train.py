@@ -185,10 +185,10 @@ if __name__ == '__main__':
             'num_conv_layers' : 2,
             'opt' : 'SGD',
             'lr' : 0.0025,
-            'loss' : 'L2'
+            'loss' : 'L1'
     }
 
-    dataset_nums = ["../data/DJI_" + str(i).zfill(4) for i in range(7, 23)]
+    dataset_nums = ["../data/DJI_" + str(i).zfill(4) for i in range(7, 22)]
     epochs = 1000
     save_every=50
     patience = 100
