@@ -707,7 +707,7 @@ class RuleBasedStanleyVehicle(AbstractAgent):
                         going_to_brake = True
 
                         # set priority
-                        other_id = ids_will_crash_with[0] # TODO: what if there are multiple cars it will crash with?
+                        other_id = ids_will_crash_with[0]
 
                         if not any([self.should_go_before(id) for id in ids_will_crash_with]):
                             going_to_brake = True # go straight to waiting, no priority calculations necessary
