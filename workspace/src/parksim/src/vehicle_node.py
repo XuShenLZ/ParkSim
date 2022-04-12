@@ -68,7 +68,6 @@ class VehicleNode(MPClabNode):
 
         self.declare_parameter('use_existing', 0)
         self.use_existing = True if self.get_parameter('use_existing').get_parameter_value().integer_value == 1 else 0
-        # todo: use_existing is not being passed properly, always returns 0
 
         self.get_logger().info("Spot Index: " + str(self.spot_index))
 

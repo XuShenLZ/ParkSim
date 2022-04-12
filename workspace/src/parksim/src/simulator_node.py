@@ -173,10 +173,10 @@ class SimulatorNode(MPClabNode):
         self.num_vehicles += 1
 
         self.vehicles.append(
-            subprocess.Popen(["ros2", "launch", "parksim", "vehicle.launch.py", "vehicle_id:=%d" % self.num_vehicles, "spot_index:=%d" % 0, "use_existing:=%d" % 1])
+            subprocess.Popen(["ros2", "launch", "parksim", "vehicle.launch.py", "vehicle_id:=%d" % vehicle_id, "spot_index:=%d" % 0, "use_existing:=%d" % 1])
         )
 
-        self.get_logger().info("An existing vehicle with id = %d is added" % self.num_vehicles)
+        self.get_logger().info("An existing vehicle with id = %d is added" % vehicle_id)
 
     def shutdown_vehicles(self):
         for vehicle in self.vehicles:
@@ -220,11 +220,12 @@ class SimulatorNode(MPClabNode):
             self.last_exit_time = current_time
 
     def try_spawn_existing(self):
-        current_time = self.get_ros_time()
+        current_time = self.get_ros_time() - self.start_time
         added_vehicles = []
 
         for agent in self.agents_dict:
             if self.agents_dict[agent]["init_time"] < current_time:
+                print(agent, self.agents_dict[agent]["init_time"], current_time)
                 self.add_existing_vehicle(agent)
                 added_vehicles.append(agent)
 

@@ -28,7 +28,7 @@ def generate_launch_description():
             namespace=['vehicle_', LaunchConfiguration('vehicle_id')],
             executable='vehicle_node.py',
             name='vehicle',
-            parameters=[os.path.join(config_dir, 'vehicle.yaml')]+global_params+[{'vehicle_id': LaunchConfiguration('vehicle_id'), 'spot_index': LaunchConfiguration('spot_index')}],
+            parameters=[os.path.join(config_dir, 'vehicle.yaml')]+global_params+[{'vehicle_id': LaunchConfiguration('vehicle_id'), 'spot_index': LaunchConfiguration('spot_index'), 'use_existing': LaunchConfiguration('use_existing')}],
             output='screen',
             emulate_tty=True
         )
