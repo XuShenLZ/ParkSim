@@ -290,8 +290,8 @@ class RuleBasedStanleyVehicle(AbstractAgent):
             else:
                 raise ValueError(f'Undefined task name. {task.name} is received.')
 
-            # State will always be assigned if given
-            self.state = task.state if task.state is not None else self.state
+            # State will always be assigned if given todo: commented this out
+            # self.state = task.state if task.state is not None else self.state
 
             self.task_history.append(task)
         else:

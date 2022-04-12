@@ -36,7 +36,7 @@ class VehicleNodeParams(NodeParamTemplate):
         self.offline_maneuver_path = '/ParkSim/data/parking_maneuvers.pickle'
         self.waypoints_graph_path = '/ParkSim/data/waypoints_graph.pickle'
         self.intent_model_path = '/ParkSim/data/smallRegularizedCNN_L0.068_01-29-2022_19-50-35.pth'
-        self.agents_data_path = '/ParkSim/data/agents_data.pickle'
+        self.agents_data_path = '/home/mpc/ParkSim/data/agents_data.pickle'
 
         self.write_log = True
         self.log_path = '/ParkSim/vehicle_log'
@@ -67,7 +67,8 @@ class VehicleNode(MPClabNode):
         self.spot_index = self.get_parameter('spot_index').get_parameter_value().integer_value
 
         self.declare_parameter('use_existing', 0)
-        self.use_existing = self.get_parameter('use_existing').get_parameter_value().boolean_value
+        self.use_existing = True if self.get_parameter('use_existing').get_parameter_value().integer_value == 1 else 0
+        # todo: use_existing is not being passed properly, always returns 0
 
         self.get_logger().info("Spot Index: " + str(self.spot_index))
 

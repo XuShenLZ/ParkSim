@@ -21,6 +21,7 @@ def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument('vehicle_id', default_value='0'),
         DeclareLaunchArgument('spot_index', default_value='3'),
+        DeclareLaunchArgument('use_existing', default_value='0'),
 
         Node(
             package='parksim',
