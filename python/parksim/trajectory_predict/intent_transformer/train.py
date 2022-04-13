@@ -164,7 +164,7 @@ if __name__ == '__main__':
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(device)
     print()
-    writer = SummaryWriter(log_dir=f'/runs/{RUN_LABEL}')
+    writer = SummaryWriter(log_dir=f'runs/{RUN_LABEL}')
 
     # dataset_nums = ['data/DJI_0008', 'data/DJI_0009', 'data/DJI_0010', 'data/DJI_0011', 'data/DJI_0012']
     #print(os.path.exists(dataset_nums[0]))
