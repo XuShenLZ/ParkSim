@@ -17,29 +17,29 @@ for agent_token in agent_data:
 
     json_dict = {"task_profile": []}
 
-    spawn_time = -1
+    spawn_index = -1
     i = 0
 
-    while spawn_time == -1:
+    while spawn_index == -1:
         if agent["v"][i] >= MOVING_DEADBAND:
-            spawn_time = i
+            spawn_index = i
+            json_dict["init_time"] = agent["t"][i]
         else:
             i += 1
 
-    if agent["dist_to_closest_spot"][max(spawn_time - 1, 0)] < PARKED_DEADBAND:
-        json_dict["init_spot"] = agent["closest_spot"][max(spawn_time - 1, 0)]
-        json_dict["init_heading"] = np.pi / 2 if agent["heading"][max(spawn_time - 1, 0)] < np.pi else 3 * np.pi / 2
+    if agent["dist_to_closest_spot"][max(spawn_index - 1, 0)] < PARKED_DEADBAND:
+        json_dict["init_spot"] = agent["closest_spot"][max(spawn_index - 1, 0)]
+        json_dict["init_heading"] = np.pi / 2 if agent["heading"][max(spawn_index - 1, 0)] < np.pi else 3 * np.pi / 2
     else:
         json_dict["init_coords"] = agent["coords"][0]
-        json_dict["init_heading"] = agent["heading"][max(spawn_time - 1, 0)]
-    json_dict["init_time"] = spawn_time
+        json_dict["init_heading"] = agent["heading"][max(spawn_index - 1, 0)]
     json_dict["init_v"] = agent["v"][0]
     json_dict["width"] = agent["size"][1]
     json_dict["length"] = agent["size"][0]
 
     # i is at spawn_time
 
-    sec_start = spawn_time # the start of this section, or if in a zero section, the start of the section before the zero section
+    sec_start = spawn_index # the start of this section, or if in a zero section, the start of the section before the zero section
     zero_sec_start = -1 # -1 if not currently in a zero section, else the first index of this zero section
     sec_max_speed = -1
 
@@ -96,10 +96,10 @@ for agent_token in agent_data:
     # if agent_token == 20:
     #     print(json_dict)
 
-# x = [i[0] for i in agent_data[20]["coords"]]
-# y = [i[1] for i in agent_data[20]["coords"]]
-# plt.scatter(x, y, c=range(len(x)))
-# plt.show()
+x = [i[0] for i in agent_data[16]["coords"]]
+y = [i[1] for i in agent_data[16]["coords"]]
+plt.scatter(x, y, c=range(len(x)))
+plt.show()
 
 with open('agents_data.pickle', 'wb') as f:
     pickle.dump(final_json, f)
