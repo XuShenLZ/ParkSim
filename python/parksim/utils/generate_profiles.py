@@ -96,10 +96,10 @@ for agent_token in agent_data:
     # if agent_token == 20:
     #     print(json_dict)
 
-x = [i[0] for i in agent_data[16]["coords"]]
-y = [i[1] for i in agent_data[16]["coords"]]
-plt.scatter(x, y, c=range(len(x)))
-plt.show()
+# x = [i[0] for i in agent_data[16]["coords"]]
+# y = [i[1] for i in agent_data[16]["coords"]]
+# plt.scatter(x, y, c=range(len(x)))
+# plt.show()
 
 with open('agents_data.pickle', 'wb') as f:
     pickle.dump(final_json, f)
