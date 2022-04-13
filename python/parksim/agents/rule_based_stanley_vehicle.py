@@ -290,8 +290,8 @@ class RuleBasedStanleyVehicle(AbstractAgent):
             else:
                 raise ValueError(f'Undefined task name. {task.name} is received.')
 
-            # State will always be assigned if given
-            self.state = task.state if task.state is not None else self.state
+            # State will always be assigned if given todo: commented this out
+            # self.state = task.state if task.state is not None else self.state
 
             self.task_history.append(task)
         else:
@@ -707,7 +707,7 @@ class RuleBasedStanleyVehicle(AbstractAgent):
                         going_to_brake = True
 
                         # set priority
-                        other_id = ids_will_crash_with[0] # TODO: what if there are multiple cars it will crash with?
+                        other_id = ids_will_crash_with[0]
 
                         if not any([self.should_go_before(id) for id in ids_will_crash_with]):
                             going_to_brake = True # go straight to waiting, no priority calculations necessary

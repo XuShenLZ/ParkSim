@@ -91,7 +91,7 @@ class SimulatorNode(MPClabNode):
             self.occupied[idx] = True
 
         # Agents
-        self.agents_dict = self._gen_agents()
+        self._gen_agents()
 
         # Spawning
         self.spawn_entering_time = list(np.random.exponential(self.spawn_interval_mean, self.spawn_entering))
@@ -163,7 +163,7 @@ class SimulatorNode(MPClabNode):
         self.num_vehicles += 1
 
         self.vehicles.append(
-            subprocess.Popen(["ros2", "launch", "parksim", "vehicle.launch.py", "vehicle_id:=%d" % self.num_vehicles, "spot_index:=%d" % spot_index, "use_existing:=%b" % False])
+            subprocess.Popen(["ros2", "launch", "parksim", "vehicle.launch.py", "vehicle_id:=%d" % self.num_vehicles, "spot_index:=%d" % spot_index, "use_existing:=%d" % 0])
         )
 
         self.get_logger().info("A vehicle with id = %d is added with spot_index = %d" % (self.num_vehicles, spot_index))
@@ -173,10 +173,10 @@ class SimulatorNode(MPClabNode):
         self.num_vehicles += 1
 
         self.vehicles.append(
-            subprocess.Popen(["ros2", "launch", "parksim", "vehicle.launch.py", "vehicle_id:=%d" % self.num_vehicles, "spot_index:=%d" % 0, "use_existing:=%b" % True])
+            subprocess.Popen(["ros2", "launch", "parksim", "vehicle.launch.py", "vehicle_id:=%d" % vehicle_id, "spot_index:=%d" % 0, "use_existing:=%d" % 1])
         )
 
-        self.get_logger().info("An existing vehicle with id = %d is added" % self.num_vehicles)
+        self.get_logger().info("An existing vehicle with id = %d is added" % vehicle_id)
 
     def shutdown_vehicles(self):
         for vehicle in self.vehicles:
@@ -220,11 +220,12 @@ class SimulatorNode(MPClabNode):
             self.last_exit_time = current_time
 
     def try_spawn_existing(self):
-        current_time = self.get_ros_time()
+        current_time = self.get_ros_time() - self.start_time
         added_vehicles = []
 
         for agent in self.agents_dict:
             if self.agents_dict[agent]["init_time"] < current_time:
+                print(agent, self.agents_dict[agent]["init_time"], current_time)
                 self.add_existing_vehicle(agent)
                 added_vehicles.append(agent)
 
@@ -234,7 +235,7 @@ class SimulatorNode(MPClabNode):
     def timer_callback(self):
 
         if self.sim_is_running:
-            if self.use_existing_agents:
+            if not self.use_existing_agents:
         
                 if self.keep_spawn_entering:
                     if self.last_enter_sub:
