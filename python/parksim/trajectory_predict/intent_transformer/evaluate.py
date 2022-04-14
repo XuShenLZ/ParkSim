@@ -3,8 +3,8 @@ from torch import nn
 from torch.utils.data import DataLoader
 from torchvision import transforms
 
-from parksim.trajectory_predict.intent_transformer.network import  TrajectoryPredictorWithIntent
-from parksim.trajectory_predict.intent_transformer.dataset import IntentTransformerDataset
+from parksim.trajectory_predict.intent_transformer.network import  TrajectoryPredictorWithIntentV2
+from parksim.trajectory_predict.intent_transformer.dataset import IntentTransformerV2Dataset
 
 def validation_loop(model, loss_fn, dataloader, device):
     model.eval()
@@ -24,18 +24,28 @@ def validation_loop(model, loss_fn, dataloader, device):
     return total_loss / len(dataloader)
 
 def main():
-    MODEL_PATH = "models/Intent_Transformer_all_data_03-19-2022_20-19-01.pth"
+    MODEL_PATH = "models\checkpoint.pt"
     DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+    config={
+            'dim_model' : 64 ,
+            'num_heads' : 8 ,
+            'dropout' : 0.0 ,
+            'num_encoder_layers' : 4 ,
+            'num_decoder_layers' : 4 ,
+            'd_hidden' : 256 ,
+            'num_conv_layers' : 2 ,
+            'opt' : 'SGD',
+            'lr' : 1e-4 ,
+            'loss' : 'L1'
+    }
     dataset_nums = ['../data/DJI_0012']
-
-
-    model = TrajectoryPredictorWithIntent()
+    model = TrajectoryPredictorWithIntentV2(config)
     model_state = torch.load(MODEL_PATH, map_location=DEVICE)
     model.load_state_dict(model_state)
     model.eval().to(DEVICE)
-    dataset = IntentTransformerDataset(dataset_nums, img_transform = transforms.ToTensor())
+    dataset = IntentTransformerV2Dataset(dataset_nums, img_transform = transforms.ToTensor())
     dataloader = DataLoader(dataset, batch_size=32, num_workers=12)
-    loss_fn = nn.MSELoss()    
+    loss_fn = nn.L1Loss()    
     validation_loss = validation_loop(model, loss_fn, dataloader, DEVICE)
     print(f"Average Validation Loss Across Batches:\n{validation_loss}")
 
