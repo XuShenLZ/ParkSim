@@ -91,13 +91,48 @@ for agent_token in agent_data:
     if len(json_dict["task_profile"]) > 0 and json_dict["task_profile"][-1]["name"] == "IDLE":
         json_dict["task_profile"].pop()
 
+    # remove first cruise if a vehicle is mid-parking maneuver, for now never overshoots
+
+    # first check: if first two tasks are cruise to a spot, then park in that spot
+    if len(json_dict["task_profile"]) >= 2 and json_dict["task_profile"][0]["name"] == "CRUISE" and json_dict["task_profile"][1]["name"] == "PARK" and "target_spot_index" in json_dict["task_profile"][0] and json_dict["task_profile"][0]["target_spot_index"] == json_dict["task_profile"][1]["target_spot_index"]:
+        tgt_spot = json_dict["task_profile"][0]["target_spot_index"]
+
+        parking_spaces = np.load("parking_spaces.npy")
+        space_coords = parking_spaces[tgt_spot]
+
+        with open("spots_data.pickle", 'rb') as f:
+            data = pickle.load(f)
+            north_ranges = data["north_spot_idx_ranges"]
+
+        if np.abs(json_dict["init_coords"][0] - space_coords[0]) <= 5 and np.abs(json_dict["init_coords"][1] - space_coords[1]) <= 12:
+            north_spot = any([tgt_spot >= rg[0] and tgt_spot <= rg[1] for rg in north_ranges])
+            face_right = np.abs(json_dict["init_heading"]) <= np.pi / 2 
+            # middle of lane is 6.25 from middle of spot, vehicle offset is 1.75 from lane middle
+            if north_spot and face_right:
+                new_x = space_coords[0] - 4
+                new_y = space_coords[1] - 8
+            elif north_spot and not face_right:
+                new_x = space_coords[0] + 4
+                new_y = space_coords[1] - 4.5
+            elif not north_spot and face_right:
+                new_x = space_coords[0] - 4
+                new_y = space_coords[1] + 4.5
+            else:
+                new_x = space_coords[0] + 4
+                new_y = space_coords[1] + 8
+
+            json_dict["init_coords"] = [new_x, new_y]
+            json_dict["init_heading"] = 0 if face_right else np.pi
+
+            json_dict["task_profile"].pop(0)
+
     final_json[agent_token] = json_dict
 
-    # if agent_token == 20:
-    #     print(json_dict)
+#     if agent_token == 4:
+#         print(json_dict)
 
-# x = [i[0] for i in agent_data[16]["coords"]]
-# y = [i[1] for i in agent_data[16]["coords"]]
+# x = [i[0] for i in agent_data[4]["coords"]]
+# y = [i[1] for i in agent_data[4]["coords"]]
 # plt.scatter(x, y, c=range(len(x)))
 # plt.show()
 
