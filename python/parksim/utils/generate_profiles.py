@@ -126,13 +126,19 @@ for agent_token in agent_data:
 
             json_dict["task_profile"].pop(0)
 
+    # handling for agent 16, which idles mid-exit
+    if agent_token == 16:
+        final_loc = json_dict["task_profile"][-1]["target_coords"]
+        json_dict["task_profile"] = json_dict["task_profile"][:-2]
+        json_dict["task_profile"][-1]["target_coords"] = final_loc
+
     final_json[agent_token] = json_dict
 
-#     if agent_token == 4:
+#     if agent_token == 5:
 #         print(json_dict)
 
-# x = [i[0] for i in agent_data[4]["coords"]]
-# y = [i[1] for i in agent_data[4]["coords"]]
+# x = [i[0] for i in agent_data[5]["coords"]]
+# y = [i[1] for i in agent_data[5]["coords"]]
 # plt.scatter(x, y, c=range(len(x)))
 # plt.show()
 
