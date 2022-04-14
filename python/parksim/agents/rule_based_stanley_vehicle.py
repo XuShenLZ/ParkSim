@@ -275,7 +275,7 @@ class RuleBasedStanleyVehicle(AbstractAgent):
                     
                 self.cruise_planning(task=task)
             elif task.name == "PARK":
-                pass
+                self.spot_index = task.target_spot_index
             elif task.name == "UNPARK":
                 pass
 
