@@ -225,7 +225,6 @@ class SimulatorNode(MPClabNode):
 
         for agent in self.agents_dict:
             if self.agents_dict[agent]["init_time"] < current_time:
-                print(agent, self.agents_dict[agent]["init_time"], current_time)
                 self.add_existing_vehicle(agent)
                 added_vehicles.append(agent)
 

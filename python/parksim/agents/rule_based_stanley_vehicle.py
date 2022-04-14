@@ -258,7 +258,12 @@ class RuleBasedStanleyVehicle(AbstractAgent):
             graph_sol = AStarPlanner(
                 self.graph.vertices[start_vertex_idx], self.graph.vertices[self.graph.search(task.target_coords)]).solve()
 
-            x_ref, y_ref, yaw_ref = self.compute_ref_path(graph_sol=graph_sol, spot_index=None)
+            if len(graph_sol.edges) == 0: # just go to a waypoint
+                x_ref = [self.state.x.x, task.target_coords[0]]
+                y_ref = [self.state.x.y, task.target_coords[1]]
+                yaw_ref = [self.state.e.psi, self.state.e.psi]
+            else: # compute a-star path
+                x_ref, y_ref, yaw_ref = self.compute_ref_path(graph_sol=graph_sol, spot_index=None)
 
         self.set_ref_pose(x_ref, y_ref, yaw_ref)
         self.set_ref_v(0)
