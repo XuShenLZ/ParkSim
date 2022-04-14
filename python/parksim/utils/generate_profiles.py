@@ -17,29 +17,29 @@ for agent_token in agent_data:
 
     json_dict = {"task_profile": []}
 
-    spawn_time = -1
+    spawn_index = -1
     i = 0
 
-    while spawn_time == -1:
+    while spawn_index == -1:
         if agent["v"][i] >= MOVING_DEADBAND:
-            spawn_time = i
+            spawn_index = i
+            json_dict["init_time"] = agent["t"][i]
         else:
             i += 1
 
-    if agent["dist_to_closest_spot"][max(spawn_time - 1, 0)] < PARKED_DEADBAND:
-        json_dict["init_spot"] = agent["closest_spot"][max(spawn_time - 1, 0)]
-        json_dict["init_heading"] = np.pi / 2 if agent["heading"][max(spawn_time - 1, 0)] < np.pi else 3 * np.pi / 2
+    if agent["dist_to_closest_spot"][max(spawn_index - 1, 0)] < PARKED_DEADBAND:
+        json_dict["init_spot"] = agent["closest_spot"][max(spawn_index - 1, 0)]
+        json_dict["init_heading"] = np.pi / 2 if agent["heading"][max(spawn_index - 1, 0)] < np.pi else 3 * np.pi / 2
     else:
         json_dict["init_coords"] = agent["coords"][0]
-        json_dict["init_heading"] = agent["heading"][max(spawn_time - 1, 0)]
-    json_dict["init_time"] = spawn_time
+        json_dict["init_heading"] = agent["heading"][max(spawn_index - 1, 0)]
     json_dict["init_v"] = agent["v"][0]
     json_dict["width"] = agent["size"][1]
     json_dict["length"] = agent["size"][0]
 
     # i is at spawn_time
 
-    sec_start = spawn_time # the start of this section, or if in a zero section, the start of the section before the zero section
+    sec_start = spawn_index # the start of this section, or if in a zero section, the start of the section before the zero section
     zero_sec_start = -1 # -1 if not currently in a zero section, else the first index of this zero section
     sec_max_speed = -1
 
@@ -91,13 +91,48 @@ for agent_token in agent_data:
     if len(json_dict["task_profile"]) > 0 and json_dict["task_profile"][-1]["name"] == "IDLE":
         json_dict["task_profile"].pop()
 
+    # remove first cruise if a vehicle is mid-parking maneuver, for now never overshoots
+
+    # first check: if first two tasks are cruise to a spot, then park in that spot
+    if len(json_dict["task_profile"]) >= 2 and json_dict["task_profile"][0]["name"] == "CRUISE" and json_dict["task_profile"][1]["name"] == "PARK" and "target_spot_index" in json_dict["task_profile"][0] and json_dict["task_profile"][0]["target_spot_index"] == json_dict["task_profile"][1]["target_spot_index"]:
+        tgt_spot = json_dict["task_profile"][0]["target_spot_index"]
+
+        parking_spaces = np.load("parking_spaces.npy")
+        space_coords = parking_spaces[tgt_spot]
+
+        with open("spots_data.pickle", 'rb') as f:
+            data = pickle.load(f)
+            north_ranges = data["north_spot_idx_ranges"]
+
+        if np.abs(json_dict["init_coords"][0] - space_coords[0]) <= 5 and np.abs(json_dict["init_coords"][1] - space_coords[1]) <= 12:
+            north_spot = any([tgt_spot >= rg[0] and tgt_spot <= rg[1] for rg in north_ranges])
+            face_right = np.abs(json_dict["init_heading"]) <= np.pi / 2 
+            # middle of lane is 6.25 from middle of spot, vehicle offset is 1.75 from lane middle
+            if north_spot and face_right:
+                new_x = space_coords[0] - 4
+                new_y = space_coords[1] - 8
+            elif north_spot and not face_right:
+                new_x = space_coords[0] + 4
+                new_y = space_coords[1] - 4.5
+            elif not north_spot and face_right:
+                new_x = space_coords[0] - 4
+                new_y = space_coords[1] + 4.5
+            else:
+                new_x = space_coords[0] + 4
+                new_y = space_coords[1] + 8
+
+            json_dict["init_coords"] = [new_x, new_y]
+            json_dict["init_heading"] = 0 if face_right else np.pi
+
+            json_dict["task_profile"].pop(0)
+
     final_json[agent_token] = json_dict
 
-    # if agent_token == 20:
-    #     print(json_dict)
+#     if agent_token == 4:
+#         print(json_dict)
 
-# x = [i[0] for i in agent_data[20]["coords"]]
-# y = [i[1] for i in agent_data[20]["coords"]]
+# x = [i[0] for i in agent_data[4]["coords"]]
+# y = [i[1] for i in agent_data[4]["coords"]]
 # plt.scatter(x, y, c=range(len(x)))
 # plt.show()
 
