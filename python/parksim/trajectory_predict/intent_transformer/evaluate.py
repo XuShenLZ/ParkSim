@@ -3,25 +3,9 @@ from torch import nn
 from torch.utils.data import DataLoader
 from torchvision import transforms
 
+from parksim.trajectory_predict.intent_transformer.model_utils import validation_loop
 from parksim.trajectory_predict.intent_transformer.network import  TrajectoryPredictorWithIntentV2
 from parksim.trajectory_predict.intent_transformer.dataset import IntentTransformerV2Dataset
-
-def validation_loop(model, loss_fn, dataloader, device):
-    model.eval()
-    total_loss = 0
-    with torch.no_grad():
-        for batch in dataloader:
-            img, X, intent, y_in, y_label = batch
-            img = img.to(device).float()
-            X = X.to(device).float()
-            intent = intent.to(device).float()
-            y_in = y_in.to(device).float()
-            y_label = y_label.to(device).float()
-            tgt_mask = model.transformer.generate_square_subsequent_mask(y_in.shape[1]).to(device).float()
-            pred = model(img, X, intent, y_in, tgt_mask)
-            loss = loss_fn(pred, y_label)
-            total_loss += loss.detach().item()
-    return total_loss / len(dataloader)
 
 def main():
     MODEL_PATH = "models\checkpoint.pt"
