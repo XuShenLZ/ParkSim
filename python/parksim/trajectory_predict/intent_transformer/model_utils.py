@@ -103,14 +103,19 @@ def save_model(model, path):
     }
     torch.save(model_info, path)
 
-def load_model(path, manual_class=None):
+def load_model(path, manual_class=None, manual_config=None):
     model_info = torch.load(path)
     if manual_class:
         model_class = manual_class
     else:
         model_class = model_info['model_class']
-    model_state = model_info['model_state']
-    model_config = model_info['model_config']
+
+    if manual_config:
+        model_config = manual_config
+        model_state = model_info
+    else:
+        model_config = model_info['model_config']
+        model_state = model_info['model_state']
     base_model = model_class(model_config)
     base_model.load_state_dict(model_state)
     return base_model

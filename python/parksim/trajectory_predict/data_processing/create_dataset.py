@@ -135,7 +135,7 @@ if __name__ == '__main__':
     img_size = args.img_size
     tail_size = args.tail_size
 
-    names = ["DJI_" + str(i).zfill(4) for i in range(7, 26)]
+    names = ["DJI_" + str(i).zfill(4) for i in range(17, 27)]
     #names = ["DJI_0007", "DJI_0008", "DJI_0009", "DJI_0010", "DJI_0011", "DJI_0012", "DJI_0013", "DJI_0014"]
     #names = ["DJI_0012"]
     for name in names:

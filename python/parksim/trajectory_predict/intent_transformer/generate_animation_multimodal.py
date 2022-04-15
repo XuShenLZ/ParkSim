@@ -4,6 +4,9 @@ import torch
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 
+from tqdm import tqdm
+from multiprocessing import Pool, cpu_count
+
 from dlp.dataset import Dataset
 
 from parksim.intent_predict.cnnV2.data_processing.utils import CNNDataProcessor
@@ -11,7 +14,7 @@ from parksim.trajectory_predict.data_processing.utils import TransformerDataProc
 
 from parksim.intent_predict.cnnV2.network import SmallRegularizedCNN
 from parksim.trajectory_predict.intent_transformer.network import TrajectoryPredictorWithIntent
-from parksim.trajectory_predict.intent_transformer.train import build_trajectory_predict_from_config
+from parksim.trajectory_predict.intent_transformer.model_utils import load_model
 
 from parksim.trajectory_predict.intent_transformer.multimodal_prediction import predict_multimodal
 
@@ -91,9 +94,10 @@ config = {
     'loss': 'L1'
 }
 
-traj_model = build_trajectory_predict_from_config(config=config)
-model_state = torch.load(MODEL_PATH, map_location=DEVICE)
-traj_model.load_state_dict(model_state)
+traj_model = load_model(MODEL_PATH, manual_class=TrajectoryPredictorWithIntent, manual_config=config)
+# traj_model = build_trajectory_predict_from_config(config=config)
+# model_state = torch.load(MODEL_PATH, map_location=DEVICE)
+# traj_model.load_state_dict(model_state)
 traj_model.eval().to(DEVICE)
 
 INTENT_MODEL_PATH = 'models/smallRegularizedCNN_L0.068_01-29-2022_19-50-35.pth'
@@ -110,20 +114,33 @@ traj_extractor = TransformerDataProcessor(ds=ds)
 # %% 
 
 scene = ds.get('scene', ds.list_scenes()[0])
-frame_index = 80
-frame = ds.get_future_frames(scene['first_frame'], timesteps=300)[frame_index]
-inst_token = frame['instances'][1]
+frame_index = 1800
+frame = ds.get_future_frames(scene['first_frame'], timesteps=2000)[frame_index]
+# inst_token = frame['instances'][6]
+inst_token = ds.get_inst_at_location(frame_token=frame['frame_token'], coords=[70, 30])[
+    'instance_token']
+
 
 agent_token = ds.get('instance', inst_token)['agent_token']
-agent = ds.get('agent', agent_token)
+all_instances = ds.get_agent_instances(agent_token=agent_token)[50:-50]
 
-inst_token = agent['first_instance']
 inst_token_list = []
-while inst_token:
-    if ds.get_inst_mode(inst_token=inst_token) != 'parked':
-        inst_token_list.append(inst_token)
 
-    inst_token = ds.get('instance', inst_token)['next']
+def check(instance):
+    inst_token = instance['instance_token']
+    if ds.get_inst_mode(inst_token=inst_token) != 'parked':
+        return True
+    else:
+        return False
+
+print('Filtering instances...')
+with Pool(cpu_count()) as pool:
+    include = pool.map(check, tqdm(all_instances))
+
+print('Done filtering')
+for i, instance in enumerate(all_instances):
+    if include[i]:
+        inst_token_list.append(instance['instance_token'])
 
 inst_token_list = inst_token_list[::10]
 
