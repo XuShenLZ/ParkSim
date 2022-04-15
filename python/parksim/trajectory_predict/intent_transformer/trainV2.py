@@ -2,23 +2,10 @@ import torch
 from torchvision import transforms
 from torch.utils.data import DataLoader
 from torch import nn
-import matplotlib.pyplot as plt
 import os
-from datetime import datetime
-import random
-import numpy as np
-
-from functools import partial
-from ray import tune
-from ray.tune import CLIReporter
-from ray.tune.schedulers import ASHAScheduler
-from sympy import divisors
-from torch.utils.tensorboard import SummaryWriter
-
 from parksim.trajectory_predict.intent_transformer.model_utils import train_model, split_dataset, load_model
 from parksim.trajectory_predict.intent_transformer.dataset import IntentTransformerV2Dataset
 from parksim.trajectory_predict.intent_transformer.network import TrajectoryPredictorWithIntentV2
-from parksim.intent_predict.cnnV2.pytorchtools import EarlyStopping
 
 _CURRENT = os.path.abspath(os.path.dirname(__file__))
 
