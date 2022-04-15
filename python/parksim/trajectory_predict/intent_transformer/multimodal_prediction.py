@@ -62,29 +62,12 @@ def expand_distribution(intents: PredictionResponse, lanes: List, n=3):
     distributions = list(intents.distribution)
     distributions.pop()
 
-    if p_minus > 0.9:
-        scales = np.linspace(0.9, 0.1, n)
-        scales /= sum(scales)
-        for i in range(n):
-            _, _, coords = heapq.heappop(lanes)
-            coordinates.append(coords)
-            distributions.append(p_minus * scales[i])
-
-    elif p_minus > 0.5:
-        scales = np.linspace(0.8, 0.2, n)
-        scales /= sum(scales)
-        for i in range(n):
-            _, _, coords = heapq.heappop(lanes)
-            coordinates.append(coords)
-            distributions.append(p_minus * scales[i])
-
-    else:
-        scales = np.linspace(0.9, 0.1, n)
-        scales /= sum(scales)
-        for i in range(n):
-            _, _, coords = heapq.heappop(lanes)
-            coordinates.append(coords)
-            distributions.append(p_minus * scales[i])
+    scales = np.linspace(0.9, 0.1, n)
+    scales /= sum(scales)
+    for i in range(n):
+        _, _, coords = heapq.heappop(lanes)
+        coordinates.append(coords)
+        distributions.append(p_minus * scales[i])
 
     return distributions, coordinates
             
