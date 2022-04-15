@@ -8,9 +8,12 @@ from typing import Sequence, Optional, Generator, List, TypeVar
 from torch import nn
 import matplotlib.pyplot as plt
 import os
+import collections
 from datetime import datetime
 import random
 import numpy as np
+import pandas as pd
+from tqdm import tqdm
 
 from functools import partial
 from ray import tune
@@ -115,6 +118,77 @@ def load_model(path, manual_class=None):
     base_model.load_state_dict(model_state)
     return base_model
 
+def cross_validation(model_type, configs_to_test, model_name, loss_fn, optimizer, dataset, device, k_fold=5, num_epochs=5, seed=42):
+
+    print(f"Starting {k_fold}-Fold Cross Validation With {num_epochs}-Epochs Per Model\n")
+    all_cv_scores = {}
+    timestamp = datetime.now().strftime("%m-%d-%Y_%H-%M-%S")
+    tensorboard_dir = f"/runs/cross_val_{timestamp}/"
+    t = tqdm(enumerate(configs_to_test))
+    for i, config in t:
+        t.set_description(f"Cross Validating Model Config {i}", refresh=True)
+        model = model_type(config)
+        optimizer.state = collections.defaultdict(dict) # Reset state
+        train_scores, val_scores = get_cv_scores(model, f"{model_name}-{i}", loss_fn, optimizer, dataset, device, k_fold, num_epochs, seed, tensorboard_dir)
+        all_cv_scores[i] = {
+            "config" : config,
+            "train_scores" : train_scores,
+            "val_scores" : val_scores,
+            "avg_val_score" : val_scores.mean()
+        }
+        print(f"Train Scores: {train_scores}\nValidation Scores: {val_scores}\nAvg Validation Score: {val_scores.mean()}\n======================")
+    torch.save(all_cv_scores, f"data_frames/cv_results_{timestamp}.dict")
+    max_cv_index = max(all_cv_scores.keys(), key=lambda i: all_cv_scores[i]["avg_val_score"])
+    best_config = all_cv_scores[max_cv_index]["config"]
+    best_score = all_cv_scores[max_cv_index]["avg_val_score"]
+    print(f"Best Config: {best_config}\nBest Score: {best_score}")
+    return all_cv_scores
+
+
+
+
+def get_cv_scores(model, model_name, loss_fn, optimizer, dataset, device, k_fold=5, num_epochs=5, seed=42, tensorboard_dir="/runs/"):
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+
+    train_score = pd.Series()
+    val_score = pd.Series()
+    
+    total_size = len(dataset)
+    fraction = 1/k_fold
+    seg = int(total_size * fraction)
+    t = tqdm(range(k_fold))
+    for i in t:
+        t.set_description(f"Training Fold {i + 1}", refresh=True)
+        trll = 0
+        trlr = i * seg
+        vall = trlr
+        valr = i * seg + seg
+        trrl = valr
+        trrr = total_size
+
+        train_left_indices = list(range(trll,trlr))
+        train_right_indices = list(range(trrl,trrr))
+        
+        train_indices = train_left_indices + train_right_indices
+        val_indices = list(range(vall,valr))
+        
+        train_set = dataset.get_subset(train_indices)
+        val_set = dataset.get_subset(val_indices)
+
+        train_loader = torch.utils.data.DataLoader(train_set, batch_size=32,
+                                          shuffle=True, num_workers=8)
+        val_loader = torch.utils.data.DataLoader(val_set, batch_size=32,
+                                          shuffle=True, num_workers=8)
+
+        train_accuracies, _ = fit(model, model_name, optimizer, loss_fn, train_loader, None, num_epochs, -1, True, tensorboard_dir, 1000, 1000, device)
+        train_score.at[i] = train_accuracies[-1]
+        val_acc = validation_loop(model, loss_fn, val_loader, device)
+        val_score.at[i] = val_acc
+    
+    return train_score, val_score
+
+
 
 def train_loop(model, opt, loss_fn, data_loader: DataLoader, device):
     model.train()
@@ -145,31 +219,40 @@ def validation_loop(model, loss_fn, data_loader: DataLoader, device):
     return np.nanmin([total_loss / len(data_loader), 1.0e8])
 
 
-def fit(model, model_name, opt, loss_fn, train_data_loader: DataLoader, val_data_loader: DataLoader, epochs, early_stopping_patience, tensorboard, print_every, save_every, device):
+def fit(model, model_name, opt, loss_fn, train_data_loader: DataLoader, val_data_loader: DataLoader, epochs, early_stopping_patience, tensorboard, tensorboard_dir, print_every, save_every, device):
     # Used for plotting later on
     train_loss_list, validation_loss_list = [], []
-    writer = SummaryWriter(log_dir=f'/runs/{model_name}')
+    writer = SummaryWriter(log_dir=os.path.join(tensorboard_dir, model_name))
     using_early_stopping = True
     if early_stopping_patience <= 0:
         using_early_stopping = False
 
     if using_early_stopping:
         early_stopping = EarlyStopping(patience=early_stopping_patience, path=EARLY_STOPPING_PATH, verbose=True)
+
+    perform_validation = val_data_loader is not None and len(val_data_loader) > 0
+
+    if not perform_validation and early_stopping:
+        raise RuntimeError("Cannot provide empty validation loader and request early stopping")
+
     print("Training model")
     for epoch in range(epochs):
         train_loss = train_loop(model, opt, loss_fn, train_data_loader, device)
         train_loss_list += [train_loss]
-        validation_loss = validation_loop(model, loss_fn, val_data_loader, device)
-        validation_loss_list += [validation_loss]
+        if perform_validation:
+            validation_loss = validation_loop(model, loss_fn, val_data_loader, device)
+            validation_loss_list += [validation_loss]
 
         if tensorboard:
             writer.add_scalar("Train Loss", train_loss, epoch)
-            writer.add_scalar("Validation Loss", validation_loss, epoch)
+            if perform_validation:
+                writer.add_scalar("Validation Loss", validation_loss, epoch)
 
         if epoch % print_every == print_every - 1:
             print("-"*25, f"Epoch {epoch + 1}","-"*25)
             print(f"Training loss: {train_loss:.4f}")
-            print(f"Validation loss: {validation_loss:.4f}")
+            if perform_validation:
+                print(f"Validation loss: {validation_loss:.4f}")
             print()
 
         if epoch % save_every == save_every - 1:
@@ -187,12 +270,12 @@ def fit(model, model_name, opt, loss_fn, train_data_loader: DataLoader, val_data
     return train_loss_list, validation_loss_list
 
 
-def train_model(model, model_name, trainloader, testloader, opt, loss_fn, epochs, device, tensorboard=True, early_stopping_patience=-1, print_every=10, save_every=10):
+def train_model(model, model_name, trainloader, testloader, opt, loss_fn, epochs, device, tensorboard=True, tensorboard_dir="/runs/", early_stopping_patience=-1, print_every=10, save_every=10):
     """
     Early stopping patience = -1 corresponds to no early stopping.
     """
     model = model.to(device)
-    fit(model=model, opt=opt, loss_fn=loss_fn, train_data_loader=trainloader, val_data_loader=testloader, epochs=epochs, model_name=model_name, print_every=print_every, save_every=save_every, device=device, early_stopping_patience=early_stopping_patience, tensorboard=tensorboard)
+    fit(model=model, opt=opt, loss_fn=loss_fn, train_data_loader=trainloader, val_data_loader=testloader, epochs=epochs, model_name=model_name, print_every=print_every, save_every=save_every, device=device, early_stopping_patience=early_stopping_patience, tensorboard=tensorboard, tensorboard_dir=tensorboard_dir)
     print('Finished Training')
     if not os.path.exists(os.path.join(_CURRENT, 'models')):
         os.mkdir(os.path.join(_CURRENT, 'models'))
