@@ -1,7 +1,7 @@
 import torch
 from torch import nn, Tensor
 from typing import Optional, Any, Union, Callable
-from parksim.trajectory_predict.vanilla_transformer.network import SmallRegularizedCNN
+from parksim.trajectory_predict.vanilla_transformer.network import SmallRegularizedCNN, FeatureExtractorCNN
 
 import math
 import copy
@@ -38,6 +38,131 @@ class PositionalEncoding(nn.Module):
         """
         x = x + self.pe[:x.size(0)]
         return self.dropout(x)
+
+class TransformerEncoder(nn.Module):
+    r"""TransformerEncoder is a stack of N encoder layers
+
+    Args:
+        encoder_layer: an instance of the TransformerEncoderLayer() class (required).
+        num_layers: the number of sub-encoder-layers in the encoder (required).
+        norm: the layer normalization component (optional).
+
+    Examples::
+        >>> encoder_layer = nn.TransformerEncoderLayer(d_model=512, nhead=8)
+        >>> transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers=6)
+        >>> src = torch.rand(10, 32, 512)
+        >>> out = transformer_encoder(src)
+    """
+    __constants__ = ['norm']
+
+    def __init__(self, encoder_layer, num_layers, norm=None):
+        super(TransformerEncoder, self).__init__()
+        self.layers = _get_clones(encoder_layer, num_layers)
+        self.num_layers = num_layers
+        self.norm = norm
+
+    def forward(self, src: Tensor, img_features: Tensor, mask: Optional[Tensor] = None, src_key_padding_mask: Optional[Tensor] = None) -> Tensor:
+        r"""Pass the input through the encoder layers in turn.
+
+        Args:
+            src: the sequence to the encoder (required).
+            mask: the mask for the src sequence (optional).
+            src_key_padding_mask: the mask for the src keys per batch (optional).
+
+        Shape:
+            see the docs in Transformer class.
+        """
+        output = src
+
+        for mod in self.layers:
+            output = mod(output, img_features, src_mask=mask, src_key_padding_mask=src_key_padding_mask)
+
+        if self.norm is not None:
+            output = self.norm(output)
+
+        return output
+
+class TransformerEncoderLayer(nn.Module):
+    __constants__ = ['batch_first', 'norm_first']
+
+    def __init__(self, d_model: int, nhead: int, dim_feedforward: int = 2048, dropout: float = 0.1,
+                 activation: Union[str, Callable[[Tensor], Tensor]] = F.relu,
+                 layer_norm_eps: float = 1e-5, batch_first: bool = True, norm_first: bool = False,
+                 device=None, dtype=None) -> None:
+        factory_kwargs = {'device': device, 'dtype': dtype}
+        super(TransformerEncoderLayer, self).__init__()
+        self.self_attn = nn.MultiheadAttention(d_model, nhead, dropout=dropout, batch_first=batch_first,
+                                            **factory_kwargs)
+        self.img_multihead_attn = nn.MultiheadAttention(d_model, nhead, dropout=dropout, batch_first=batch_first,
+                                            **factory_kwargs)
+        # Implementation of Feedforward model
+        self.linear1 = nn.Linear(d_model, dim_feedforward, **factory_kwargs)
+        self.dropout = nn.Dropout(dropout)
+        self.linear2 = nn.Linear(dim_feedforward, d_model, **factory_kwargs)
+
+        self.norm_first = norm_first
+        self.norm1 = nn.LayerNorm(d_model, eps=layer_norm_eps, **factory_kwargs)
+        self.norm2 = nn.LayerNorm(d_model, eps=layer_norm_eps, **factory_kwargs)
+        self.norm3 = nn.LayerNorm(d_model, eps=layer_norm_eps, **factory_kwargs)
+        self.dropout1 = nn.Dropout(dropout)
+        self.dropout2 = nn.Dropout(dropout)
+        self.dropout3 = nn.Dropout(dropout)
+        self.activation = activation
+
+    def __setstate__(self, state):
+        if 'activation' not in state:
+            state['activation'] = F.relu
+        super(TransformerEncoderLayer, self).__setstate__(state)
+
+    def forward(self, src: Tensor, img_features: Tensor, src_mask: Optional[Tensor] = None, src_key_padding_mask: Optional[Tensor] = None) -> Tensor:
+        r"""Pass the input through the encoder layer.
+
+        Args:
+            src: the sequence to the encoder layer (required).
+            src_mask: the mask for the src sequence (optional).
+            src_key_padding_mask: the mask for the src keys per batch (optional).
+
+        Shape:
+            see the docs in Transformer class.
+        """
+
+        # see Fig. 1 of https://arxiv.org/pdf/2002.04745v1.pdf
+
+        x = src
+        if self.norm_first:
+            x = x + self._sa_block(self.norm1(x), src_mask, src_key_padding_mask)
+            x = x + self._image_feature_mha_block(self.norm3(x), img_features)
+            x = x + self._ff_block(self.norm2(x))
+        else:
+            x = self.norm1(x + self._sa_block(x, src_mask, src_key_padding_mask))
+            x = self.norm3(x + self._image_feature_mha_block(x, img_features))
+            x = self.norm2(x + self._ff_block(x))
+
+        return x
+
+
+    # self-attention block
+    def _sa_block(self, x: Tensor,
+                  attn_mask: Optional[Tensor], key_padding_mask: Optional[Tensor]) -> Tensor:
+        x = self.self_attn(x, x, x,
+                           attn_mask=attn_mask,
+                           key_padding_mask=key_padding_mask,
+                           need_weights=False)[0]
+        return self.dropout1(x)
+
+    # feed forward block
+    def _ff_block(self, x: Tensor) -> Tensor:
+        x = self.linear2(self.dropout(self.activation(self.linear1(x))))
+        return self.dropout2(x)
+
+    # intent attention block
+    def _image_feature_mha_block(self, x: Tensor, img_features: Tensor,
+                          attn_mask: Optional[Tensor]=None, key_padding_mask: Optional[Tensor]=None) -> Tensor:
+        x = self.img_multihead_attn(x, img_features, img_features,
+                                attn_mask=attn_mask,
+                                key_padding_mask=key_padding_mask,
+                                need_weights=False)[0]
+        return self.dropout3(x)
 
 
 class TransformerDecoderLayer(nn.Module):
@@ -315,23 +440,44 @@ class TransformerWithIntent(nn.Module):
         return out
 
 class TrajectoryPredictorWithIntent(nn.Module):
-    def __init__(self, input_shape, dropout=0.2, num_heads=8, num_encoder_layers=6, num_decoder_layers=6, dim_model=16, d_hidden=16, num_conv_layers=2):
+    def __init__(self, config: dict, input_shape=(3, 100, 100)):
         super().__init__()
 
+        self.input_shape=input_shape
+        self.dropout=config.get('dropout', 0.1)
+        self.num_heads=config.get('num_heads', 8)
+        self.num_encoder_layers=config.get('num_encoder_layers', 6)
+        self.num_decoder_layers=config.get('num_decoder_layers', 6)
+        self.dim_model=config.get('dim_model', 64)
+        self.d_hidden=config.get('d_hidden', 256)
+        self.num_conv_layers=config.get('num_conv_layers', 2)
+
         self.cnn = SmallRegularizedCNN(input_shape=input_shape,
-            output_size=CNN_OUTPUT_FEATURE_SIZE, dropout_p=dropout, num_conv_layers=num_conv_layers)
+            output_size=CNN_OUTPUT_FEATURE_SIZE, dropout_p=self.dropout, num_conv_layers=self.num_conv_layers)
 
         self.intentff = IntentFF(
-            d_in=INTENT_FEATURE_SIZE, d_out=dim_model, d_hidden=d_hidden, dropout_p=dropout)
+            d_in=INTENT_FEATURE_SIZE, d_out=self.dim_model, d_hidden=self.d_hidden, dropout_p=self.dropout)
 
         self.transformer = TransformerWithIntent(
-                                dim_model=dim_model, 
+                                dim_model=self.dim_model, 
                                 dim_feature_in=CNN_OUTPUT_FEATURE_SIZE + TRAJECTORY_FEATURE_SIZE, 
                                 dim_feature_out=TRAJECTORY_FEATURE_SIZE, 
-                                num_heads=num_heads,
-                                num_encoder_layers=num_encoder_layers,
-                                num_decoder_layers=num_decoder_layers,
-                                dropout_p=dropout)
+                                num_heads=self.num_heads,
+                                num_encoder_layers=self.num_encoder_layers,
+                                num_decoder_layers=self.num_decoder_layers,
+                                dropout_p=self.dropout)
+
+    def get_config(self):
+        config={
+            'dim_model' : self.dim_model,
+            'num_heads' : self.num_heads,
+            'dropout' : self.dropout,
+            'num_encoder_layers' : self.num_encoder_layers,
+            'num_decoder_layers' : self.num_decoder_layers,
+            'd_hidden' : self.d_hidden,
+            'num_conv_layers' : self.num_conv_layers,
+        }
+        return config
 
     def forward(self, images_past, trajectories_past, intent, trajectories_future=None, tgt_mask=None):
         """
@@ -395,6 +541,158 @@ class TrajectoryPredictorWithIntent(nn.Module):
         output = self.transformer(
             src=concatenated_features, intent=intent, tgt=trajectories_future, tgt_mask=tgt_mask)  # (N, T_2, 3)
         return output
+
+class TransformerWithIntentV2(TransformerWithIntent):
+    def __init__(
+        self,
+        dim_model,
+        dim_feature_in,
+        dim_feature_out,
+        num_heads,
+        num_encoder_layers,
+        num_decoder_layers,
+        dropout_p,
+    ):
+        super().__init__(
+            dim_model,
+            dim_feature_in,
+            dim_feature_out,
+            num_heads,
+            num_encoder_layers,
+            num_decoder_layers,
+            dropout_p,
+        )
+        # Transformer Encoder
+        encoder_layer = TransformerEncoderLayer(
+                            d_model=dim_model, 
+                            nhead=num_heads, 
+                            dropout=dropout_p,
+                            batch_first=True)
+        encoder_norm = nn.LayerNorm(dim_model)
+        self.encoder = TransformerEncoder(
+            encoder_layer, num_encoder_layers, encoder_norm)
+
+
+    def forward(self, src, intent, img_features, tgt, tgt_mask=None, src_pad_mask=None, tgt_pad_mask=None):
+        # Src size must be (batch_size, src sequence length)
+        # Tgt size must be (batch_size, tgt sequence length)
+        # Embedding + positional encoding - Out size = (batch_size, sequence length, dim_model)
+
+        src = self.positional_encoder(src)
+        tgt = self.positional_encoder(tgt)
+
+        # Transformer blocks - Out size = (sequence length, batch_size, num_tokens)
+        memory = self.encoder(src, img_features, 
+                              src_key_padding_mask=src_pad_mask)
+        transformer_out = self.decoder(tgt=tgt, memory=memory, intent=intent, 
+                                        tgt_mask=tgt_mask,
+                                        tgt_key_padding_mask=tgt_pad_mask)
+
+        return transformer_out
+
+class TrajectoryPredictorWithIntentV2(nn.Module):
+    def __init__(self, config: dict, input_shape=(3, 100, 100)):
+        super().__init__()
+
+        self.input_shape=input_shape
+        self.dropout=config.get('dropout', 0.1)
+        self.num_heads=config.get('num_heads', 8)
+        self.num_encoder_layers=config.get('num_encoder_layers', 6)
+        self.num_decoder_layers=config.get('num_decoder_layers', 6)
+        self.dim_model=config.get('dim_model', 64)
+        self.d_hidden=config.get('d_hidden', 256)
+        self.num_conv_layers=config.get('num_conv_layers', 2)
+        self.num_cnn_features=config.get('num_cnn_features', 256)
+
+
+
+        self.cnn = FeatureExtractorCNN(input_shape=input_shape,
+            num_output_features=self.num_cnn_features, dropout_p=self.dropout, num_conv_layers=self.num_conv_layers)
+
+        self.intentff = IntentFF(
+            d_in=INTENT_FEATURE_SIZE, d_out=self.dim_model, d_hidden=self.d_hidden, dropout_p=self.dropout)
+
+        self.image_feat_proj = nn.Linear(self.cnn.feature_size, self.dim_model)
+
+        self.transformer = TransformerWithIntentV2(
+                                dim_model=self.dim_model, 
+                                dim_feature_in=TRAJECTORY_FEATURE_SIZE, 
+                                dim_feature_out=TRAJECTORY_FEATURE_SIZE, 
+                                num_heads=self.num_heads,
+                                num_encoder_layers=self.num_encoder_layers,
+                                num_decoder_layers=self.num_decoder_layers,
+                                dropout_p=self.dropout)
+
+        self.proj_enc_in = nn.Linear(TRAJECTORY_FEATURE_SIZE, self.dim_model, bias=False)
+
+    def get_config(self):
+        config={
+            'dim_model' : self.dim_model,
+            'num_heads' : self.num_heads,
+            'dropout' : self.dropout,
+            'num_encoder_layers' : self.num_encoder_layers,
+            'num_decoder_layers' : self.num_decoder_layers,
+            'd_hidden' : self.d_hidden,
+            'num_cnn_features' : self.num_cnn_features,
+            'num_conv_layers' : self.num_conv_layers,
+        }
+        return config
+
+
+    def forward(self, image, trajectories_past, intent, trajectories_future=None, tgt_mask=None):
+        """
+        image:                  (N, 3, 100, 100)
+                                N = batch size
+                                Image corresponding to the instance centric view
+                                for the current timestep. Agent should be at the
+                                center of the image.
+                                
+        trajectories_past:      (N, T_1, 3)     
+                                N = batch size
+                                T_1 = timesteps of history
+                                3 = (x_coord, y_coord, heading)
+
+        intent:                 (N, 1, 2)
+                                N = batch size
+                                2 = (x_coord, y_coord)
+
+        trajectories_future:    (N, T_2, 3)     
+                                N = batch size
+                                T_2 = timesteps of future
+                                3 = (x_coord, y_coord, heading)
+                                If value is None (such as during test time),
+                                then the model will enter predict mode, and
+                                generate output appropriately.
+
+
+        Returns - 
+
+        output:                 (N, T_2, 3)
+                                N = batch size
+                                T_2 = timesteps of output
+                                3 = (x_coord, y_coord, heading)
+
+        """
+
+        if trajectories_future is None:
+            print(
+                "Test time evaluation not yet implemented. Please pass in trajectories_future to train model.")
+            return None
+
+        N, T_1, _ = trajectories_past.shape
+        _, T_2, _ = trajectories_future.shape
+
+        img_features = self.image_feat_proj(self.cnn(image))
+
+        intent = self.intentff(intent)
+
+        # trajectory_history: (N, 10, 3)
+
+        # transformer_input: (N, 10, 18)
+
+        output = self.transformer(
+            src=self.proj_enc_in(trajectories_past), intent=intent, img_features=img_features, tgt=self.proj_enc_in(trajectories_future), tgt_mask=tgt_mask)  # (N, T_2, 3)
+        return F.linear(output, self.proj_enc_in.weight.T)
 
 
 def _get_clones(module, N):

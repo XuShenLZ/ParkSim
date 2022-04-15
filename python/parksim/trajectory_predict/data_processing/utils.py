@@ -13,12 +13,12 @@ class TransformerDataProcessor(object):
     """
     Extract features for IRL
     """
-    def __init__(self, ds: 'Dataset'):
+    def __init__(self, ds: 'Dataset', tail_size=1):
         """
         Instantiate the feature extractor
         """
         self.ds = ds
-        self.vis = SemanticVisualizer(ds, steps=1)
+        self.vis = SemanticVisualizer(ds, steps=tail_size)
 
         self.spot_detector = LocalDetector(spot_color_rgb=(0, 255, 0))
         self.agent_detector = LocalDetector(spot_color_rgb=(255, 255, 0))

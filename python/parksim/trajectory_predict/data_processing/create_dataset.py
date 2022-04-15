@@ -68,11 +68,11 @@ def get_data_for_instance(inst_token: str, inst_idx: int, frame_token: str, extr
     
     return np.array(image_history), np.array(trajectory_history), np.array(trajectory_future), local_intent_pose
 
-def create_dataset(path, name):
+def create_dataset(path, name, tail_size):
     ds = Dataset()
     ds.load(path + name)
 
-    extractor = TransformerDataProcessor(ds=ds)
+    extractor = TransformerDataProcessor(ds=ds, tail_size=tail_size)
 
     scene = ds.get('scene', ds.list_scenes()[0])
     all_frames = []
@@ -125,20 +125,23 @@ if __name__ == '__main__':
     parser.add_argument('-f', '--future', default=10, help='number of future observations to store as trajectory output', type=int)
     parser.add_argument('-i', '--img_size', default=100,
                         help='size of the image feature', type=int)
+    parser.add_argument('-t', '--tail_size', default=10,
+                        help='length of the image tail history', type=int)
     args = parser.parse_args()
     stride = args.stride
     path = args.path
     history = args.before
     future = args.future
     img_size = args.img_size
+    tail_size = args.tail_size
 
-    names = ["DJI_" + str(i).zfill(4) for i in range(15, 26)]
+    names = ["DJI_" + str(i).zfill(4) for i in range(7, 26)]
     #names = ["DJI_0007", "DJI_0008", "DJI_0009", "DJI_0010", "DJI_0011", "DJI_0012", "DJI_0013", "DJI_0014"]
     #names = ["DJI_0012"]
     for name in names:
         try:
             print(f"Current: {name}")
-            create_dataset(path, name)
+            create_dataset(path, name, tail_size)
         except Exception as err:
             print(name, "failed")
             print(err)

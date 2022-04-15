@@ -13,9 +13,9 @@ import multiprocessing
 import os
 
 from dlp.dataset import Dataset
-from parksim.trajectory_predict.intent_transformer.network import TrajectoryPredictorWithIntent
+from parksim.trajectory_predict.intent_transformer.network import TrajectoryPredictorWithIntent, TrajectoryPredictorWithIntentV2
 from parksim.trajectory_predict.data_processing.utils import TransformerDataProcessor
-from parksim.trajectory_predict.intent_transformer.train import build_trajectory_predict_from_config
+from parksim.trajectory_predict.intent_transformer.model_utils import load_model
 
 
 def generate_data_for_agent_in_range(extractor: TransformerDataProcessor, instances, start_idx: int, stride: int=10, history: int=10, future: int=10, img_size: int=100):
@@ -46,7 +46,7 @@ def generate_data_for_agent_in_range(extractor: TransformerDataProcessor, instan
 
         local_intent_coords = np.dot(rot, global_intent_pose[:2]-curr_pose[:2])
         local_intent_pose = np.array(
-            [local_intent_coords[0], local_intent_coords[1], global_intent_pose[2]-curr_pose[2]])
+            [local_intent_coords[0], local_intent_coords[1]])
         local_intent_pose = np.expand_dims(local_intent_pose, axis=0)
 
         image_history = []
@@ -92,6 +92,7 @@ def generate_data_for_agent(agent_token: str, extractor: TransformerDataProcesso
     instances = ds.get_agent_instances(agent_token)
     start_idx = history * stride
     end_idx = len(instances) - 1 - future * stride
+
     num_points = (end_idx - start_idx) // stride
     all_inputs = tqdm([(extractor, instances, start_idx + i * stride, stride, history, future, img_size) for i in range(num_points)])
     with multiprocessing.Pool() as pool:
@@ -103,9 +104,7 @@ def generate_data_for_agent(agent_token: str, extractor: TransformerDataProcesso
 
 def draw_prediction(idx):
     sensing_limit = 20
-
     inst_centric_view = list_inst_centric_view[idx]
-
     img_size = inst_centric_view.size[0] / 2
 
     traj_hist_pixel = X[idx, :, :2].detach().cpu().numpy() / \
@@ -121,7 +120,6 @@ def draw_prediction(idx):
         sensing_limit*img_size + img_size
 
     plt.cla()
-
     plt.imshow(inst_centric_view)
     plt.plot(traj_hist_pixel[:, 0], traj_hist_pixel[:, 1], 'k', linewidth=2)
     plt.plot(traj_future_pixel[:, 0], traj_future_pixel[:,
@@ -132,22 +130,28 @@ def draw_prediction(idx):
     plt.axis('off')
 
 
+def build_trajectory_predict_from_config(config, input_shape=(3, 100, 100)):
+    model = TrajectoryPredictorWithIntentV2(config)
+    return model
+
 if __name__ == '__main__':    
 
     DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
     if DEVICE == "cuda":
         torch.cuda.empty_cache()
 
-    MODEL_PATH = r"C:\Users\rlaca\Documents\GitHub\ParkSim\python\parksim\trajectory_predict\intent_transformer\models\Intent_Transformer_04-07-2022_14-53-56.pth"
+    MODEL_PATH = r"C:\Users\rlaca\Documents\GitHub\ParkSim\python\parksim\trajectory_predict\intent_transformer\models\checkpoint.pt"
     config={
-            'dim_model' : 52,
-            'num_heads' : 4,
-            'dropout' : 0.1426,
-            'num_encoder_layers' : 16,
-            'num_decoder_layers' : 8,
+            'dim_model' : 64,
+            'num_heads' : 8,
+            'dropout' : 0.0,
+            'num_encoder_layers' : 4,
+            'num_decoder_layers' : 4,
             'd_hidden' : 256,
             'num_conv_layers' : 2,
-            'lr' : 0.0025
+            'opt' : 'SGD',
+            'lr' : 1e-4,
+            'loss' : 'L1'
     }
 
     model = build_trajectory_predict_from_config(config)
@@ -167,6 +171,8 @@ if __name__ == '__main__':
     agents = scene['agents']
     for agent_idx in range(len(agents)):
         print(agent_idx)
+        if agent_idx == 0:
+            continue
         try:
             agent_token = agents[agent_idx]
             agent_type = ds.get('agent', agent_token)['type']
@@ -174,22 +180,26 @@ if __name__ == '__main__':
                 continue
             img, X, intent, y_in, y_label, list_inst_centric_view = generate_data_for_agent(agent_token=agent_token, extractor=extractor)
             with torch.no_grad():
-                img = img.to(DEVICE).float()
+                img = img[:, -1].to(DEVICE).float()
                 X = X.to(DEVICE).float()
                 intent = intent.to(DEVICE).float()
                 y_in = y_in.to(DEVICE).float()
                 y_label = y_label.to(DEVICE).float()
                 tgt_mask = model.transformer.generate_square_subsequent_mask(
                     y_in.shape[1]).to(DEVICE).float()
-
                 pred = model(img, X, intent, y_in, tgt_mask=tgt_mask)
+                del img
+                print(pred.shape)
             
             fig = plt.figure()
 
             anim = animation.FuncAnimation(fig, draw_prediction, frames=pred.shape[0],
                                         interval=0.1)
-            fname = f'C:\\Users\\rlaca\\Documents\\GitHub\\ParkSim\\python\\parksim\\trajectory_predict\\intent_transformer\\animations\\animation-dji-{dji_num}-agent-{agent_idx}.mp4'
+            fname = f'C:\\Users\\rlaca\\Documents\\GitHub\\ParkSim\\python\\parksim\\trajectory_predict\\intent_transformer\\animations\\animation-dji-{dji_num}-agent-{agent_idx}-v2.mp4'
             video_writer = animation.FFMpegWriter(fps=10)
             anim.save(fname, writer=video_writer)
-        except:
+        except Exception as inst:
+            print(type(inst))    # the exception instance
+            print(inst.args)     # arguments stored in .args
+            print(inst)  
             continue
