@@ -123,8 +123,8 @@ if __name__ == '__main__':
     model_type = TrajectoryPredictorWithIntentV2
     model_name = "IntentTransformerV2"
     lr = 1e-3
-    optimizer = torch.optim.SGD(lr=lr, momentum=0.9)
+    optimizer_generator = lambda model: torch.optim.AdamW(model.parameters(), lr=lr)
     loss_fn = nn.L1Loss()
     dataset_nums = ["../data/DJI_" + str(i).zfill(4) for i in range(12, 13)]
     dataset = IntentTransformerV2Dataset(dataset_nums, img_transform=transforms.ToTensor())
-    cross_validation(model_type=model_type, configs_to_test=configs_to_test, model_name=model_name, loss_fn=loss_fn, optimizer=optimizer, dataset=dataset, device=device)
+    cross_validation(model_type=model_type, configs_to_test=configs_to_test, model_name=model_name, loss_fn=loss_fn, optimizer_generator=optimizer_generator, dataset=dataset, device=device)

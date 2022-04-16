@@ -108,7 +108,7 @@ def load_model(path, manual_class=None):
     base_model.load_state_dict(model_state)
     return base_model
 
-def cross_validation(model_type, configs_to_test, model_name, loss_fn, optimizer, dataset, device, k_fold=5, num_epochs=5, seed=42):
+def cross_validation(model_type, configs_to_test, model_name, loss_fn, optimizer_generator, dataset, device, k_fold=5, num_epochs=5, seed=42):
 
     print(f"Starting {k_fold}-Fold Cross Validation With {num_epochs}-Epochs Per Model\n")
     all_cv_scores = {}
@@ -118,7 +118,7 @@ def cross_validation(model_type, configs_to_test, model_name, loss_fn, optimizer
     for i, config in t:
         t.set_description(f"Cross Validating Model Config {i}", refresh=True)
         model = model_type(config)
-        optimizer.state = collections.defaultdict(dict) # Reset state
+        optimizer = optimizer_generator(model)
         train_scores, val_scores = get_cv_scores(model, f"{model_name}-{i}", loss_fn, optimizer, dataset, device, k_fold, num_epochs, seed, tensorboard_dir)
         all_cv_scores[i] = {
             "config" : config,

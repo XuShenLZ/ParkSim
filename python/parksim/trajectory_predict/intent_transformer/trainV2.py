@@ -35,7 +35,7 @@ if __name__ == '__main__':
     train_data, val_data = split_dataset(dataset, 0.95)
     trainloader = DataLoader(train_data, batch_size=64, shuffle=True)
     testloader = DataLoader(val_data, batch_size=64, shuffle=True)
-    opt = torch.optim.SGD(model.parameters(), lr=5e-4, momentum=0.9)
+    opt = torch.optim.AdamW(model.parameters(), lr=config['lr'], )
     loss_fn = nn.L1Loss()
 
     epochs = 1
