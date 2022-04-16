@@ -86,7 +86,7 @@ class TransformerEncoderLayer(nn.Module):
     __constants__ = ['batch_first', 'norm_first']
 
     def __init__(self, d_model: int, nhead: int, dim_feedforward: int = 2048, dropout: float = 0.1,
-                 activation: Union[str, Callable[[Tensor], Tensor]] = F.relu,
+                 activation: Union[str, Callable[[Tensor], Tensor]] = F.gelu,
                  layer_norm_eps: float = 1e-5, batch_first: bool = True, norm_first: bool = False,
                  device=None, dtype=None) -> None:
         factory_kwargs = {'device': device, 'dtype': dtype}
@@ -171,7 +171,7 @@ class TransformerDecoderLayer(nn.Module):
                 nhead: int, 
                 dim_feedforward: int = 2048, 
                 dropout: float = 0.1,
-                activation: Union[str, Callable[[Tensor], Tensor]] = F.relu,
+                activation: Union[str, Callable[[Tensor], Tensor]] = F.gelu,
                 layer_norm_eps: float = 1e-5, 
                 batch_first: bool = False, norm_first: bool = False,
                 device=None, dtype=None) -> None:
