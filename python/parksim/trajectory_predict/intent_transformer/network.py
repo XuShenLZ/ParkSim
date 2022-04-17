@@ -799,8 +799,7 @@ class TrajectoryPredictorWithIntentV3(nn.Module):
             'num_encoder_layers' : self.num_encoder_layers,
             'num_decoder_layers' : self.num_decoder_layers,
             'd_hidden' : self.d_hidden,
-            'num_cnn_features' : self.num_cnn_features,
-            'num_conv_layers' : self.num_conv_layers,
+            'patch_size' : self.patch_size,
         }
         return config
 
