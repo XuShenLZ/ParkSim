@@ -68,6 +68,9 @@ class Subset(object):
             return self.dataset[self.indices[idx]]
         else:
             return self.dataset[[self.indices[i] for i in idx]]
+    
+    def __len__(self):
+        return len(self.indices)
 
 class IntentTransformerDataset(BaseTransformerDataset):
     """
@@ -154,7 +157,7 @@ class IntentTransformerV2Dataset(BaseTransformerDataset):
                 np.load(os.path.join(_CURRENT, f'{file_path}_intent_pose.npy'), mmap_mode='r'))
         self.start_indices = [0] * len(file_paths)
         self.data_count = 0
-        for index, memmap in enumerate(self.all_images):
+        for index, memmap in enumerate(all_images):
             self.start_indices[index] = self.data_count
             self.data_count += memmap.shape[0]
         self.items = list(zip(all_images, all_trajectory_history, all_intent_pose, all_trajectory_future))

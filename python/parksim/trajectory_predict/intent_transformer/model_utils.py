@@ -6,6 +6,7 @@ from typing import Sequence, Optional, Generator, TypeVar
 import matplotlib.pyplot as plt
 import os
 import collections
+import einops
 from datetime import datetime
 import numpy as np
 import pandas as pd
@@ -108,6 +109,26 @@ def load_model(path, manual_class=None):
     base_model.load_state_dict(model_state)
     return base_model
 
+def tune_learning_rate(model_generator, optimizer_generator, loss_fn, learning_rates, dataloader, device, num_epochs=3, seed=42):
+    best_lr_score = float('inf')
+    best_lr = None
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    t = tqdm(learning_rates)
+    for lr in learning_rates:
+        print(f"Current LR: {lr}")
+        t.set_description(f"Learning Rate {lr}, Current Train Epoch: {-1}, Current Train Loss: {'inf'}", refresh=True)
+        per_epoch_fn = lambda epoch: lambda loss: t.set_description(f"Learning Rate {lr}, Current Train Epoch: {epoch}, Current Train Loss: {loss}", refresh=True)
+        model = model_generator()
+        optimizer = optimizer_generator(model, lr)
+        train_losses, _ = fit(model, "temp", optimizer, loss_fn, dataloader, None, num_epochs, -1, False, "/runs/", 1000, 1000, device, per_epoch_fn)
+        final_train_loss = train_losses[-1]
+        if final_train_loss < best_lr_score:
+            best_lr_score = final_train_loss
+            best_lr = lr
+    print(f"BEST LR: {best_lr}")
+    return best_lr
+
 def cross_validation(model_type, configs_to_test, model_name, loss_fn, optimizer_generator, dataset, device, k_fold=5, num_epochs=5, seed=42):
 
     print(f"Starting {k_fold}-Fold Cross Validation With {num_epochs}-Epochs Per Model\n")
@@ -115,31 +136,32 @@ def cross_validation(model_type, configs_to_test, model_name, loss_fn, optimizer
     timestamp = datetime.now().strftime("%m-%d-%Y_%H-%M-%S")
     tensorboard_dir = f"/runs/cross_val_{timestamp}/"
     t = tqdm(enumerate(configs_to_test))
+    loss_fn = loss_fn.to(device)
     for i, config in t:
         t.set_description(f"Cross Validating Model Config {i}", refresh=True)
-        model = model_type(config)
-        optimizer = optimizer_generator(model)
-        train_scores, val_scores = get_cv_scores(model, f"{model_name}-{i}", loss_fn, optimizer, dataset, device, k_fold, num_epochs, seed, tensorboard_dir)
+        model_generator = lambda: model_type(config).to(device)
+        train_scores, val_scores = get_cv_scores(model_generator, f"{model_name}-{i}", loss_fn, optimizer_generator, dataset, device, k_fold, num_epochs, seed, tensorboard_dir)
         all_cv_scores[i] = {
             "config" : config,
             "train_scores" : train_scores,
             "val_scores" : val_scores,
             "avg_val_score" : val_scores.mean()
         }
-        print(f"Train Scores: {train_scores}\nValidation Scores: {val_scores}\nAvg Validation Score: {val_scores.mean()}\n======================")
+        print(f"Train Scores: \n{train_scores}\nValidation Scores: \n{val_scores}\nAvg Validation Score: \n{val_scores.mean()}\n======================")
     torch.save(all_cv_scores, f"data_frames/cv_results_{timestamp}.dict")
-    max_cv_index = max(all_cv_scores.keys(), key=lambda i: all_cv_scores[i]["avg_val_score"])
+    max_cv_index = min(all_cv_scores.keys(), key=lambda i: all_cv_scores[i]["avg_val_score"])
     best_config = all_cv_scores[max_cv_index]["config"]
     best_score = all_cv_scores[max_cv_index]["avg_val_score"]
-    print(f"Best Config: {best_config}\nBest Score: {best_score}")
+    print(f"Best Config: \n{best_config}\nBest Val Loss: \n{best_score}")
     return all_cv_scores
 
 
 
 
-def get_cv_scores(model, model_name, loss_fn, optimizer, dataset, device, k_fold=5, num_epochs=5, seed=42, tensorboard_dir="/runs/"):
+def get_cv_scores(model_generator, model_name, loss_fn, optimizer_generator, dataset, device, k_fold=5, num_epochs=5, seed=42, tensorboard_dir="/runs/"):
     np.random.seed(seed)
     torch.manual_seed(seed)
+    batch_size = 256
 
     train_score = pd.Series()
     val_score = pd.Series()
@@ -148,8 +170,9 @@ def get_cv_scores(model, model_name, loss_fn, optimizer, dataset, device, k_fold
     fraction = 1/k_fold
     seg = int(total_size * fraction)
     t = tqdm(range(k_fold))
+    
     for i in t:
-        t.set_description(f"Training Fold {i + 1}", refresh=True)
+        t.set_description(f"Training Fold {i + 1}, Current Train Epoch: 0, Current Train Loss:", refresh=True)
         trll = 0
         trlr = i * seg
         vall = trlr
@@ -166,23 +189,65 @@ def get_cv_scores(model, model_name, loss_fn, optimizer, dataset, device, k_fold
         train_set = dataset.get_subset(train_indices)
         val_set = dataset.get_subset(val_indices)
 
-        train_loader = torch.utils.data.DataLoader(train_set, batch_size=32,
-                                          shuffle=True, num_workers=8)
-        val_loader = torch.utils.data.DataLoader(val_set, batch_size=32,
-                                          shuffle=True, num_workers=8)
-
-        train_accuracies, _ = fit(model, model_name, optimizer, loss_fn, train_loader, None, num_epochs, -1, True, tensorboard_dir, 1000, 1000, device)
+        train_loader = torch.utils.data.DataLoader(train_set, batch_size=batch_size,
+                                            shuffle=True, num_workers=16, pin_memory=True)
+        val_loader = torch.utils.data.DataLoader(val_set, batch_size=batch_size,
+                                            shuffle=True, num_workers=16, pin_memory=True)
+        model = model_generator()
+        optimizer = optimizer_generator(model)
+        per_epoch_fn = lambda epoch: lambda loss: t.set_description(f"Training Fold { + 1}, Current Train Epoch: {epoch}, Current Train Loss: {loss}", refresh=True)
+        train_accuracies, _ = fit(model, model_name, optimizer, loss_fn, train_loader, None, num_epochs, -1, True, tensorboard_dir, 1000, 1000, device, per_epoch_fn)
         train_score.at[i] = train_accuracies[-1]
         val_acc = validation_loop(model, loss_fn, val_loader, device)
         val_score.at[i] = val_acc
     
     return train_score, val_score
 
+def get_best_val_score(cv_result):
+    max_cv_index = min(cv_result.keys(), key=lambda i: cv_result[i]["avg_val_score"])
+    best_score = cv_result[max_cv_index]["avg_val_score"]
+    return best_score
+
+def get_cv_results(result_path):
+    results = torch.load(result_path)
+    max_cv_index = min(results.keys(), key=lambda i: results[i]["avg_val_score"])
+    best_config = results[max_cv_index]["config"]
+    best_score = results[max_cv_index]["avg_val_score"]
+    print(f"Best Config: \n{best_config}\nBest Val Loss: \n{best_score}")
+    return results
+
+def patchify(images, patch_size=4):
+    """Splitting images into patches.
+    Args:
+        images: Input tensor with size (batch, channels, height, width)
+            We can assume that image is square where height == width.
+    Returns:
+        A batch of image patches with size (
+          batch, (height / patch_size) * (width / patch_size), 
+        channels * patch_size * patch_size)
+    """
+    # BEGIN YOUR CODE
+    return einops.rearrange(images, 'b c (h p1) (w p2) -> b (h w) (c p1 p2)', p1=patch_size, p2=patch_size)
+    # END YOUR CODE
+
+def unpatchify(patches, patch_size=4):
+    """Combining patches into images.
+    Args:
+        patches: Input tensor with size (
+        batch, (height / patch_size) * (width / patch_size), 
+        channels * patch_size * patch_size)
+    Returns:
+        A batch of images with size (batch, channels, height, width)
+    """
+    # BEGIN YOUR CODE
+    return einops.rearrange(patches, 'b (h w) (c p1 p2) -> b c (h p1) (w p2)', p1=patch_size, p2=patch_size, h=int(np.sqrt(patches.shape[1])))
+    # END YOUR CODE
 
 
-def train_loop(model, opt, loss_fn, data_loader: DataLoader, device):
+
+def train_loop(model, opt, loss_fn, data_loader: DataLoader, device, per_batch_fn=lambda loss: loss):
     model.train()
-    total_loss = 0
+    losses = []
     for batch in data_loader:
         #X, y = get_random_batch(points.copy(), 4, 6, batch_size)
         #X, y = torch.tensor(X).float().to(device), torch.tensor(y).float().to(device)
@@ -193,23 +258,25 @@ def train_loop(model, opt, loss_fn, data_loader: DataLoader, device):
         opt.zero_grad()
         loss.backward()
         opt.step()
-        total_loss += loss.detach().item()
-    return total_loss / len(data_loader)
+        losses.append(loss.detach().item())
+        current_avg = sum(losses) / len(losses)
+        per_batch_fn(current_avg)
+    return sum(losses) / len(losses)
 
 def validation_loop(model, loss_fn, data_loader: DataLoader, device):
     model.eval()
-    total_loss = 0
+    losses = []
     with torch.no_grad():
         for batch in data_loader:
             model_input = data_loader.dataset.process_batch_training(batch, device)
             label = data_loader.dataset.process_batch_label(batch, device)
             pred = model(*model_input)
             loss = loss_fn(pred, label)
-            total_loss += loss.detach().item()
-    return np.nanmin([total_loss / len(data_loader), 1.0e8])
+            losses.append(loss.detach().item())
+    return sum(losses) / len(losses)
 
 
-def fit(model, model_name, opt, loss_fn, train_data_loader: DataLoader, val_data_loader: DataLoader, epochs, early_stopping_patience, tensorboard, tensorboard_dir, print_every, save_every, device):
+def fit(model, model_name, opt, loss_fn, train_data_loader: DataLoader, val_data_loader: DataLoader, epochs, early_stopping_patience, tensorboard, tensorboard_dir, print_every, save_every, device, per_epoch_fn=lambda epoch: lambda loss: loss):
     # Used for plotting later on
     train_loss_list, validation_loss_list = [], []
     writer = SummaryWriter(log_dir=os.path.join(tensorboard_dir, model_name))
@@ -222,12 +289,12 @@ def fit(model, model_name, opt, loss_fn, train_data_loader: DataLoader, val_data
 
     perform_validation = val_data_loader is not None and len(val_data_loader) > 0
 
-    if not perform_validation and early_stopping:
+    if not perform_validation and using_early_stopping:
         raise RuntimeError("Cannot provide empty validation loader and request early stopping")
 
-    print("Training model")
+    #print("Training model\n")
     for epoch in range(epochs):
-        train_loss = train_loop(model, opt, loss_fn, train_data_loader, device)
+        train_loss = train_loop(model, opt, loss_fn, train_data_loader, device, per_batch_fn=per_epoch_fn(epoch + 1))
         train_loss_list += [train_loss]
         if perform_validation:
             validation_loss = validation_loop(model, loss_fn, val_data_loader, device)
