@@ -132,6 +132,13 @@ for agent_token in agent_data:
         json_dict["task_profile"] = json_dict["task_profile"][:-2]
         json_dict["task_profile"][-1]["target_coords"] = final_loc
 
+    # handling for agents 21 and 23, which are spawned in spots that make crashes inevitable
+    if agent_token == 23: # turn 60 degrees CCW, shift left
+        json_dict["init_heading"] -= np.pi / 3
+        json_dict["init_coords"][0] -= 3
+    if agent_token == 21: # shift down
+        json_dict["init_coords"][1] -= 4
+
     final_json[agent_token] = json_dict
 
 #     if agent_token == 5:
