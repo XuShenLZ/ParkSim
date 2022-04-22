@@ -2,6 +2,7 @@ from torch.utils.data import Dataset
 import numpy as np
 import torch
 import os
+from bisect import bisect
 from abc import ABC, abstractmethod
 from parksim.trajectory_predict.intent_transformer.model_utils import generate_square_subsequent_mask
 _CURRENT = os.path.abspath(os.path.dirname(__file__))
@@ -27,7 +28,7 @@ class BaseTransformerDataset(ABC, Dataset, object):
         self.items = []
 
     def get_subset(self, idx):
-        return Subset(self.copy_dataset())[idx]
+        return Subset(self.copy_dataset(), idx)
 
 
     def __len__(self):
@@ -56,16 +57,20 @@ class BaseTransformerDataset(ABC, Dataset, object):
         ...
 
 class Subset(object):
-    def __init__(self, dataset):
+    def __init__(self, dataset, indices):
         self.dataset = dataset
+        self.indices = indices
+        self.process_batch_training = dataset.process_batch_training
+        self.process_batch_label = dataset.process_batch_label
 
     def __getitem__(self, idx):
-        subset = self.dataset
         if isinstance(idx, (int, slice)):  
-            subset.items = subset.items[idx]
+            return self.dataset[self.indices[idx]]
         else:
-            subset.items = [subset.items[k] for k in idx]
-        return subset
+            return self.dataset[[self.indices[i] for i in idx]]
+    
+    def __len__(self):
+        return len(self.indices)
 
 class IntentTransformerDataset(BaseTransformerDataset):
     """
@@ -145,16 +150,17 @@ class IntentTransformerV2Dataset(BaseTransformerDataset):
         all_intent_pose = []
         all_trajectory_future = []
         for file_path in file_paths:
-            all_images.append(np.load(os.path.join(_CURRENT, f'{file_path}_image_history.npy'))[:,-1])
-            all_trajectory_history.append(torch.from_numpy(np.load(os.path.join(_CURRENT, f'{file_path}_trajectory_history.npy'))))
-            all_trajectory_future.append(torch.from_numpy(np.load(os.path.join(_CURRENT, f'{file_path}_trajectory_future.npy'))))
-            all_intent_pose.append(torch.from_numpy(
-                np.load(os.path.join(_CURRENT, f'{file_path}_intent_pose.npy'))))
-        images: np.ndarray = np.concatenate(all_images)
-        trajectory_history = torch.cat(all_trajectory_history)
-        intent_pose = torch.cat(all_intent_pose)
-        trajectory_future = torch.cat(all_trajectory_future)
-        self.items = list(zip(images, trajectory_history, intent_pose, trajectory_future))
+            all_images.append(np.load(os.path.join(_CURRENT, f'{file_path}_image_history.npy'), mmap_mode='r')[:,-1])
+            all_trajectory_history.append(np.load(os.path.join(_CURRENT, f'{file_path}_trajectory_history.npy'), mmap_mode='r'))
+            all_trajectory_future.append(np.load(os.path.join(_CURRENT, f'{file_path}_trajectory_future.npy'), mmap_mode='r'))
+            all_intent_pose.append(
+                np.load(os.path.join(_CURRENT, f'{file_path}_intent_pose.npy'), mmap_mode='r'))
+        self.start_indices = [0] * len(file_paths)
+        self.data_count = 0
+        for index, memmap in enumerate(all_images):
+            self.start_indices[index] = self.data_count
+            self.data_count += memmap.shape[0]
+        self.items = list(zip(all_images, all_trajectory_history, all_intent_pose, all_trajectory_future))
         self.img_transform = img_transform
 
 
@@ -163,13 +169,18 @@ class IntentTransformerV2Dataset(BaseTransformerDataset):
         """
         Overwrite the get length method for dataset
         """
-        return len(self.items)
+        return self.data_count
 
     def __getitem__(self, idx):
         """
         Overwrite the get item method for dataset
         """
-        image, trajectory_history, intent_pose, trajectory_future = self.items[idx]
+        memmap_index = bisect(self.start_indices, idx) - 1
+        index_in_memmap = idx - self.start_indices[memmap_index]
+        image, trajectory_history, intent_pose, trajectory_future = tuple(map(lambda x: x[index_in_memmap], self.items[memmap_index]))
+        trajectory_history = torch.from_numpy(trajectory_history)
+        trajectory_future = torch.from_numpy(trajectory_future)
+        intent_pose = torch.from_numpy(intent_pose)
         if self.img_transform:
             image = self.img_transform(image)
         trajectory_future_tgt = torch.cat((trajectory_history[-1:], trajectory_future[:-1])) # This is the tgt that is passed into the decoder, and trajectory_future is the label
