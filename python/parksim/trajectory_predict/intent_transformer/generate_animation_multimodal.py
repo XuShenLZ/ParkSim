@@ -4,14 +4,14 @@ import torch
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 
+import os
 from dlp.dataset import Dataset
 
 from parksim.intent_predict.cnnV2.data_processing.utils import CNNDataProcessor
 from parksim.trajectory_predict.data_processing.utils import TransformerDataProcessor
 
 from parksim.intent_predict.cnnV2.network import SmallRegularizedCNN
-from parksim.trajectory_predict.intent_transformer.network import TrajectoryPredictorWithIntent
-from parksim.trajectory_predict.intent_transformer.train import build_trajectory_predict_from_config
+from parksim.trajectory_predict.intent_transformer.network import TrajectoryPredictorWithIntentV4
 
 from parksim.trajectory_predict.intent_transformer.multimodal_prediction import predict_multimodal
 
@@ -73,10 +73,10 @@ print('loading dataset')
 ds = Dataset()
 
 home_path = str(Path.home())
-ds.load(home_path + '/dlp-dataset/data/DJI_0012')
+ds.load(os.path.join(home_path, 'Documents/GitHub/dlp-dataset/data/DJI_0012'))
 
 # %%
-MODEL_PATH = 'models/Trajectory-Intent-4-10-22.pth'
+MODEL_PATH = r"C:\Users\rlaca\Documents\GitHub\ParkSim\python\parksim\trajectory_predict\intent_transformer\checkpoints\v4\lightning_logs\version_8\checkpoints\epoch=101-val_loss=0.0320.ckpt"
 # MODEL_PATH = 'models/checkpoint.pt'
 config = {
     'dim_model': 52,
@@ -91,11 +91,8 @@ config = {
     'loss': 'L1'
 }
 
-traj_model = build_trajectory_predict_from_config(config=config)
-model_state = torch.load(MODEL_PATH, map_location=DEVICE)
-traj_model.load_state_dict(model_state)
+traj_model = TrajectoryPredictorWithIntentV4.load_from_checkpoint(MODEL_PATH)
 traj_model.eval().to(DEVICE)
-
 INTENT_MODEL_PATH = 'models/smallRegularizedCNN_L0.068_01-29-2022_19-50-35.pth'
 intent_model = SmallRegularizedCNN()
 model_state = torch.load(INTENT_MODEL_PATH, map_location=DEVICE)

@@ -13,9 +13,9 @@ import multiprocessing
 import os
 
 from dlp.dataset import Dataset
-from parksim.trajectory_predict.intent_transformer.network import TrajectoryPredictorWithIntent, TrajectoryPredictorWithIntentV2
+from parksim.trajectory_predict.intent_transformer.network import TrajectoryPredictorWithIntent, TrajectoryPredictorWithIntentV4
 from parksim.trajectory_predict.data_processing.utils import TransformerDataProcessor
-from parksim.trajectory_predict.intent_transformer.model_utils import load_model
+from parksim.trajectory_predict.intent_transformer.model_utils import generate_square_subsequent_mask
 
 
 def generate_data_for_agent_in_range(extractor: TransformerDataProcessor, instances, start_idx: int, stride: int=10, history: int=10, future: int=10, img_size: int=100):
@@ -95,7 +95,7 @@ def generate_data_for_agent(agent_token: str, extractor: TransformerDataProcesso
 
     num_points = (end_idx - start_idx) // stride
     all_inputs = tqdm([(extractor, instances, start_idx + i * stride, stride, history, future, img_size) for i in range(num_points)])
-    with multiprocessing.Pool() as pool:
+    with multiprocessing.Pool(4) as pool:
         result = pool.starmap(generate_data_for_agent_in_range, all_inputs)
     get_ith_index_list = lambda i : lambda t : t[i]
     map_lam = lambda fun, lst : list(map(fun, lst))
@@ -129,34 +129,14 @@ def draw_prediction(idx):
     plt.plot(intent_pixel[0], intent_pixel[1], '*', color='C1', markersize=8)
     plt.axis('off')
 
-
-def build_trajectory_predict_from_config(config, input_shape=(3, 100, 100)):
-    model = TrajectoryPredictorWithIntentV2(config)
-    return model
-
 if __name__ == '__main__':    
 
     DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
     if DEVICE == "cuda":
         torch.cuda.empty_cache()
 
-    MODEL_PATH = r"C:\Users\rlaca\Documents\GitHub\ParkSim\python\parksim\trajectory_predict\intent_transformer\models\checkpoint.pt"
-    config={
-            'dim_model' : 64,
-            'num_heads' : 8,
-            'dropout' : 0.0,
-            'num_encoder_layers' : 4,
-            'num_decoder_layers' : 4,
-            'd_hidden' : 256,
-            'num_conv_layers' : 2,
-            'opt' : 'SGD',
-            'lr' : 1e-4,
-            'loss' : 'L1'
-    }
-
-    model = build_trajectory_predict_from_config(config)
-    model_state = torch.load(MODEL_PATH, map_location=DEVICE)
-    model.load_state_dict(model_state)
+    MODEL_PATH = r"C:\Users\rlaca\Documents\GitHub\ParkSim\python\parksim\trajectory_predict\intent_transformer\checkpoints\v4\lightning_logs\version_8\checkpoints\epoch=101-val_loss=0.0320.ckpt"
+    model = TrajectoryPredictorWithIntentV4.load_from_checkpoint(MODEL_PATH)
     model.eval().to(DEVICE)
 
     dji_num = '0012'
@@ -185,11 +165,10 @@ if __name__ == '__main__':
                 intent = intent.to(DEVICE).float()
                 y_in = y_in.to(DEVICE).float()
                 y_label = y_label.to(DEVICE).float()
-                tgt_mask = model.transformer.generate_square_subsequent_mask(
+                tgt_mask = generate_square_subsequent_mask(
                     y_in.shape[1]).to(DEVICE).float()
                 pred = model(img, X, intent, y_in, tgt_mask=tgt_mask)
                 del img
-                print(pred.shape)
             
             fig = plt.figure()
 

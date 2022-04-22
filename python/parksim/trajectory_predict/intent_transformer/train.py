@@ -1,15 +1,13 @@
 import torch
-from torchvision import transforms
-from torch.utils.data import DataLoader
-from torch import nn
 import os
-from parksim.trajectory_predict.intent_transformer.model_utils import train_model, split_dataset, load_model
-from parksim.trajectory_predict.intent_transformer.dataset import IntentTransformerDataset
-from parksim.trajectory_predict.intent_transformer.network import TrajectoryPredictorWithIntent
+from parksim.trajectory_predict.intent_transformer.dataset import IntentTransformerDataModule
+from parksim.trajectory_predict.intent_transformer.networks.TrajectoryPredictorWithDecoderIntentCrossAttention import TrajectoryPredictorWithDecoderIntentCrossAttention
+import pytorch_lightning as pl
+from pytorch_lightning.callbacks.early_stopping import EarlyStopping
+from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
+os.environ["PL_TORCH_DISTRIBUTED_BACKEND"] = "gloo"
 
-_CURRENT = os.path.abspath(os.path.dirname(__file__))
-
-RUN_LABEL = 'v1'
+MODEL_LABEL = 'TrajectoryPredictorWithDecoderIntentCrossAttention'
 if __name__ == '__main__':
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(device)
@@ -22,26 +20,21 @@ if __name__ == '__main__':
             'num_decoder_layers' : 6,
             'd_hidden' : 256,
             'num_conv_layers' : 3,
-            'opt' : 'SGD',
-            'lr' : 5e-4,
-            'loss' : 'L1'
     }
 
-    model = TrajectoryPredictorWithIntent(config)
-    #model = load_model(model_path, manual_class=TrajectoryPredictorWithIntent)
+    model = TrajectoryPredictorWithDecoderIntentCrossAttention(config)
+    custom_dataset_nums = ["../data/DJI_" + str(i).zfill(4) for i in range(7, 13)]
+    datamodule = IntentTransformerDataModule(all_dataset_nums=custom_dataset_nums)
+    patience = 25
+    earlystopping = EarlyStopping(monitor="val_loss", mode="min", patience=patience)
+    checkpoint_callback = ModelCheckpoint(
+        monitor="val_loss",
+        filename="{epoch}-{val_loss:.4f}",
+        save_top_k=3,
+        mode="min",
+        every_n_epochs=1
+    )
 
-    dataset_nums = ["../data/DJI_" + str(i).zfill(4) for i in range(8, 9)]
-    dataset = IntentTransformerDataset(dataset_nums, img_transform=transforms.ToTensor())
-    train_data, val_data = split_dataset(dataset, 0.90)
-    trainloader = DataLoader(train_data, batch_size=32, shuffle=True)
-    testloader = DataLoader(val_data, batch_size=32, shuffle=True)
-
-    opt = torch.optim.SGD(model.parameters(), lr=5e-4, momentum=0.9)
-    loss_fn = nn.L1Loss()
-
-    epochs = 1
-    print_every=10
-    save_every=50
-    patience = 50
-
-    train_model(model, "Intent-Transformer-V1", trainloader, testloader, opt, loss_fn, epochs, device, tensorboard=True, early_stopping_patience=patience, print_every=print_every, save_every=save_every)
+    callbacks=[earlystopping, checkpoint_callback]
+    trainer = pl.Trainer(accelerator="gpu", devices=1, default_root_dir=f"checkpoints/{MODEL_LABEL}/", callbacks=callbacks, track_grad_norm=2)
+    trainer.fit(model=model, datamodule=datamodule)

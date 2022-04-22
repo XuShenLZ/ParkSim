@@ -20,32 +20,14 @@ EARLY_STOPPING_PATH = 'models/checkpoint.pt'
 _CURRENT = os.path.abspath(os.path.dirname(__file__))
 T = TypeVar('T')
 
-def random_split(dataset: Dataset[T], lengths: Sequence[int],
-                 generator: Optional[Generator] = default_generator):
-    r"""
-    Randomly split a dataset into non-overlapping new datasets of given lengths.
-    Optionally fix the generator for reproducible results, e.g.:
 
-    >>> random_split(range(10), [3, 7], generator=torch.Generator().manual_seed(42))
 
-    Args:
-        dataset (Dataset): Dataset to be split
-        lengths (sequence): lengths of splits to be produced
-        generator (Generator): Generator used for the random permutation.
-    """
-    # Cannot verify that dataset is Sized
-    if sum(lengths) != len(dataset):
-        raise ValueError("Sum of input lengths does not equal the length of the input dataset!")
-
-    indices = randperm(sum(lengths), generator=generator).tolist()
-    final = [dataset.get_subset(indices[offset - length : offset]) for offset, length in zip(_accumulate(lengths), lengths)]
-    return final
-
-def split_dataset(dataset, proportion_train, split_seed=42):
-    train_size = int(proportion_train * len(dataset))
-    val_size = len(dataset) - train_size
-    validation_dataset, train_dataset = random_split(dataset, [val_size, train_size], generator=torch.Generator().manual_seed(split_seed))
-    return train_dataset, validation_dataset
+def split_dataset(dataset, proportions, split_seed=42):
+    train_size, val_size = map(int, [prop * len(dataset) for prop in proportions[:2]])
+    test_size = len(dataset) - train_size - val_size
+    torch.manual_seed(split_seed)
+    train_dataset, validation_dataset, testing_dataset = torch.utils.data.random_split(dataset, [train_size, val_size, test_size], generator=torch.Generator().manual_seed(split_seed))
+    return train_dataset, validation_dataset, testing_dataset
 
 def generate_square_subsequent_mask(size) -> torch.tensor:
     # Generates a squeare matrix where the each row allows one word more to be seen

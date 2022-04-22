@@ -13,6 +13,7 @@ from dlp.visualizer import SemanticVisualizer
 from parksim.trajectory_predict.intent_transformer.network import  TrajectoryPredictorWithIntent
 from parksim.trajectory_predict.data_processing.utils import TransformerDataProcessor
 from parksim.trajectory_predict.intent_transformer.dataset import IntentTransformerDataset
+from parksim.trajectory_predict.intent_transformer.model_utils import generate_square_subsequent_mask
 
 from parksim.intent_predict.cnnV2.network import SmallRegularizedCNN
 from parksim.intent_predict.cnnV2.utils import CNNDataset
@@ -78,8 +79,10 @@ def predict_multimodal(ds, traj_model: TrajectoryPredictorWithIntent, intent_mod
    predict the top-n most likely trajectories"""
 
     DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-
-    intent_predictor = Predictor(use_cuda=False)
+    if DEVICE == "cuda":
+        intent_predictor = Predictor(use_cuda=True)
+    else:
+        intent_predictor = Predictor(use_cuda=False)
     intent_predictor.waypoints = intent_extractor.waypoints_graph
     intent_predictor.model = intent_model
     instance = ds.get('instance', inst_token)
@@ -108,7 +111,7 @@ def predict_multimodal(ds, traj_model: TrajectoryPredictorWithIntent, intent_mod
         img, X, y_label, intent = get_data_for_instance(inst_token, inst_idx, instance['frame_token'], traj_extractor, ds, global_intent_pose)
         
         with torch.no_grad():
-            img = img.to(DEVICE).float()
+            img = img.to(DEVICE).float()[:, -1]
             X = X.to(DEVICE).float()
             intent = intent.to(DEVICE).float()
             y_label = y_label.to(DEVICE).float()
@@ -116,12 +119,12 @@ def predict_multimodal(ds, traj_model: TrajectoryPredictorWithIntent, intent_mod
             START_TOKEN = X[:, -1][:, None, :]
 
             delta_state = -1 * X[:, -2][:, None, :]
-            y_input = torch.concat([START_TOKEN, delta_state], dim=1)
+            y_input = torch.concat([START_TOKEN, delta_state], dim=1).to(DEVICE)
             # y_input = START_TOKEN
 
             for i in range(output_sequence_length):
                 # Get source mask
-                tgt_mask = traj_model.transformer.generate_square_subsequent_mask(
+                tgt_mask = generate_square_subsequent_mask(
                     y_input.size(1)).to(DEVICE).float()
                 pred = traj_model(img, X,
                                   intent, y_input, tgt_mask)

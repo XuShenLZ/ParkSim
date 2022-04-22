@@ -2,30 +2,36 @@ import torch
 from torchvision import transforms
 from torch import nn
 from torch.utils.data import DataLoader
-from parksim.trajectory_predict.intent_transformer.dataset import IntentTransformerV2Dataset
-from parksim.trajectory_predict.intent_transformer.network import TrajectoryPredictorWithIntentV2, TrajectoryPredictorWithIntentV3
-from parksim.trajectory_predict.intent_transformer.model_utils import tune_learning_rate
-
-config = {
-            'dim_model' : 64,
-            'num_heads' : 8,
-            'dropout' : 0.1,
-            'num_encoder_layers' : 6,
-            'num_decoder_layers' : 6,
+from parksim.trajectory_predict.intent_transformer.dataset import IntentTransformerDataModule, IntentTransformerV2DataModule
+from parksim.trajectory_predict.intent_transformer.model_utils import split_dataset
+from parksim.trajectory_predict.intent_transformer.networks.TrajectoryPredictorWithDecoderIntentCrossAttention import TrajectoryPredictorWithDecoderIntentCrossAttention
+from parksim.trajectory_predict.intent_transformer.networks.TrajectoryPredictorVisionTransformer import TrajectoryPredictorVisionTransformer
+import pytorch_lightning as pl
+import matplotlib.pyplot as plt
+from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
+EMPTY_CONFIG = {}
+config={
+            'dim_model' : 52,
+            'num_heads' : 4,
+            'dropout' : 0.1426,
+            'num_encoder_layers' : 16,
+            'num_decoder_layers' : 8,
             'd_hidden' : 256,
-            'patch_size' : 20,
-        }
-
-learning_rates_to_test = [1e-6, 5e-6, 1e-5, 5e-5, 1e-4]
+            'num_conv_layers' : 2,
+    }
 
 if __name__ == '__main__':
+    callbacks =  [ModelCheckpoint(dirpath="checkpoints/lr/", monitor=None, mode='min', every_n_train_steps=0, every_n_epochs=1, train_time_interval=None, save_on_train_epoch_end=None)]
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(device)
-    dataset_nums = ["../data/DJI_" + str(i).zfill(4) for i in range(12, 13)]
-    dataset = IntentTransformerV2Dataset(dataset_nums, img_transform=transforms.ToTensor())
-    dataloader = DataLoader(dataset, batch_size=256, shuffle=True, pin_memory=True, num_workers=12)
-    model_generator = lambda : TrajectoryPredictorWithIntentV3(config).to(device)
-    optimizer_generator = lambda model, lr: torch.optim.AdamW(model.parameters(), lr=lr)
-    loss_fn = nn.L1Loss().to(device)
-    best_lr = tune_learning_rate(model_generator, optimizer_generator, loss_fn, learning_rates_to_test, dataloader, device, num_epochs=5)
-    print(f"BEST LR: {best_lr}")
+    trainer = pl.Trainer(accelerator='gpu', devices=1, callbacks=callbacks, default_root_dir="checkpoints/lr/")
+    #model = TrajectoryPredictorWithDecoderIntentCrossAttention(config)
+    model = TrajectoryPredictorWithDecoderIntentCrossAttention(EMPTY_CONFIG)
+    #model = TrajectoryPredictorVisionTransformer(EMPTY_CONFIG)
+    custom_dataset_nums = ["../data/DJI_" + str(i).zfill(4) for i in range(7, 26)]
+    dataset = IntentTransformerDataModule()
+    lr_finder = trainer.tuner.lr_find(model, datamodule=dataset)
+    fig = lr_finder.plot(suggest=True)
+    plt.show()
+    new_lr = lr_finder.suggestion()
+    print(new_lr)
