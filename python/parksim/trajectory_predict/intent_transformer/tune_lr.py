@@ -26,10 +26,10 @@ if __name__ == '__main__':
     print(device)
     trainer = pl.Trainer(accelerator='gpu', devices=1, callbacks=callbacks, default_root_dir="checkpoints/lr/")
     #model = TrajectoryPredictorWithDecoderIntentCrossAttention(config)
-    model = TrajectoryPredictorWithDecoderIntentCrossAttention(EMPTY_CONFIG)
-    #model = TrajectoryPredictorVisionTransformer(EMPTY_CONFIG)
+    #model = TrajectoryPredictorWithDecoderIntentCrossAttention(EMPTY_CONFIG)
+    model = TrajectoryPredictorVisionTransformer(EMPTY_CONFIG)
     custom_dataset_nums = ["../data/DJI_" + str(i).zfill(4) for i in range(7, 26)]
-    dataset = IntentTransformerDataModule()
+    dataset = IntentTransformerV2DataModule()
     lr_finder = trainer.tuner.lr_find(model, datamodule=dataset)
     fig = lr_finder.plot(suggest=True)
     plt.show()
