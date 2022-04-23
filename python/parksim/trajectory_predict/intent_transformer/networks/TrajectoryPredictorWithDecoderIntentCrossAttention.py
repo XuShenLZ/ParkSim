@@ -75,18 +75,28 @@ class CNNTransformerWithDecoderIntentCrossAttention(nn.Module):
 
         return out
 
+DEFAULT_CONFIG = {
+    'dropout' : 0.1,
+    'num_heads' : 8,
+    'num_encoder_layers' : 6,
+    'num_decoder_layers' : 6,
+    'dim_model' : 64,
+    'd_hidden' : 256,
+    'num_conv_layers' : 2,
+}
+
 class TrajectoryPredictorWithDecoderIntentCrossAttention(BaseTransformerLightningModule):
-    def __init__(self, config: dict, input_shape=(3, 100, 100)):
+    def __init__(self, config: dict=DEFAULT_CONFIG, input_shape=(3, 100, 100)):
         super().__init__(config, input_shape)
         self.lr = 1e-3
         self.input_shape=input_shape
-        self.dropout=config.get('dropout', 0.1)
-        self.num_heads=config.get('num_heads', 8)
-        self.num_encoder_layers=config.get('num_encoder_layers', 6)
-        self.num_decoder_layers=config.get('num_decoder_layers', 6)
-        self.dim_model=config.get('dim_model', 64)
-        self.d_hidden=config.get('d_hidden', 256)
-        self.num_conv_layers=config.get('num_conv_layers', 2)
+        self.dropout=config['dropout']
+        self.num_heads=config['num_heads']
+        self.num_encoder_layers=config['num_encoder_layers']
+        self.num_decoder_layers=config['num_decoder_layers']
+        self.dim_model=config['dim_model']
+        self.d_hidden=config['d_hidden']
+        self.num_conv_layers=config['num_conv_layers']
 
         self.cnn = SmallRegularizedCNN(input_shape=input_shape,
             output_size=CNN_OUTPUT_FEATURE_SIZE, dropout_p=self.dropout, num_conv_layers=self.num_conv_layers)
