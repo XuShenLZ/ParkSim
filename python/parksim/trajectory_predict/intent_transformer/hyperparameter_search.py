@@ -13,12 +13,12 @@ os.environ["PL_TORCH_DISTRIBUTED_BACKEND"] = "gloo"
 def train_model(config, model_class):
     # Create your PTL model.
     model = model_class(config)
-    datamodule = IntentTransformerV2DataModule(batch_size=512, num_workers=6)
+    datamodule = IntentTransformerV2DataModule(batch_size=256, num_workers=6)
 
     # Create the Tune Reporting Callback
     metrics = {"train_loss": "train_total_loss", "val_loss": "val_total_loss"}
     callbacks = [TuneReportCallback(metrics, on="validation_end")]
-    trainer = pl.Trainer(accelerator="gpu", devices=1, default_root_dir=f"checkpoints/hp_tuning/{model.__class__.__name__}/")
+    trainer = pl.Trainer(accelerator="gpu", devices=1, default_root_dir=f"checkpoints/hp_tuning/{model.__class__.__name__}/", auto_lr_find=True)
     trainer.tune(model, datamodule=datamodule)
     optimal_lr = model.lr
     print(f"Optimal LR: {optimal_lr}")
