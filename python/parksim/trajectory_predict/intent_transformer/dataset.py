@@ -12,8 +12,9 @@ _CURRENT = os.path.abspath(os.path.dirname(__file__))
 ALL_DATA_NUMS = ["../data/DJI_" + str(i).zfill(4) for i in range(1, 31)]
 
 class IntentTransformerDataModule(pl.LightningDataModule):
-    def __init__(self):
+    def __init__(self, num_workers=8):
         super().__init__()
+        self.num_workers=num_workers
 
     def prepare_data(self):
         # called only on 1 GPU
@@ -25,13 +26,13 @@ class IntentTransformerDataModule(pl.LightningDataModule):
         pass
 
     def train_dataloader(self):
-        return DataLoader(self.train, batch_size=256, num_workers=8, pin_memory=True, shuffle=True, persistent_workers=True)
+        return DataLoader(self.train, batch_size=256, num_workers=self.num_workers, pin_memory=True, shuffle=True, persistent_workers=True)
 
     def val_dataloader(self):
-        return DataLoader(self.val, batch_size=256, num_workers=8, pin_memory=True, shuffle=False, persistent_workers=True)
+        return DataLoader(self.val, batch_size=256, num_workers=self.num_workers, pin_memory=True, shuffle=False, persistent_workers=True)
 
     def test_dataloader(self):
-        return DataLoader(self.test, batch_size=256, num_workers=8, pin_memory=True, shuffle=False)
+        return DataLoader(self.test, batch_size=256, num_workers=self.num_workers, pin_memory=True, shuffle=False)
 
 
 class IntentTransformerDataset(Dataset):
@@ -91,8 +92,10 @@ class IntentTransformerDataset(Dataset):
         return img_history_tensor.float(), trajectory_history.float(), intent_pose[:,:-1].float(), trajectory_future_tgt.float(), trajectory_future.float()
 
 class IntentTransformerV2DataModule(pl.LightningDataModule):
-    def __init__(self):
+    def __init__(self, num_workers=8, batch_size=512):
         super().__init__()
+        self.num_workers = num_workers
+        self.batch_size=batch_size
 
     def prepare_data(self):
         # called only on 1 GPU
@@ -109,13 +112,13 @@ class IntentTransformerV2DataModule(pl.LightningDataModule):
         pass
 
     def train_dataloader(self):
-        return DataLoader(self.train, batch_size=1024, num_workers=12, pin_memory=True, shuffle=True, persistent_workers=True)
+        return DataLoader(self.train, batch_size=self.batch_size, num_workers=self.num_workers, pin_memory=True, shuffle=True, persistent_workers=True)
 
     def val_dataloader(self):
-        return DataLoader(self.val, batch_size=1024, num_workers=12, pin_memory=True, shuffle=False, persistent_workers=True)
+        return DataLoader(self.val, batch_size=self.batch_size, num_workers=self.num_workers, pin_memory=True, shuffle=False, persistent_workers=True)
 
     def test_dataloader(self):
-        return DataLoader(self.test, batch_size=1024, num_workers=12, pin_memory=True, shuffle=False)
+        return DataLoader(self.test, batch_size=self.batch_size, num_workers=self.num_workers, pin_memory=True, shuffle=False)
 
 class IntentTransformerV2Dataset(IntentTransformerDataset):
     """
