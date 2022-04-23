@@ -8,24 +8,36 @@ CNN_OUTPUT_FEATURE_SIZE = 16
 TRAJECTORY_FEATURE_SIZE = 3
 INTENT_FEATURE_SIZE = 2
 
+DEFAULT_CONFIG = {
+    'dropout' : 0.1,
+    'num_heads' : 8,
+    'num_img_encoder_layers' : 2,
+    'num_trajectory_encoder_layers' : 2,
+    'num_decoder_layers' : 2,
+    'dim_model' : 256,
+    'd_hidden' : 256,
+    'patch_size' : 20,
+}
+
 class TrajectoryPredictorVisionTransformer(BaseTransformerLightningModule):
     """
     Uses a transformer to encode patches of image features, and then uses these
     encodings in the TransformerWithEncoderImageCrossAttention module
     for cross attention. 
     """
-    def __init__(self, config: dict, input_shape=(3, 100, 100)):
+    def __init__(self, config: dict=DEFAULT_CONFIG, input_shape=(3, 100, 100)):
         super().__init__(config, input_shape)
         self.lr = .0005
         self.input_shape=input_shape
-        self.dropout=config.get('dropout', 0.1)
-        self.num_heads=config.get('num_heads', 8)
-        self.num_img_encoder_layers=config.get('num_img_encoder_layers', 4)
-        self.num_trajectory_encoder_layers=config.get('num_trajectory_encoder_layers', 2)
-        self.num_decoder_layers=config.get('num_decoder_layers', 4)
-        self.dim_model=config.get('dim_model', 256)
-        self.d_hidden=config.get('d_hidden', 256)
-        self.patch_size=config.get('patch_size', 20)
+        self.dropout=config['dropout']
+        self.num_heads=config['num_heads']
+        self.num_img_encoder_layers=config['num_img_encoder_layers']
+        self.num_trajectory_encoder_layers=config['num_trajectory_encoder_layers']
+        self.num_decoder_layers=config['num_decoder_layers']
+        self.dim_model=config['dim_model']
+        self.d_hidden=config['d_hidden']
+        self.patch_size=config['patch_size']
+
         assert input_shape[1] == input_shape[2], "Image must be square"
         assert input_shape[1] % self.patch_size == 0, "Patch size must divide the dimensions of the image."
 

@@ -54,7 +54,7 @@ if __name__ == '__main__':
         metric="val_loss",
         mode="min",
         config=config,
-        num_samples=50,
+        num_samples=num_samples,
         scheduler=scheduler,
         max_concurrent_trials=1,
         progress_reporter=reporter)

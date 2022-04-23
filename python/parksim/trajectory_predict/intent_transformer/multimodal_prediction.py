@@ -10,7 +10,7 @@ from typing import Tuple
 from dlp.dataset import Dataset
 from dlp.visualizer import SemanticVisualizer
 
-from parksim.trajectory_predict.intent_transformer.network import  TrajectoryPredictorWithIntent
+from parksim.trajectory_predict.intent_transformer.networks.common_blocks import  BaseTransformerLightningModule
 from parksim.trajectory_predict.data_processing.utils import TransformerDataProcessor
 from parksim.trajectory_predict.intent_transformer.dataset import IntentTransformerDataset
 from parksim.trajectory_predict.intent_transformer.model_utils import generate_square_subsequent_mask
@@ -74,7 +74,7 @@ def expand_distribution(intents: PredictionResponse, lanes: List, n=3):
             
 
 
-def predict_multimodal(ds, traj_model: TrajectoryPredictorWithIntent, intent_model: SmallRegularizedCNN, traj_extractor: TransformerDataProcessor, intent_extractor: CNNDataProcessor, inst_token: str, inst_idx: int, n: int):
+def predict_multimodal(ds, traj_model: BaseTransformerLightningModule, intent_model: SmallRegularizedCNN, traj_extractor: TransformerDataProcessor, intent_extractor: CNNDataProcessor, inst_token: str, inst_idx: int, n: int):
     """Given a trajectory prediction model, intent prediction model, and instance,
    predict the top-n most likely trajectories"""
 
