@@ -109,13 +109,13 @@ class IntentTransformerV2DataModule(pl.LightningDataModule):
         pass
 
     def train_dataloader(self):
-        return DataLoader(self.train, batch_size=256, num_workers=8, pin_memory=True, shuffle=True, persistent_workers=True)
+        return DataLoader(self.train, batch_size=1024, num_workers=12, pin_memory=True, shuffle=True, persistent_workers=True)
 
     def val_dataloader(self):
-        return DataLoader(self.val, batch_size=256, num_workers=8, pin_memory=True, shuffle=False, persistent_workers=True)
+        return DataLoader(self.val, batch_size=1024, num_workers=12, pin_memory=True, shuffle=False, persistent_workers=True)
 
     def test_dataloader(self):
-        return DataLoader(self.test, batch_size=256, num_workers=8, pin_memory=True, shuffle=False)
+        return DataLoader(self.test, batch_size=1024, num_workers=12, pin_memory=True, shuffle=False)
 
 class IntentTransformerV2Dataset(IntentTransformerDataset):
     """

@@ -488,7 +488,7 @@ class BaseTransformerLightningModule(pl.LightningModule):
             # rate after every epoch/step.
             "frequency": 1,
             # Metric to to monitor for schedulers like `ReduceLROnPlateau`
-            "monitor": "val_loss",
+            "monitor": "val_total_loss",
             # If set to `True`, will enforce that the value specified 'monitor'
             # is available when the scheduler is updated, thus stopping
             # training if not found. If set to `False`, it will only produce a warning
@@ -500,26 +500,58 @@ class BaseTransformerLightningModule(pl.LightningModule):
         }
         return [optimizer], [lr_scheduler_config]
 
+    def get_loss(self, pred, label, loss_type):
+        total_loss = F.l1_loss(pred, label)
+        with torch.no_grad():
+            non_reduced_loss = F.l1_loss(pred, label, reduction="none")
+            pos_error = torch.sqrt(non_reduced_loss[:, :, 0]**2 + non_reduced_loss[:, :, 1]**2).mean(dim=0)
+            ang_error = non_reduced_loss[:, :, 2].mean(dim=0)
+            metrics = {
+                f"{loss_type}_total_loss" : total_loss
+            }
+            pos_errors_dict = {
+                f"{loss_type}_step_{i+1}_positional_error" : pos_error[i] for i in range(pos_error.shape[0])
+            }
+            ang_errors_dict = {
+                f"{loss_type}_step_{i+1}_angular_error" : ang_error[i] for i in range(ang_error.shape[0])
+            }
+            metrics.update(pos_errors_dict)
+            metrics.update(ang_errors_dict)
+            self.log_dict(metrics)
+        return total_loss, metrics
+
     def training_step(self, batch, batch_idx):
         images_past, trajectory_history, intent_pose, trajectory_future_tgt, trajectory_future_label = batch
         mask = generate_square_subsequent_mask(trajectory_future_tgt.shape[1]).float().to(self.device)
         pred = self(images_past, trajectory_history, intent_pose, trajectory_future_tgt, mask)
-        loss = F.l1_loss(pred, trajectory_future_label)
-        self.log("train_loss", loss)
+        loss, _ = self.get_loss(pred, trajectory_future_label, "train")
         return loss
 
     def validation_step(self, batch, batch_idx):
         image, trajectory_history, intent_pose, trajectory_future_tgt, trajectory_future_label = batch
         mask = generate_square_subsequent_mask(trajectory_future_tgt.shape[1]).float().to(self.device)
         pred = self(image, trajectory_history, intent_pose, trajectory_future_tgt, mask)
-        val_loss = F.l1_loss(pred, trajectory_future_label)
-        self.log("val_loss", val_loss)
-        return val_loss
+        _, metrics = self.get_loss(pred, trajectory_future_label, "val")
+        return metrics
 
     def test_step(self, batch, batch_idx):
-        image, trajectory_history, intent_pose, trajectory_future_tgt, trajectory_future_label = batch
-        mask = generate_square_subsequent_mask(trajectory_future_tgt.shape[1]).float().to(self.device)
-        pred = self(image, trajectory_history, intent_pose, trajectory_future_tgt, mask)
-        test_loss = F.l1_loss(pred, trajectory_future_label)
-        self.log("test_loss", test_loss)
-        return test_loss
+        _, _, _, _, trajectory_future_label = batch
+        pred = self.predict_sequence(batch)
+        _, metrics = self.get_loss(pred, trajectory_future_label, "test")
+        return metrics
+
+    def predict_sequence(self, batch):
+        image, trajectory_history, intent_pose, _, _ = batch
+        START_TOKEN = trajectory_history[:, -1][:, None, :]
+        output_sequence_length = 10
+        y_input = START_TOKEN
+        for _ in range(output_sequence_length):
+            # Get source mask
+            tgt_mask = generate_square_subsequent_mask(y_input.size(1)).float().to(self.device)
+            pred = self(image, trajectory_history, intent_pose, y_input, tgt_mask)
+            #pred = pred.permute(1, 0, 2)
+            #print(pred)
+            next_item = pred[:, -1][:, None, :]
+            # Concatenate previous input with predicted best word
+            y_input = torch.cat((y_input, next_item), dim=1)
+        return y_input[:,1:]

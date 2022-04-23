@@ -16,16 +16,16 @@ class TrajectoryPredictorVisionTransformer(BaseTransformerLightningModule):
     """
     def __init__(self, config: dict, input_shape=(3, 100, 100)):
         super().__init__(config, input_shape)
-        self.lr = .0004365158322401656
+        self.lr = .0005
         self.input_shape=input_shape
         self.dropout=config.get('dropout', 0.1)
         self.num_heads=config.get('num_heads', 8)
         self.num_img_encoder_layers=config.get('num_img_encoder_layers', 4)
-        self.num_trajectory_encoder_layers=config.get('num_trajectory_encoder_layers', 4)
+        self.num_trajectory_encoder_layers=config.get('num_trajectory_encoder_layers', 2)
         self.num_decoder_layers=config.get('num_decoder_layers', 4)
-        self.dim_model=config.get('dim_model', 64)
+        self.dim_model=config.get('dim_model', 256)
         self.d_hidden=config.get('d_hidden', 256)
-        self.patch_size=config.get('patch_size', 25)
+        self.patch_size=config.get('patch_size', 20)
         assert input_shape[1] == input_shape[2], "Image must be square"
         assert input_shape[1] % self.patch_size == 0, "Patch size must divide the dimensions of the image."
 
