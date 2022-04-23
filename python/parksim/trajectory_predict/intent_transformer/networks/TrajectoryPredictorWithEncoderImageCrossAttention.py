@@ -1,6 +1,6 @@
 from parksim.trajectory_predict.intent_transformer.networks.common_blocks import ImageFeatureEncoderLayer, ImageFeatureEncoder, IntentFF, BaseTransformerLightningModule, PositionalEncoding
 from parksim.trajectory_predict.vanilla_transformer.network import FeatureExtractorCNN
-from parksim.trajectory_predict.intent_transformer.networks.TrajectoryPredictorWithDecoderIntentCrossAttention import TrajectoryPredictorWithDecoderIntentCrossAttention
+from parksim.trajectory_predict.intent_transformer.networks.TrajectoryPredictorWithDecoderIntentCrossAttention import CNNTransformerWithDecoderIntentCrossAttention
 from torch import nn
 import torch
 import torch.nn.functional as F
@@ -9,7 +9,7 @@ CNN_OUTPUT_FEATURE_SIZE = 16
 TRAJECTORY_FEATURE_SIZE = 3
 INTENT_FEATURE_SIZE = 2
 
-class TransformerWithEncoderImageCrossAttention(TrajectoryPredictorWithDecoderIntentCrossAttention):
+class TransformerWithEncoderImageCrossAttention(CNNTransformerWithDecoderIntentCrossAttention):
     def __init__(
         self,
         dim_model,

@@ -38,10 +38,11 @@ if __name__ == '__main__':
         'dim_model' : tune.choice([64, 128, 256]),
         'num_heads' : tune.choice([8, 16, 32]),
         'dropout' : tune.uniform(0.01, 0.4),
-        'num_img_encoder_layers' : tune.choice([2, 4, 6, 8]),
-        'num_trajectory_encoder_layers' : tune.choice([1,2,3,4]),
+        'num_encoder_layers' : tune.choice([2, 4, 6, 8]),
         'num_decoder_layers' : tune.choice([2,4,6,8]),
         'd_hidden' : tune.choice([128, 256, 512]),
+        'num_conv_layers' : tune.choice([2, 4, 8]),
+        'num_cnn_features' : tune.choice([64, 128, 256, 1024]),
     }
 
     model_class = TrajectoryPredictorWithEncoderImageCrossAttention
