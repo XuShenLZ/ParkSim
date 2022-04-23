@@ -53,7 +53,7 @@ if __name__ == '__main__':
         reduction_factor=2)
 
     reporter = CLIReporter(
-        parameter_columns=["dim_model", "num_img_encoder_layers", "num_trajectory_encoder_layers", "num_decoder_layers"],
+        parameter_columns=["dropout", "num_encoder_layers", "num_decoder_layers", "num_conv_layers", "num_cnn_features"],
         metric_columns=["val_loss", "training_iteration"])
     resources_per_trial = {"cpu": 8, "gpu": 1}
     analysis = tune.run(
