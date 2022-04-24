@@ -91,7 +91,6 @@ class VehicleNode(MPClabNode):
 
         vehicle_body = VehicleBody()
 
-        # TODO: can we do this?
         vehicle_body.w = agent_dict["width"]
         vehicle_body.l = agent_dict["length"]
         
@@ -172,6 +171,8 @@ class VehicleNode(MPClabNode):
 
         self.start_time = self.get_ros_time()
         self.start_solving = False
+        self.last_time = self.start_time
+        self.total_non_idle_time = 0
 
     def sim_status_cb(self, msg: Bool):
         self.sim_is_running = msg.data
@@ -280,9 +281,24 @@ class VehicleNode(MPClabNode):
     def timer_callback(self):
         if self.vehicle.is_all_done():
             self.get_logger().info("Vehicle %d is done. Destroying node." % self.vehicle_id)
+
+            # write logs
+            log_dir_path = str(Path.home()) + self.log_path
+            if not os.path.exists(log_dir_path):
+                os.mkdir(log_dir_path)
+            
+            with open(log_dir_path + "/vehicle_%d.log" % self.vehicle_id, 'a') as f:
+                f.writelines(str(self.total_non_idle_time))
+                self.vehicle.logger.clear()
+
             self.destroy_node()
 
         self.update_subs()
+
+        current_time = self.get_ros_time()
+        if self.vehicle.current_task != "IDLE":
+            self.total_non_idle_time += current_time - self.last_time
+        self.last_time = current_time
 
         if self.get_ros_time() - self.start_time > self.warm_start_time:
             self.start_solving = True
