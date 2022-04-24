@@ -39,11 +39,13 @@ for agent_token in agent_data:
 
     # i is at spawn_time
 
+    total_non_idle_time = 0
+
     sec_start = spawn_index # the start of this section, or if in a zero section, the start of the section before the zero section
     zero_sec_start = -1 # -1 if not currently in a zero section, else the first index of this zero section
     sec_max_speed = -1
 
-    def add_non_idle_section(end_step): # end timestep is the last timestep of the non-idle section 
+    def add_non_idle_section(end_step): # end timestep is the last timestep of the non-idle section
         if agent["dist_to_closest_spot"][end_step] < PARKED_DEADBAND: # cruise + park
             json_dict["task_profile"].append({"name": "CRUISE", "v_cruise": sec_max_speed, "target_spot_index": agent["closest_spot"][end_step]})
             json_dict["task_profile"].append({"name": "PARK", "target_spot_index": agent["closest_spot"][end_step]})
@@ -61,7 +63,8 @@ for agent_token in agent_data:
                     if agent["dist_to_closest_spot"][max(sec_start - 1, 0)] < PARKED_DEADBAND:
                         json_dict["task_profile"].append({"name": "UNPARK", "target_spot_index": agent["closest_spot"][max(sec_start - 1, 0)]})
                     if zero_sec_start - sec_start > 0: # add a non-idle section if there is one
-                        add_non_idle_section(zero_sec_start - 1)
+                        add_non_idle_section(zero_sec_start - 1)   
+                        total_non_idle_time += agent["t"][zero_sec_start - 1] - agent["t"][sec_start]
                     json_dict["task_profile"].append({"name": "IDLE", "duration": agent["t"][i] - agent["t"][zero_sec_start]})
                     sec_start = i + 1 # new section start
                     sec_max_speed = -1
@@ -78,14 +81,17 @@ for agent_token in agent_data:
                 json_dict["task_profile"].append({"name": "UNPARK", "target_spot_index": agent["closest_spot"][max(sec_start - 1, 0)]})
             if zero_sec_start - sec_start > 0: # add a non-idle section if there is one
                 add_non_idle_section(zero_sec_start - 1)
+                total_non_idle_time += agent["t"][zero_sec_start - 1] - agent["t"][sec_start]
             json_dict["task_profile"].append({"name": "IDLE", "duration": agent["t"][i - 1] - agent["t"][zero_sec_start]})
         else: # just add a normal section
             add_non_idle_section(i - 1)
+            total_non_idle_time += agent["t"][i - 1] - agent["t"][sec_start]
     else: # just add a normal section
         # add unpark if necessary
         if agent["dist_to_closest_spot"][max(sec_start - 1, 0)] < PARKED_DEADBAND:
             json_dict["task_profile"].append({"name": "UNPARK", "target_spot_index": agent["closest_spot"][max(sec_start - 1, 0)]})
         add_non_idle_section(i - 1)
+        total_non_idle_time += agent["t"][i - 1] - agent["t"][sec_start]
 
     # remove last section if it is idle
     if len(json_dict["task_profile"]) > 0 and json_dict["task_profile"][-1]["name"] == "IDLE":
