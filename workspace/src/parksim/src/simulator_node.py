@@ -15,7 +15,7 @@ import pickle
 from dlp.dataset import Dataset
 from dlp.visualizer import Visualizer as DlpVisualizer
 
-from std_msgs.msg import Int16MultiArray, Bool
+from std_msgs.msg import Int16MultiArray, Bool, Float32
 from parksim.msg import VehicleStateMsg
 from parksim.srv import OccupancySrv
 from parksim.base_node import MPClabNode
@@ -113,6 +113,9 @@ class SimulatorNode(MPClabNode):
 
         self.timer = self.create_timer(self.timer_period, self.timer_callback)
 
+        # Publish the simulation time
+        self.sim_time_pub = self.create_publisher(Float32, '/sim_time', 10)
+
         # Visualizer publish this status since the button is on GUI
         self.sim_status_sub = self.create_subscription(Bool, '/sim_status', self.sim_status_cb, 10)
         self.sim_is_running = True
@@ -155,7 +158,8 @@ class SimulatorNode(MPClabNode):
         return parking_spaces, list(map(int, occupied))
 
     def _gen_agents(self):
-        with open(self.agents_data_path, 'rb') as f:
+        home_path = str(Path.home())
+        with open(home_path + self.agents_data_path, 'rb') as f:
             self.agents_dict = pickle.load(f)
 
     def add_vehicle(self, spot_index: int):
@@ -246,6 +250,11 @@ class SimulatorNode(MPClabNode):
                 self.try_spawn_exiting()
             else:
                 self.try_spawn_existing()
+
+        # Publish current simulation time
+        time_msg = Float32()
+        time_msg.data = self.get_ros_time() - self.start_time
+        self.sim_time_pub.publish(time_msg)
 
         occupancy_msg = Int16MultiArray()
         occupancy_msg.data = self.occupied

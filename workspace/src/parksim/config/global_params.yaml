@@ -1,6 +1,9 @@
-dlp_path: '/ParkSim/data/dlp_data/sim_DJI_0000' # Starts from home directory
+# dlp_path: '/ParkSim/data/dlp_data/sim_DJI_0000' # Starts from home directory
+dlp_path: '/dlp-dataset/data/DJI_0012'
 
 random_seed: 0
 
 write_log: true
 log_path: '/ParkSim/vehicle_log'
+
+agents_data_path: '/ParkSim/data/agents_data.pickle'

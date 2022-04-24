@@ -2,11 +2,16 @@ visualizer:
   ros__parameters:
     timer_period: 0.05
 
+    draw_dlp: true
+    dlp_time_offset: -3
+
     # ======== Color
     driving_color: [0, 255, 0, 255]
     parking_color: [255, 128, 0, 255]
     braking_color: [255, 0, 0, 255]
     alldone_color: [0, 0, 0, 255]
+
+    dlp_color: [0, 0, 0, 48]
 
     # ======== Text display
     disp_text_offset: [-1, 1]

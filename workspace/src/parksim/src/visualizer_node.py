@@ -10,7 +10,7 @@ from pathlib import Path
 
 from dlp.dataset import Dataset
 
-from std_msgs.msg import Bool
+from std_msgs.msg import Bool, Float32
 from parksim.msg import VehicleStateMsg, VehicleInfoMsg
 from parksim.pytypes import VehicleState, NodeParamTemplate
 from parksim.vehicle_types import VehicleBody, VehicleInfo
@@ -25,11 +25,15 @@ class VisualizerNodeParams(NodeParamTemplate):
     def __init__(self):
         self.dlp_path = '/dlp-dataset/data/DJI_0012'
         self.timer_period = 0.05
+        self.draw_dlp = True
+        self.dlp_time_offset = -1
 
         self.driving_color = [0, 255, 0, 255]
         self.parking_color = [255, 128, 0, 255]
         self.braking_color = [255, 0, 0, 255]
         self.alldone_color = [0, 0, 0, 255]
+
+        self.dlp_color = [255, 255, 0, 128]
 
         self.disp_text_offset = [-2, 2]
         self.disp_text_size = 25
@@ -65,6 +69,12 @@ class VisualizerNode(MPClabNode):
         self.timer = self.create_timer(self.timer_period, self.timer_callback)
 
         self.sim_status_pub = self.create_publisher(Bool, '/sim_status', 10)
+
+        self.sim_time = 0.
+        self.sim_time_sub = self.create_subscription(Float32, '/sim_time', self.sim_time_cb, 10)
+
+    def sim_time_cb(self, msg: Float32):
+        self.sim_time = msg.data
 
     def vehicle_state_cb(self, vehicle_id):
         def callback(msg):
@@ -132,6 +142,23 @@ class VisualizerNode(MPClabNode):
         self.update_subs()
 
         self.vis.clear_frame()
+        
+        if self.draw_dlp:
+            scene_token = self.vis.dlpvis.dataset.list_scenes()[0]
+            frame = self.vis.dlpvis.dataset.get_frame_at_time(
+                scene_token=scene_token, timestamp=max(self.sim_time + self.dlp_time_offset, 0))
+            inst_tokens = frame['instances']
+            for inst_token in inst_tokens:
+                instance = self.vis.dlpvis.dataset.get('instance', inst_token)
+                agent = self.vis.dlpvis.dataset.get('agent', instance['agent_token'])
+                if agent['type'] in {'Pedestrian', 'Undefined', 'Bicycle'}:
+                    continue
+                state = VehicleState()
+                state.x.x = instance['coords'][0]
+                state.x.y = instance['coords'][1]
+                state.e.psi = instance['heading']
+
+                self.vis.draw_vehicle(state, fill=self.dlp_color)
 
         for vehicle_id in self.states:
             state = self.states[vehicle_id]

@@ -36,7 +36,7 @@ class VehicleNodeParams(NodeParamTemplate):
         self.offline_maneuver_path = '/ParkSim/data/parking_maneuvers.pickle'
         self.waypoints_graph_path = '/ParkSim/data/waypoints_graph.pickle'
         self.intent_model_path = '/ParkSim/data/smallRegularizedCNN_L0.068_01-29-2022_19-50-35.pth'
-        self.agents_data_path = '/home/mpc/ParkSim/data/agents_data.pickle'
+        self.agents_data_path = '/ParkSim/data/agents_data.pickle'
 
         self.write_log = True
         self.log_path = '/ParkSim/vehicle_log'
@@ -71,7 +71,7 @@ class VehicleNode(MPClabNode):
 
         self.get_logger().info("Spot Index: " + str(self.spot_index))
 
-        agents = pickle.load(open(self.agents_data_path, "rb"))
+        agents = pickle.load(open(str(Path.home()) + self.agents_data_path, "rb"))
         agent_dict = agents[self.vehicle_id]
 
         # ======== Publishers, Subscribers, Services
