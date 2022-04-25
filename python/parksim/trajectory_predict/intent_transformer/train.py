@@ -13,23 +13,22 @@ if __name__ == '__main__':
     print(device)
     
     config={
-            'dim_model' : 64,
-            'num_heads' : 8,
-            'dropout' : 0.15,
-            'num_encoder_layers' : 6,
-            'num_decoder_layers' : 6,
-            'd_hidden' : 256,
-            'num_conv_layers' : 3,
+        'dim_model': 64, 
+        'num_heads': 16, 
+        'dropout': 0.22064449902863661, 
+        'num_encoder_layers': 2, 
+        'num_decoder_layers': 4, 
+        'd_hidden': 128, 
+        'detach_cnn': False
     }
 
     model = TrajectoryPredictorWithDecoderIntentCrossAttention(config)
-    custom_dataset_nums = ["../data/DJI_" + str(i).zfill(4) for i in range(7, 13)]
-    datamodule = IntentTransformerDataModule(all_dataset_nums=custom_dataset_nums)
+    datamodule = IntentTransformerDataModule()
     patience = 25
-    earlystopping = EarlyStopping(monitor="val_loss", mode="min", patience=patience)
+    earlystopping = EarlyStopping(monitor="val_total_loss", mode="min", patience=patience)
     checkpoint_callback = ModelCheckpoint(
-        monitor="val_loss",
-        filename="{epoch}-{val_loss:.4f}",
+        monitor="val_total_loss",
+        filename="{epoch}-{val_total_loss:.4f}",
         save_top_k=3,
         mode="min",
         every_n_epochs=1

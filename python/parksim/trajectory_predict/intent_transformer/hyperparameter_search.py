@@ -4,6 +4,8 @@ import os
 from parksim.trajectory_predict.intent_transformer.dataset import IntentTransformerDataModule, IntentTransformerV2DataModule
 from parksim.trajectory_predict.intent_transformer.networks.TrajectoryPredictorVisionTransformer import TrajectoryPredictorVisionTransformer
 from parksim.trajectory_predict.intent_transformer.networks.TrajectoryPredictorWithEncoderImageCrossAttention import TrajectoryPredictorWithEncoderImageCrossAttention
+from parksim.trajectory_predict.intent_transformer.networks.TrajectoryPredictorWithDecoderIntentCrossAttention import TrajectoryPredictorWithDecoderIntentCrossAttention
+
 import pytorch_lightning as pl
 from ray.tune.integration.pytorch_lightning import TuneReportCallback
 from ray.tune import CLIReporter
@@ -13,7 +15,10 @@ os.environ["PL_TORCH_DISTRIBUTED_BACKEND"] = "gloo"
 def train_model(config, model_class):
     # Create your PTL model.
     model = model_class(config)
-    datamodule = IntentTransformerV2DataModule(batch_size=256, num_workers=6)
+    if model_class != TrajectoryPredictorWithDecoderIntentCrossAttention:
+        datamodule = IntentTransformerV2DataModule(batch_size=256, num_workers=6)
+    else:
+        datamodule = IntentTransformerDataModule(batch_size=256, num_workers=6)
 
     # Create the Tune Reporting Callback
     metrics = {"train_loss": "train_total_loss", "val_loss": "val_total_loss"}
@@ -39,13 +44,12 @@ if __name__ == '__main__':
         'num_heads' : tune.choice([8, 16, 32]),
         'dropout' : tune.uniform(0.01, 0.4),
         'num_encoder_layers' : tune.choice([2, 4, 6, 8]),
-        'num_decoder_layers' : tune.choice([2,4,6,8]),
+        'num_decoder_layers' : tune.choice([2, 4, 6, 8]),
         'd_hidden' : tune.choice([128, 256, 512]),
-        'num_conv_layers' : tune.choice([2, 4, 8]),
-        'num_cnn_features' : tune.choice([64, 128, 256, 1024]),
+        'detach_cnn' : tune.choice([True, False])
     }
 
-    model_class = TrajectoryPredictorWithEncoderImageCrossAttention
+    model_class = TrajectoryPredictorWithDecoderIntentCrossAttention
     num_samples = 20
     scheduler = ASHAScheduler(
         max_t=3,
@@ -53,7 +57,7 @@ if __name__ == '__main__':
         reduction_factor=2)
 
     reporter = CLIReporter(
-        parameter_columns=["dropout", "num_encoder_layers", "num_decoder_layers", "num_conv_layers", "num_cnn_features"],
+        parameter_columns=list(config.keys()),
         metric_columns=["val_loss", "training_iteration"])
     resources_per_trial = {"cpu": 8, "gpu": 1}
     analysis = tune.run(

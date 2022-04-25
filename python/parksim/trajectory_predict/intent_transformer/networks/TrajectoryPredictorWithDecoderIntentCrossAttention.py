@@ -1,10 +1,10 @@
 from parksim.trajectory_predict.intent_transformer.networks.common_blocks import PositionalEncoding, IntentCrossAttentionDecoder, IntentCrossAttentionDecoderLayer, IntentFF, BaseTransformerLightningModule
-from parksim.trajectory_predict.vanilla_transformer.network import SmallRegularizedCNN
+from parksim.intent_predict.cnnV2.network import SmallRegularizedCNN
 from torch import nn
 import torch
 import torch.nn.functional as F
 
-CNN_OUTPUT_FEATURE_SIZE = 16
+CNN_OUTPUT_FEATURE_SIZE = 243
 TRAJECTORY_FEATURE_SIZE = 3
 INTENT_FEATURE_SIZE = 2
 
@@ -83,11 +83,12 @@ DEFAULT_CONFIG = {
     'dim_model' : 64,
     'd_hidden' : 256,
     'num_conv_layers' : 2,
+    'detach_cnn' : False,
 }
 
 class TrajectoryPredictorWithDecoderIntentCrossAttention(BaseTransformerLightningModule):
-    def __init__(self, config: dict=DEFAULT_CONFIG, input_shape=(3, 100, 100)):
-        super().__init__(config, input_shape)
+    def __init__(self, config: dict=DEFAULT_CONFIG, input_shape=(3, 100, 100), loss_fn=F.l1_loss):
+        super().__init__(config, input_shape, loss_fn)
         self.lr = 1e-3
         self.input_shape=input_shape
         self.dropout=config['dropout']
@@ -96,10 +97,13 @@ class TrajectoryPredictorWithDecoderIntentCrossAttention(BaseTransformerLightnin
         self.num_decoder_layers=config['num_decoder_layers']
         self.dim_model=config['dim_model']
         self.d_hidden=config['d_hidden']
-        self.num_conv_layers=config['num_conv_layers']
+        self.detach_cnn = config['detach_cnn']
 
-        self.cnn = SmallRegularizedCNN(input_shape=input_shape,
-            output_size=CNN_OUTPUT_FEATURE_SIZE, dropout_p=self.dropout, num_conv_layers=self.num_conv_layers)
+        self.cnn = SmallRegularizedCNN()
+        INTENT_MODEL_PATH = r'C:\Users\rlaca\Documents\GitHub\ParkSim\python\parksim\trajectory_predict\intent_transformer\models\smallRegularizedCNN_L0.068_01-29-2022_19-50-35.pth'
+        model_state = torch.load(INTENT_MODEL_PATH)
+        self.cnn.load_state_dict(model_state)
+        self.cnn = nn.Sequential(self.cnn.image_layer, nn.Flatten())
 
         self.intentff = IntentFF(
             d_in=INTENT_FEATURE_SIZE, d_out=self.dim_model, d_hidden=self.d_hidden, dropout_p=self.dropout)
@@ -159,9 +163,15 @@ class TrajectoryPredictorWithDecoderIntentCrossAttention(BaseTransformerLightnin
         concat_aligned_img_feature = torch.empty(
             size=(N, T_1, CNN_OUTPUT_FEATURE_SIZE), device=trajectories_past.device)
         # img (N, T_1, 3, 100, 100) -> CNN -> (N, T_1, 16)
-        for t in range(T_1):
-            concat_aligned_img_feature[:, t, :] = self.cnn(
-                images_past[:, t, :, :, :])
+        if self.detach_cnn:
+            with torch.no_grad():
+                for t in range(T_1):
+                    concat_aligned_img_feature[:, t, :] = self.cnn(
+                        images_past[:, t, :, :, :])
+        else:
+            for t in range(T_1):
+                concat_aligned_img_feature[:, t, :] = self.cnn(
+                    images_past[:, t, :, :, :])
 
         intent = self.intentff(intent)
 

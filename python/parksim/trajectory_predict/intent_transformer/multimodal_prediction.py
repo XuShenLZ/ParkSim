@@ -74,7 +74,7 @@ def expand_distribution(intents: PredictionResponse, lanes: List, n=3):
             
 
 
-def predict_multimodal(ds, traj_model: BaseTransformerLightningModule, intent_model: SmallRegularizedCNN, traj_extractor: TransformerDataProcessor, intent_extractor: CNNDataProcessor, inst_token: str, inst_idx: int, n: int):
+def predict_multimodal(ds, traj_model: BaseTransformerLightningModule, intent_model: SmallRegularizedCNN, traj_extractor: TransformerDataProcessor, intent_extractor: CNNDataProcessor, inst_token: str, inst_idx: int, n: int, mode='v2'):
     """Given a trajectory prediction model, intent prediction model, and instance,
    predict the top-n most likely trajectories"""
 
@@ -111,7 +111,10 @@ def predict_multimodal(ds, traj_model: BaseTransformerLightningModule, intent_mo
         img, X, y_label, intent = get_data_for_instance(inst_token, inst_idx, instance['frame_token'], traj_extractor, ds, global_intent_pose)
         
         with torch.no_grad():
-            img = img.to(DEVICE).float()[:, -1]
+            if mode=='v2':
+                img = img.to(DEVICE).float()[:, -1]
+            else:
+                img = img.to(DEVICE).float()
             X = X.to(DEVICE).float()
             intent = intent.to(DEVICE).float()
             y_label = y_label.to(DEVICE).float()

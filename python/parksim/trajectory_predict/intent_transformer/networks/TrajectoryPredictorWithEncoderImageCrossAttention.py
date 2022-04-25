@@ -69,8 +69,8 @@ DEFAULT_CONFIG = {
 }
 class TrajectoryPredictorWithEncoderImageCrossAttention(BaseTransformerLightningModule):
 
-    def __init__(self, config: dict=DEFAULT_CONFIG, input_shape=(3, 100, 100)):
-        super().__init__(config, input_shape)
+    def __init__(self, config: dict=DEFAULT_CONFIG, input_shape=(3, 100, 100), loss_fn=F.l1_loss):
+        super().__init__(config, input_shape, loss_fn)
         self.lr = 0.000630957344480193
         self.input_shape=input_shape
         self.dropout=config['dropout']
