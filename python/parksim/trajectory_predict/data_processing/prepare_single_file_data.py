@@ -94,8 +94,7 @@ if __name__ == '__main__':
 
     print(train_size, val_size, test_size)
     np.save('../data/dataset_sizes.npy', [train_size, val_size, test_size])
-
-    #create_all_memmaps(custom_dataset_nums, proportions, train_size, val_size, test_size)
+    create_all_memmaps(custom_dataset_nums, proportions, train_size, val_size, test_size)
 
   
 

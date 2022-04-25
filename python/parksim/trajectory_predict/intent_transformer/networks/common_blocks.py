@@ -468,10 +468,11 @@ class IntentFF(nn.Module):
         return x
 
 class BaseTransformerLightningModule(pl.LightningModule):
-    def __init__(self, config: dict, input_shape=(3, 100, 100)):
+    def __init__(self, config: dict, input_shape=(3, 100, 100), loss_fn=F.l1_loss):
         super().__init__()
         self.save_hyperparameters()
         self.lr = 1e-3
+        self.loss_fn = loss_fn
 
     def configure_optimizers(self):
         optimizer = torch.optim.AdamW(self.parameters(), lr=self.lr)
@@ -501,9 +502,9 @@ class BaseTransformerLightningModule(pl.LightningModule):
         return [optimizer], [lr_scheduler_config]
 
     def get_loss(self, pred, label, loss_type):
-        total_loss = F.l1_loss(pred, label)
+        total_loss = self.loss_fn(pred, label)
         with torch.no_grad():
-            non_reduced_loss = F.l1_loss(pred, label, reduction="none")
+            non_reduced_loss = self.loss_fn(pred, label, reduction="none")
             pos_error = torch.sqrt(non_reduced_loss[:, :, 0]**2 + non_reduced_loss[:, :, 1]**2).mean(dim=0)
             ang_error = non_reduced_loss[:, :, 2].mean(dim=0)
             metrics = {

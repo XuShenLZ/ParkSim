@@ -1,6 +1,6 @@
 from parksim.trajectory_predict.intent_transformer.networks.common_blocks import ImageFeatureEncoderLayer, ImageFeatureEncoder, IntentFF, BaseTransformerLightningModule, PositionalEncoding
 from parksim.trajectory_predict.vanilla_transformer.network import FeatureExtractorCNN
-from parksim.trajectory_predict.intent_transformer.networks.TrajectoryPredictorWithDecoderIntentCrossAttention import TrajectoryPredictorWithDecoderIntentCrossAttention
+from parksim.trajectory_predict.intent_transformer.networks.TrajectoryPredictorWithDecoderIntentCrossAttention import CNNTransformerWithDecoderIntentCrossAttention
 from torch import nn
 import torch
 import torch.nn.functional as F
@@ -9,7 +9,7 @@ CNN_OUTPUT_FEATURE_SIZE = 16
 TRAJECTORY_FEATURE_SIZE = 3
 INTENT_FEATURE_SIZE = 2
 
-class TransformerWithEncoderImageCrossAttention(TrajectoryPredictorWithDecoderIntentCrossAttention):
+class TransformerWithEncoderImageCrossAttention(CNNTransformerWithDecoderIntentCrossAttention):
     def __init__(
         self,
         dim_model,
@@ -57,20 +57,30 @@ class TransformerWithEncoderImageCrossAttention(TrajectoryPredictorWithDecoderIn
 
         return transformer_out
 
+DEFAULT_CONFIG = {
+    'dropout' : 0.1,
+    'num_heads' : 8,
+    'num_encoder_layers' : 6,
+    'num_decoder_layers' : 6,
+    'dim_model' : 64,
+    'd_hidden' : 256,
+    'num_conv_layers' : 2,
+    'num_cnn_features' : 256,
+}
 class TrajectoryPredictorWithEncoderImageCrossAttention(BaseTransformerLightningModule):
 
-    def __init__(self, config: dict, input_shape=(3, 100, 100)):
-        super().__init__(config, input_shape)
+    def __init__(self, config: dict=DEFAULT_CONFIG, input_shape=(3, 100, 100), loss_fn=F.l1_loss):
+        super().__init__(config, input_shape, loss_fn)
         self.lr = 0.000630957344480193
         self.input_shape=input_shape
-        self.dropout=config.get('dropout', 0.1)
-        self.num_heads=config.get('num_heads', 8)
-        self.num_encoder_layers=config.get('num_encoder_layers', 6)
-        self.num_decoder_layers=config.get('num_decoder_layers', 6)
-        self.dim_model=config.get('dim_model', 64)
-        self.d_hidden=config.get('d_hidden', 256)
-        self.num_conv_layers=config.get('num_conv_layers', 2)
-        self.num_cnn_features=config.get('num_cnn_features', 256)
+        self.dropout=config['dropout']
+        self.num_heads=config['num_heads']
+        self.num_encoder_layers=config['num_encoder_layers']
+        self.num_decoder_layers=config['num_decoder_layers']
+        self.dim_model=config['dim_model']
+        self.d_hidden=config['d_hidden']
+        self.num_conv_layers=config['num_conv_layers']
+        self.num_cnn_features=config['num_cnn_features']
 
 
 
