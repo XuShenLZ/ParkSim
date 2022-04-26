@@ -1,3 +1,7 @@
+# Video and images
+*.mp4
+*.png
+
 # ROS
 install/
 build/
@@ -18,9 +22,11 @@ runs/
 
 # data files
 data/
+python/parksim/trajectory_predict/intent_transformer/checkpoints/*
 *.pickle
 *.npz
 *.npy
+*.ckpt
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

@@ -10,7 +10,6 @@ class Vertex(object):
     def __init__(self, coords: np.ndarray):
         """
         instantiate the vertex
-
         coords: (x, y) coordinate, numpy array
         """
         self.coords = coords
@@ -26,7 +25,6 @@ class Vertex(object):
     def add_child(self, v: 'Vertex', e: 'Edge'):
         """
         add a vertex as its child
-
         v: the vertex to be added
         e: the connecting edge
         """
@@ -55,7 +53,6 @@ class Edge(object):
     def __init__(self, v1: 'Vertex', v2: 'Vertex', c):
         """
         Instantiate the edge
-
         v1, v2: vertices
         c: cost (distance)
         """
@@ -82,7 +79,7 @@ class WaypointsGraph(object):
         min_idx = None
 
         for idx, v in enumerate(self.vertices):
-            dist = np.linalg.norm(coords - v.coords)
+            dist = np.linalg.norm(np.array(coords)[:2] - v.coords)
             if dist < min_dist:
                 min_idx = idx
                 min_dist = dist
@@ -92,7 +89,6 @@ class WaypointsGraph(object):
     def add_waypoint_list(self, waypoint_list: np.ndarray):
         """
         add a list of waypoints into the graph. Connect them in order
-
         waypoint_list: a Nx2 numpy array of waypoint coordinates
         """
         v_list = []

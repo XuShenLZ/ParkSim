@@ -18,7 +18,7 @@ from itertools import product
 
 
 _CURRENT = os.path.abspath(os.path.dirname(__file__))
-DATA_PATH = os.path.join(_CURRENT, '..', 'data')
+DATA_PATH = os.path.join(_CURRENT, '..', '..', 'data')
 ENTRANCE_TO_PARKING_LOT = np.array([20, 80])
 
 def get_label_for_index(current_index, target_index):
@@ -138,6 +138,7 @@ if __name__ == '__main__':
     path = args.path
     #name = args.name
 
-    names = ["DJI_0007", "DJI_0008", "DJI_0009", "DJI_0010", "DJI_0011"]
+    #names = ["DJI_0007", "DJI_0008", "DJI_0009", "DJI_0010", "DJI_0011"]
+    names = ["DJI_" + str(i).zfill(4) for i in range(16, 23)]
     for name in names:
         create_dataset(stride, path, name)

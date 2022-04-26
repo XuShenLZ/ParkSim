@@ -1,5 +1,5 @@
 import torch
-from parksim.intent_predict.cnnV2.network import SimpleCNN, RegularizedCNN
+from parksim.intent_predict.cnnV2.network import SimpleCNN, RegularizedCNN, SmallRegularizedCNN
 from parksim.intent_predict.cnnV2.utils import CNNDataset
 from torch.utils.data import DataLoader
 from torchvision import transforms
@@ -14,11 +14,11 @@ from datetime import datetime
 import numpy as np
 
 def main():
-    model = RegularizedCNN()
-    model_state = torch.load('models/regularizedCNN_L0.053_12-06-2021_13-38-13.pth')
+    model = SmallRegularizedCNN()
+    model_state = torch.load('models/SmallRegularizedIntent-4-10-22.pt')
     model.load_state_dict(model_state)
     model.eval().cuda()
-    dataset = CNNDataset("data/DJI_0005", input_transform = transforms.ToTensor())
+    dataset = CNNDataset("../data/DJI_0022", input_transform = transforms.ToTensor())
     dataloader = DataLoader(dataset, batch_size=32, num_workers=12)
     running_accuracy = 0
     for data in tqdm(dataloader):
