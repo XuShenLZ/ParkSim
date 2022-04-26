@@ -1,3 +1,4 @@
+import os
 from parksim.trajectory_predict.intent_transformer.networks.common_blocks import PositionalEncoding, IntentCrossAttentionDecoder, IntentCrossAttentionDecoderLayer, IntentFF, BaseTransformerLightningModule
 from parksim.intent_predict.cnnV2.network import SmallRegularizedCNN
 from torch import nn
@@ -100,7 +101,7 @@ class TrajectoryPredictorWithDecoderIntentCrossAttention(BaseTransformerLightnin
         self.detach_cnn = config['detach_cnn']
 
         self.cnn = SmallRegularizedCNN()
-        INTENT_MODEL_PATH = r'C:\Users\rlaca\Documents\GitHub\ParkSim\python\parksim\trajectory_predict\intent_transformer\models\smallRegularizedCNN_L0.068_01-29-2022_19-50-35.pth'
+        INTENT_MODEL_PATH = os.path.join(os.path.abspath(os.path.dirname(__file__)), '../models/smallRegularizedCNN_L0.068_01-29-2022_19-50-35.pth')
         model_state = torch.load(INTENT_MODEL_PATH)
         self.cnn.load_state_dict(model_state)
         self.cnn = nn.Sequential(self.cnn.image_layer, nn.Flatten())
