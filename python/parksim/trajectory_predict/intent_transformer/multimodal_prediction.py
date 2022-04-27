@@ -122,7 +122,7 @@ def predict_multimodal(ds, traj_model: BaseTransformerLightningModule, intent_mo
             START_TOKEN = X[:, -1][:, None, :]
 
             delta_state = -1 * X[:, -2][:, None, :]
-            y_input = torch.concat([START_TOKEN, delta_state], dim=1).to(DEVICE)
+            y_input = torch.cat([START_TOKEN, delta_state], dim=1).to(DEVICE)
             # y_input = START_TOKEN
 
             for i in range(output_sequence_length):

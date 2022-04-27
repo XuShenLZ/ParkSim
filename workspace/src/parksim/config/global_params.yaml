@@ -1,5 +1,6 @@
-/**:
-  ros__parameters:
-    dlp_path: '/dlp-dataset/data/DJI_0012' # Starts from home directory
+dlp_path: '/ParkSim/data/dlp_data/sim_DJI_0000' # Starts from home directory
 
-    random_seed: 44
+random_seed: 0
+
+write_log: true
+log_path: '/ParkSim/vehicle_log'

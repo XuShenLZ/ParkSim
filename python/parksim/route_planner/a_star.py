@@ -55,12 +55,10 @@ class AStarGraph(WaypointsGraph):
 
         # calculate splines
 
-        # generate list of x, y waypoints NOTE: need to cleanup, axs, ays etc. don't need to be global
-        for edge in self.edges:
-            axs.append(edge.v1.coords[0])
-            ays.append(edge.v1.coords[1])
-        axs.append(self.edges[-1].v2.coords[0])
-        ays.append(self.edges[-1].v2.coords[1])
+        # generate list of x, y waypoints
+        for v in self.vertices:
+            axs.append(v.coords[0])
+            ays.append(v.coords[1])
 
         cxs, cys, cyaws, _, _ = calc_spline_course(axs, ays, ds=0.1)
         cxs = [cxs[j] + offset * np.sin(cyaws[j]) for j in range(len(cxs))]

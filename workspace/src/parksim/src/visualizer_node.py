@@ -10,6 +10,7 @@ from pathlib import Path
 
 from dlp.dataset import Dataset
 
+from std_msgs.msg import Bool
 from parksim.msg import VehicleStateMsg, VehicleInfoMsg
 from parksim.pytypes import VehicleState, NodeParamTemplate
 from parksim.vehicle_types import VehicleBody, VehicleInfo
@@ -29,6 +30,9 @@ class VisualizerNodeParams(NodeParamTemplate):
         self.parking_color = [255, 128, 0, 255]
         self.braking_color = [255, 0, 0, 255]
         self.alldone_color = [0, 0, 0, 255]
+
+        self.disp_text_offset = [-2, 2]
+        self.disp_text_size = 25
 
 class VisualizerNode(MPClabNode):
     """
@@ -60,6 +64,8 @@ class VisualizerNode(MPClabNode):
 
         self.timer = self.create_timer(self.timer_period, self.timer_callback)
 
+        self.sim_status_pub = self.create_publisher(Bool, '/sim_status', 10)
+
     def vehicle_state_cb(self, vehicle_id):
         def callback(msg):
             state = VehicleState()
@@ -76,13 +82,8 @@ class VisualizerNode(MPClabNode):
 
         return callback
 
-    def timer_callback(self):
-        """
-        update the list of subscribers and plot
-        """
+    def update_subs(self):
         topic_list_types = self.get_topic_names_and_types()
-
-        self.vis.clear_frame()
 
         for topic_name, _ in topic_list_types:
             state_name_pattern = re.match("/vehicle_([1-9][0-9]*)/state", topic_name)
@@ -117,17 +118,26 @@ class VisualizerNode(MPClabNode):
                     # If we have subscribed to it, but there is no publisher anymore
                     self.destroy_subscription(self.info_subs[vehicle_id])
                     self.info_subs.pop(vehicle_id)
-                    self.infos.pop(vehicle_id)
+                    if vehicle_id in self.infos:
+                        self.infos.pop(vehicle_id)
                     self.get_logger().info("Vehicle %d is not publishing anymore. Info ubscriber is destroyed." % vehicle_id)
 
             else:
                 continue
 
+    def timer_callback(self):
+        """
+        update the list of subscribers and plot
+        """
+        self.update_subs()
+
+        self.vis.clear_frame()
+
         for vehicle_id in self.states:
             state = self.states[vehicle_id]
             info = self.infos[vehicle_id]
 
-            if not info:
+            if not info or info.is_all_done:
                 color = self.alldone_color
             elif info.is_braking:
                 color = self.braking_color
@@ -137,8 +147,14 @@ class VisualizerNode(MPClabNode):
                 color = self.driving_color
 
             self.vis.draw_vehicle(state, fill=color)
+            if info and info.disp_text:
+                self.vis.draw_text([state.x.x + self.disp_text_offset[0], state.x.y + self.disp_text_offset[1]], info.disp_text, size=self.disp_text_size)
 
         self.vis.render()
+
+        sim_status_msg = Bool()
+        sim_status_msg.data = self.vis.is_running()
+        self.sim_status_pub.publish(sim_status_msg)
         
 def main(args=None):
     rclpy.init(args=args)

@@ -39,7 +39,7 @@ class StanleyController(object):
         """Instantiate the object."""
         super().__init__()
 
-        self.k = control_params.dt
+        self.k = control_params.k
         self.Kp = control_params.Kp
         self.Kp_braking = control_params.Kp_braking
         self.dt = control_params.dt

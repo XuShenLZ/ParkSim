@@ -1,3 +1,4 @@
+import time
 from typing import Dict, List
 
 from dlp.dataset import Dataset
@@ -23,32 +24,27 @@ offline_maneuver_path = 'ParkSim/data/parking_maneuvers.pickle'
 waypoints_graph_path = 'ParkSim/data/waypoints_graph.pickle'
 intent_model_path = 'ParkSim/data/smallRegularizedCNN_L0.068_01-29-2022_19-50-35.pth'
 entrance_coords = [14.38, 76.21]
+block_spots = [43, 44, 45]
 
 overshoot_ranges = {'pointed_right': [(42, 48), (67, 69), (92, 94), (113, 115), (134, 136), (159, 161), (184, 186), (205, 207), (226, 228), (251, 253), (276, 278), (297, 299), (318, 320), (343, 345)],
                     'pointed_left': [(64, 66), (89, 91), (156, 158), (181, 183), (248, 250), (273, 275), (340, 342)]}
-
-anchor_points = [47, 93, 135, 185, 227, 277, 319, 344] # for now, second spot at the start of a row
-anchor_spots = [list(range(21)) + list(range(42, 67)), list(range(21, 42)) + list(range(92, 113)), list(range(67, 92)) + list(range(134, 159)), list(range(113, 134)) + list(range(184, 205)), list(range(159, 184)) + list(range(226, 251)), list(range(205, 226)) + list(range(276, 297)), list(range(251, 276)) + list(range(318, 343)), list(range(297, 318)) + list(range(343, 364))]
 
 north_spot_idx_ranges = [(0, 41), (67, 91), (113, 133), (159, 183), (205, 225), (251, 275), (297, 317)]
 spot_y_offset = 5
 
 class RuleBasedSimulator(object):
-    def __init__(self, dataset: Dataset, vis: RealtimeVisualizer, anchor_points: List[int]):
+    def __init__(self, dataset: Dataset, vis: RealtimeVisualizer):
         self.dlpvis = DlpVisualizer(dataset)
 
         self.vis = vis
 
         self.parking_spaces, self.occupied = self._gen_occupancy()
 
+        for idx in block_spots:
+            self.occupied[idx] = True
+
         self.graph = WaypointsGraph()
         self.graph.setup_with_vis(self.dlpvis)
-
-        self.history = []
-
-
-        # anchor spots
-        self.anchor_points = anchor_points
 
         # Save
         # with open('waypoints_graph.pickle', 'wb') as f:
@@ -59,8 +55,6 @@ class RuleBasedSimulator(object):
         # with open('spots_data.pickle', 'wb') as f:
         #     data_to_save = {'parking_spaces': self.parking_spaces, 
         #                     'overshoot_ranges': overshoot_ranges, 
-        #                     'anchor_points': anchor_points,
-        #                     'anchor_spots': anchor_spots,
         #                     'north_spot_idx_ranges': north_spot_idx_ranges,
         #                     'spot_y_offset': spot_y_offset}
         #     pickle.dump(data_to_save, f)
@@ -120,17 +114,18 @@ class RuleBasedSimulator(object):
     # goes to an anchor point
     # convention: if entering, spot_index is positive, and if exiting, it's negative
     def add_vehicle(self, spot_index: int, vehicle_body: VehicleBody=VehicleBody(), vehicle_config: VehicleConfig=VehicleConfig()):
+        # Start vehicle indexing from 1
+        self.num_vehicles += 1
 
         # NOTE: These lines are here for now. In the ROS implementation, they will all be in the vehicle node, no the simulator node
         vehicle = RuleBasedStanleyVehicle(vehicle_id=self.num_vehicles, vehicle_body=vehicle_body, vehicle_config=vehicle_config)
         vehicle.load_parking_spaces(spots_data_path=spots_data_path)
         vehicle.load_graph(waypoints_graph_path=waypoints_graph_path)
         vehicle.load_maneuver(offline_maneuver_path=offline_maneuver_path)
-        vehicle.set_anchor(going_to_anchor=spot_index>0, spot_index=spot_index, should_overshoot=False)
-        vehicle.load_intent_model(model_path=intent_model_path)
+        vehicle.set_spot_idx(spot_index=spot_index)
+        # vehicle.load_intent_model(model_path=intent_model_path)
         vehicle.start_vehicle()
 
-        self.num_vehicles += 1
         self.vehicles.append(vehicle)
     
 
@@ -138,6 +133,9 @@ class RuleBasedSimulator(object):
         # while not run out of time and we have not reached the last waypoint yet
         while self.max_simulation_time >= self.time:
 
+            if not self.vis.is_running():
+                self.vis.render()
+                continue
 
             # clear visualizer
             self.vis.clear_frame()
@@ -145,7 +143,10 @@ class RuleBasedSimulator(object):
             
             # spawn vehicles
             if self.spawn_entering_time and self.time > self.spawn_entering_time[0]:
-                self.add_vehicle(np.random.choice(self.anchor_points)) # pick from the anchor points at random
+                empty_spots = [i for i in range(len(self.occupied)) if not self.occupied[i]]
+                chosen_spot = np.random.choice(empty_spots)
+                self.add_vehicle(chosen_spot)
+                self.occupied[chosen_spot] = True
                 self.spawn_entering_time.pop(0)
             
             if self.spawn_exiting_time and self.time > self.spawn_exiting_time[0]:
@@ -226,7 +227,7 @@ def main():
 
     vis = RealtimeVisualizer(ds, VehicleBody())
 
-    simulator = RuleBasedSimulator(dataset=ds, vis=vis, anchor_points=anchor_points)
+    simulator = RuleBasedSimulator(dataset=ds, vis=vis)
 
     simulator.run()
 

@@ -32,7 +32,8 @@ def generate_launch_description():
                     executable='simulator_node.py',
                     name='simulator',
                     parameters=[os.path.join(config_dir, 'simulator.yaml')]+global_params,
-                    output='screen'
+                    output='screen',
+                    emulate_tty=True
                 )
             ])
     ])
