@@ -22,6 +22,11 @@ Authors: Xu Shen, Matthew Lacayo, Nidhir Guggilla, Francesco Borrelli
 
 > **Note**: You don't need ROS for ParkPredict+.
 
+<div align=center>
+<img height="300" src="docs/multimodal_1.gif"/>  <img height="300" src="docs/multimodal_2.gif"/>
+<img height="300" src="docs/multimodal_3.gif"/>  <img height="300" src="docs/multimodal_4.gif"/>
+</div>
+
 ### Intent Prediction
 1. `python/parksim/intent_predict/cnnV2` contains code for building, training, and evaluating the model.
 2. A pre-trained model can be [downloaded here](https://drive.google.com/file/d/1LVQJRQmjGfGchxhMRchiZRCjrlFDVch-/view?usp=sharing).
