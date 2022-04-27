@@ -16,6 +16,7 @@ runs/
 
 # IDE
 .vscode/
+.idea/
 
 # Mac
 .DS_Store
