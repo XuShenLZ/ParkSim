@@ -129,7 +129,7 @@ class RuleBasedSimulator(object):
         if spot_index > 0:
             cruise_task = VehicleTask(
                 name="CRUISE", v_cruise=5, target_spot_index=spot_index)
-            park_task = VehicleTask(name="PARK")
+            park_task = VehicleTask(name="PARK", target_spot_index=spot_index)
             task_profile = [cruise_task, park_task]
 
             state = VehicleState()
