@@ -20,10 +20,10 @@ from parksim.agents.rule_based_stanley_vehicle import RuleBasedStanleyVehicle
 np.random.seed(39) # ones with interesting cases: 20, 33, 44, 60
 
 # These parameters should all become ROS param for simulator and vehicle
-spots_data_path = 'ParkSim/data/spots_data.pickle'
-offline_maneuver_path = 'ParkSim/data/parking_maneuvers.pickle'
-waypoints_graph_path = 'ParkSim/data/waypoints_graph.pickle'
-intent_model_path = 'ParkSim/data/smallRegularizedCNN_L0.068_01-29-2022_19-50-35.pth'
+spots_data_path = '/ParkSim/data/spots_data.pickle'
+offline_maneuver_path = '/ParkSim/data/parking_maneuvers.pickle'
+waypoints_graph_path = '/ParkSim/data/waypoints_graph.pickle'
+intent_model_path = '/ParkSim/data/smallRegularizedCNN_L0.068_01-29-2022_19-50-35.pth'
 entrance_coords = [14.38, 76.21]
 block_spots = [43, 44, 45]
 
@@ -47,7 +47,7 @@ class RuleBasedSimulator(object):
         self.graph = WaypointsGraph()
         self.graph.setup_with_vis(self.dlpvis)
 
-        # Save
+        # Save data to offline files
         # with open('waypoints_graph.pickle', 'wb') as f:
         #     data_to_save = {'graph': self.graph, 
         #                     'entrance_coords': entrance_coords}
@@ -65,8 +65,8 @@ class RuleBasedSimulator(object):
         spawn_interval_mean = 5 # Mean time for exp distribution
         spawn_interval_min = 2 # Min time for each spawn
 
-        spawn_entering = 1 # number of vehicles to enter
-        spawn_exiting = 0 # number of vehicles to exit
+        spawn_entering = 3 # number of vehicles to enter
+        spawn_exiting = 3 # number of vehicles to exit
 
         self.spawn_entering_time = sorted(np.random.exponential(spawn_interval_mean, spawn_entering))
         for i in range(spawn_entering):
@@ -189,14 +189,17 @@ class RuleBasedSimulator(object):
                 print("No Active Vehicles")
                 break
 
+            # ========== For real-time prediction only
             # add vehicle states to history
-            current_frame_states = []
-            for vehicle in self.vehicles:
-                current_state_dict = vehicle.get_state_dict()
-                current_frame_states.append(current_state_dict)
-            self.history.append(current_frame_states)
+            # current_frame_states = []
+            # for vehicle in self.vehicles:
+            #     current_state_dict = vehicle.get_state_dict()
+            #     current_frame_states.append(current_state_dict)
+            # self.history.append(current_frame_states)
                 
-            intent_pred_results = []
+            # intent_pred_results = []
+            # ===========
+
             for vehicle_id in active_vehicles:
                 vehicle = active_vehicles[vehicle_id]
 
@@ -205,9 +208,11 @@ class RuleBasedSimulator(object):
                 vehicle.set_method_to_change_central_occupancy(self.occupied)
 
                 vehicle.solve(time=self.time)
+                # ========== For real-time prediction only
                 # result = vehicle.predict_intent()
                 # intent_pred_results.append(result)
-                
+                # ===========
+            
             self.loops += 1
             self.time += 0.1
 
@@ -229,6 +234,7 @@ class RuleBasedSimulator(object):
                 on_vehicle_text += "N" if vehicle.priority is None else str(round(vehicle.priority, 3))
                 # self.vis.draw_text([vehicle.state.x.x - 2, vehicle.state.x.y + 2], on_vehicle_text, size=25)
                 
+            # ========== For real-time prediction only
             # likelihood_radius = 15
             # for result in intent_pred_results:
             #     distribution = result.distribution
@@ -237,6 +243,7 @@ class RuleBasedSimulator(object):
             #         prob = format(distribution[i], '.2f')
             #         self.vis.draw_circle(center=coords, radius=likelihood_radius*distribution[i], color=(255,65,255,255))
             #         self.vis.draw_text([coords[0]-2, coords[1]], prob, 15)
+            # ===========
     
             self.vis.render()
 
@@ -244,9 +251,9 @@ def main():
     # Load dataset
     ds = Dataset()
 
-    home_path = Path.home() / 'Documents/Github'
+    home_path = str(Path.home())
     print('Loading dataset...')
-    ds.load(str(home_path / 'dlp-dataset/data/DJI_0012'))
+    ds.load(home_path + '/dlp-dataset/data/DJI_0012')
     print("Dataset loaded.")
 
     vis = RealtimeVisualizer(ds, VehicleBody())

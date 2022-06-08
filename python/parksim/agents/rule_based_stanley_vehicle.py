@@ -19,7 +19,6 @@ from parksim.utils.get_corners import get_vehicle_corners
 from parksim.utils.interpolation import interpolate_states_inputs
 from parksim.vehicle_types import VehicleBody, VehicleConfig, VehicleInfo, VehicleTask
 
-HOME_PATH = Path.home() / "Documents/Github"
 
 class RuleBasedStanleyVehicle(AbstractAgent):
     def __init__(self, vehicle_id: int, vehicle_body: VehicleBody, vehicle_config: VehicleConfig, controller: StanleyController = StanleyController(), motion_predictor: StanleyController = StanleyController(), inst_centric_generator = None, intent_predictor = None):
@@ -142,8 +141,8 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         self.task_profile = task_profile
 
     def load_parking_spaces(self, spots_data_path: str):
-        load_path = str(HOME_PATH / spots_data_path)
-        with open(load_path, 'rb') as f:
+        home_path = str(Path.home())
+        with open(home_path + spots_data_path, 'rb') as f:
             data = pickle.load(f)
             self.parking_spaces = data['parking_spaces']
             self.overshoot_ranges = data['overshoot_ranges']
@@ -155,8 +154,8 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         waypoints_graph_path: path to WaypointGraph object pickle
         entrance_coords: The (x,y) coordinates of the entrance
         """
-        load_path = str(HOME_PATH / waypoints_graph_path)
-        with open(load_path, 'rb') as f:
+        home_path = str(Path.home())
+        with open(home_path + waypoints_graph_path, 'rb') as f:
             data = pickle.load(f)
             self.graph = data['graph']
             entrance_coords = data['entrance_coords']
@@ -165,8 +164,8 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         self.entrance_vertex = self.graph.search(entrance_coords)
 
     def load_maneuver(self, offline_maneuver_path: str):
-        load_path = str(HOME_PATH / offline_maneuver_path)
-        self.offline_maneuver = OfflineManeuver(pickle_file=load_path)
+        home_path = str(Path.home())
+        self.offline_maneuver = OfflineManeuver(pickle_file=home_path+offline_maneuver_path)
 
     def load_intent_model(self, model_path: str):
         """
