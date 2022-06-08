@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 
 from parksim.pytypes import VehicleState
-from parksim.utils.get_corners import get_vehicle_corners
+from parksim.utils.get_corners import get_vehicle_corners, get_vehicle_corners_from_dict
 
 _ROOT = Path(os.path.abspath(os.path.dirname(__file__)))
 # Load parking map
@@ -140,13 +140,28 @@ class InstanceCentricGenerator:
 
         return waypoints
 
-    def inst_centric(self, ego_state: VehicleState, other_states: Dict[int, VehicleState]):
+    def get_history_window(self, history, num_timesteps):
+        history_window = []
+        index = len(history) - 1
+        while index > 0 and len(history_window) < num_timesteps and len(history[index]) > 0:
+            history_window.insert(0, history[index])
+            index -= 1
+        return history_window
+
+    def inst_centric(self, vehicle_id, history):
         """
         crop the local region around an instance and replot it in ego color. The ego instance is always pointing towards the west
 
         img_frame: the image of the SAME frame
         """
-        img = self.plot_frame(other_states)
+
+        vehicle_index = vehicle_id
+        NUM_STEPS = 5
+        STRIDE_SIZE = 1
+        instance_timeline = self.get_history_window(history, NUM_STEPS * STRIDE_SIZE)
+
+        current_state_dict = instance_timeline[-1][vehicle_index]
+        img = self.plot_frame(instance_timeline)
         draw = ImageDraw.Draw(img)
 
         # Replot this specific instance with the ego color
@@ -154,12 +169,17 @@ class InstanceCentricGenerator:
 
         #instance_timeline = self.dataset.get_agent_past(inst_token,
         #timesteps=self.steps*self.stride)
+
         
-        self.plot_instance(draw, self.color['ego'], ego_state)
+
+        # Replot this specific instance with the ego color
+        color_band = self._color_transition(self.color['ego'], NUM_STEPS)
+        self.plot_instance_timeline(draw, color_band, instance_timeline, STRIDE_SIZE, vehicle_index)
+        #self.plot_instance(draw, self.color['ego'], ego_state)
         
         # The location of the instance in pixel coordinates, and the angle in degrees
-        center = (np.array([ego_state.x.x, ego_state.x.y]) / self.res).astype('int32')
-        angle_degree = ego_state.e.psi / np.pi * 180
+        center = (np.array([current_state_dict['center-x'], current_state_dict['center-y']]) / self.res).astype('int32')
+        angle_degree = current_state_dict['heading'] / np.pi * 180
 
         # Firstly crop a larger box which contains all rotations of the actual window
         outer_size = np.ceil(self.inst_ctr_size * np.sqrt(2))
@@ -172,14 +192,19 @@ class InstanceCentricGenerator:
 
         return img_instance
 
-    def plot_frame(self, other_states: Dict[int, VehicleState]):
+    def plot_frame(self, history):
+
+        
+        NUM_STEPS = 5
+        STRIDE = 1
+        
         # Create the binary mask for all moving objects on the map -- static obstacles and moving agents
         occupy_mask = Image.new(mode='1', size=(self.w, self.h))
         mask_draw = ImageDraw.Draw(occupy_mask)
 
         # Firstly register current obstacles and agents on the binary mask
         self.plot_obstacles(draw=mask_draw, fill=1)
-        self.plot_agents(mask_draw, 1, other_states)
+        self.plot_agents(mask_draw, 1, history[-1:], 1, 0)
 
         img_frame = self.base_map.copy()
         img_draw = ImageDraw.Draw(img_frame)
@@ -187,7 +212,7 @@ class InstanceCentricGenerator:
         # Then plot everything on the main img
         self.plot_spots(occupy_mask=occupy_mask, draw=img_draw, fill=self.color['spot'])
         self.plot_obstacles(draw=img_draw, fill=self.color['obstacle'])
-        self.plot_agents(img_draw, self.color['agent'], other_states)
+        self.plot_agents(img_draw, self.color['agent'], history, STRIDE, NUM_STEPS)
 
 
         return img_frame
@@ -214,6 +239,14 @@ class InstanceCentricGenerator:
         corners_pixel = (corners_ground / self.res).astype('int32')
         draw.polygon([tuple(p) for p in corners_pixel], fill=fill)
 
+    def plot_instance_from_state_dict(self, draw, fill, state_dict):
+        """
+        plot a single instance at a single frame
+        """
+        corners_ground = get_vehicle_corners_from_dict(state_dict)
+        corners_pixel = (corners_ground / self.res).astype('int32')
+        draw.polygon([tuple(p) for p in corners_pixel], fill=fill)
+
 
     def plot_obstacles(self, draw, fill):
         """
@@ -227,13 +260,14 @@ class InstanceCentricGenerator:
             draw.polygon([tuple(p) for p in corners_pixel], fill=fill)
 
 
-    def plot_agents(self, draw, fill, other_states: Dict[int, VehicleState]):
+    def plot_agents(self, draw, fill, history, stride, steps):
         """
         plot all moving agents and their history as fading rectangles
         """
         # Plot
-        for _, state in other_states.items():
-            self.plot_instance(draw, fill, state)
+        color_band = self._color_transition(fill, steps)
+        for i in range(len(history[0])):
+            self.plot_instance_timeline(draw, color_band, history, stride, i)
 
     def spot_available(self, occupy_mask, center, size):
         """
@@ -309,3 +343,44 @@ class InstanceCentricGenerator:
         translated_global = rotated_local + current_state[:2]
 
         return translated_global
+
+    def plot_instance_timeline(self, draw, color_band, instance_timeline, stride, agent_index):
+        """
+        plot the timeline of an instance
+        """
+        len_history = len(instance_timeline) - 1
+        max_steps = np.floor( len_history / stride).astype(int)
+
+        # History configuration
+        for idx_step in range(max_steps, 0, -1):
+            idx_history = len_history - idx_step * stride
+            instance_state_dict = instance_timeline[idx_history][agent_index]
+            self.plot_instance_from_state_dict(draw=draw, fill=color_band[-1-idx_step], state_dict=instance_state_dict)
+
+        # Current configuration
+        instance_state_dict = instance_timeline[-1][agent_index]
+        self.plot_instance_from_state_dict(draw=draw, fill=color_band[-1], state_dict=instance_state_dict)
+
+    def _color_transition(self, max_color, steps):
+        """
+        generate colors to plot the state history of agents
+
+        max_color: 3-element tuple with r,g,b value. This is the color to plot the current state
+        """
+        # If we don't actually need the color band, return the max color directly
+        if steps == 0:
+            return [max_color]
+
+        min_color = (int(max_color[0]/2), int(max_color[1]/2), int(max_color[2]/2))
+
+        color_band = [min_color]
+
+        for i in range(1, steps):
+            r = int(min_color[0] + i * (max_color[0] - min_color[0]) / 2 / steps)
+            g = int(min_color[1] + i * (max_color[1] - min_color[1]) / 2 / steps)
+            b = int(min_color[2] + i * (max_color[2] - min_color[2]) / 2 / steps)
+            color_band.append((r,g,b))
+
+        color_band.append(max_color)
+
+        return color_band

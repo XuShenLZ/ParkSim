@@ -1,4 +1,5 @@
 from typing import Dict, List, Set, Tuple
+from matplotlib.pyplot import hist
 import numpy as np
 from pathlib import Path
 import pickle
@@ -17,6 +18,8 @@ from parksim.route_planner.graph import Vertex, WaypointsGraph
 from parksim.utils.get_corners import get_vehicle_corners
 from parksim.utils.interpolation import interpolate_states_inputs
 from parksim.vehicle_types import VehicleBody, VehicleConfig, VehicleInfo, VehicleTask
+
+HOME_PATH = Path.home() / "Documents/Github"
 
 class RuleBasedStanleyVehicle(AbstractAgent):
     def __init__(self, vehicle_id: int, vehicle_body: VehicleBody, vehicle_config: VehicleConfig, controller: StanleyController = StanleyController(), motion_predictor: StanleyController = StanleyController(), inst_centric_generator = None, intent_predictor = None):
@@ -139,8 +142,8 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         self.task_profile = task_profile
 
     def load_parking_spaces(self, spots_data_path: str):
-        home_path = str(Path.home())
-        with open(home_path + spots_data_path, 'rb') as f:
+        load_path = str(HOME_PATH / spots_data_path)
+        with open(load_path, 'rb') as f:
             data = pickle.load(f)
             self.parking_spaces = data['parking_spaces']
             self.overshoot_ranges = data['overshoot_ranges']
@@ -152,8 +155,8 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         waypoints_graph_path: path to WaypointGraph object pickle
         entrance_coords: The (x,y) coordinates of the entrance
         """
-        home_path = str(Path.home())
-        with open(home_path + waypoints_graph_path, 'rb') as f:
+        load_path = str(HOME_PATH / waypoints_graph_path)
+        with open(load_path, 'rb') as f:
             data = pickle.load(f)
             self.graph = data['graph']
             entrance_coords = data['entrance_coords']
@@ -162,8 +165,8 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         self.entrance_vertex = self.graph.search(entrance_coords)
 
     def load_maneuver(self, offline_maneuver_path: str):
-        home_path = str(Path.home())
-        self.offline_maneuver = OfflineManeuver(pickle_file=home_path+offline_maneuver_path)
+        load_path = str(HOME_PATH / offline_maneuver_path)
+        self.offline_maneuver = OfflineManeuver(pickle_file=load_path)
 
     def load_intent_model(self, model_path: str):
         """
@@ -805,14 +808,21 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         self.state_hist.append(self.state.copy())
         self.logger.append(f't = {time}: x = {self.state.x.x:.2f}, y = {self.state.x.y:.2f}')
 
-    def predict_intent(self, vehicle_id=None):
+    def predict_intent(self, vehicle_id, history):
         """
         predict the intent of the specific vehicle
         """
-        if vehicle_id is None:
-            img = self.inst_centric_generator.inst_centric(self.state, self.other_state)
-            return self.intent_predictor.predict(img, np.array([self.state.x.x, self.state.x.y]), self.state.e.psi, self.state.v.v, 1.0)
-            # Predicting ourselves
-        else:
-            raise NotImplementedError("Haven't inplement method for predicting other vehicles")
-            # Predicting someone else
+        img = self.inst_centric_generator.inst_centric(vehicle_id, history)
+        return self.intent_predictor.predict(img, np.array([self.state.x.x, self.state.x.y]), self.state.e.psi, self.state.v.v, 1.0)
+
+    def get_state_dict(self):
+        state_dict = {}
+        state_dict['center-x'] = self.state.x.x
+        state_dict['center-y'] = self.state.x.y
+        state_dict['heading'] = self.state.e.psi
+        state_dict['corners'] = self.vehicle_body.V
+        return state_dict
+
+    def get_other_vehicles(self):
+        other_states = {i : self.other_state[i] for i in self.other_state}
+        return other_states
