@@ -2,7 +2,6 @@ visualizer:
   ros__parameters:
     timer_period: 0.05
 
-    draw_dlp: true
     dlp_time_offset: -3
 
     # ======== Color

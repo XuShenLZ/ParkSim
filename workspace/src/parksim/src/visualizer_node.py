@@ -25,7 +25,8 @@ class VisualizerNodeParams(NodeParamTemplate):
     def __init__(self):
         self.dlp_path = '/dlp-dataset/data/DJI_0012'
         self.timer_period = 0.05
-        self.draw_dlp = True
+
+        self.use_existing_agents = False
         self.dlp_time_offset = -1
 
         self.driving_color = [0, 255, 0, 255]
@@ -143,7 +144,7 @@ class VisualizerNode(MPClabNode):
 
         self.vis.clear_frame()
         
-        if self.draw_dlp:
+        if self.use_existing_agents:
             scene_token = self.vis.dlpvis.dataset.list_scenes()[0]
             agent_token_list = self.vis.dlpvis.dataset.get('scene', scene_token)['agents']
             frame = self.vis.dlpvis.dataset.get_frame_at_time(

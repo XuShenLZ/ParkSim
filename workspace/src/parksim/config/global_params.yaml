@@ -6,4 +6,5 @@ random_seed: 0
 write_log: true
 log_path: '/ParkSim/vehicle_log'
 
+use_existing_agents: true
 agents_data_path: '/ParkSim/data/agents_data.pickle'
