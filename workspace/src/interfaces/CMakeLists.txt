@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.5)
-project(rosbridge)
+project(interfaces)
 
 # Default to C99
 if(NOT CMAKE_C_STANDARD)
@@ -31,5 +31,17 @@ if(BUILD_TESTING)
   #set(ament_cmake_cpplint_FOUND TRUE)
   ament_lint_auto_find_test_dependencies()
 endif()
+
+
+find_package(rosidl_default_generators REQUIRED)
+
+rosidl_generate_interfaces(${PROJECT_NAME}
+  "msg/Num.msg"
+  "msg/BodyAngularVelocityMsg.msg"
+  "msg/BodyLinearVelocityMsg.msg"
+  "msg/OrientationQuaternionMsg.msg"
+  "msg/PositionMsg.msg"
+  "msg/VehicleStateMsg.msg"
+)
 
 ament_package()
