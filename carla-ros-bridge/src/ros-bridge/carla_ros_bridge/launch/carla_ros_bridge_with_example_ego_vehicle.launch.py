@@ -20,7 +20,7 @@ def generate_launch_description():
         ),
         launch.actions.DeclareLaunchArgument(
             name='role_name',
-            default_value='ego_vehicle'
+            default_value='vehicle_1'
         ),
         launch.actions.DeclareLaunchArgument(
             name='vehicle_filter',

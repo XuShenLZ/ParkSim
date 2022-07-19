@@ -30,14 +30,14 @@ class Translator(Node):
         pose_msg.orientation.w = msg.q.qk
         twist_msg = Twist()
         twist_msg.linear.x = msg.v.v_long
-        twist_msg.linear.y = msg.v.v_long
-        twist_msg.linear.z = msg.v.v_long
+        twist_msg.linear.y = msg.v.v_tran
+        twist_msg.linear.z = msg.v.v_n
         twist_msg.angular.x = msg.w.w_phi
         twist_msg.angular.y = msg.w.w_theta
         twist_msg.angular.z = msg.w.w_psi
         self.publisher.publish(twist_msg)
         self.get_logger() \
-            .info(f'Bridge received vehicle state x: {msg.x.x} y: {msg.x.y} z: {msg.x.z}')
+            .info(f'Bridge received vehicle state x: {msg.v.v_long} y: {msg.v.v_tran} z: {msg.v.v_n}')
         
 
 def main(args=None):
@@ -45,8 +45,7 @@ def main(args=None):
 
     translator = Translator()
 
-    rclpy.spin(translator= Translator()
-)
+    rclpy.spin(translator)
 
     # Destroy the node explicitly
     # (optional - otherwise it will be done automatically

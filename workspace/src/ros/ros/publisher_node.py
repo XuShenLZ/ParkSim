@@ -18,7 +18,7 @@ class VehiclePublisher(Node):
         self.populate_state_msg(state_msg)
         self.publisher_.publish(state_msg)
         self.get_logger() \
-            .info(f'ROS sent vehicle state x: {state_msg.v.v_long} y: {state_msg.v.v_tran} z: {state_msg.x.v_n}')
+            .info(f'ROS sent vehicle state x: {state_msg.v.v_long} y: {state_msg.v.v_tran} z: {state_msg.v.v_n}')
     
     def populate_state_msg(self, msg):
         # PositionMsg: x
@@ -35,7 +35,7 @@ class VehiclePublisher(Node):
         msg.w.w_theta = 0.0
         msg.w.w_psi = 0.0
         # BodyLinearVelocityMsg: v
-        msg.v.v_long = 1.0              # drive forward slowly
+        msg.v.v_long = 2.0              # drive forward slowly
         msg.v.v_tran = 0.0
         msg.v.v_n = 0.0
 
