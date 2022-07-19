@@ -6,10 +6,10 @@ from interfaces.msg import Num, VehicleStateMsg
 from geometry_msgs.msg import Pose, Twist
 
 
-class MinimalSubscriber(Node):
+class Translator(Node):
 
     def __init__(self):
-        super().__init__('minimal_subscriber')
+        super().__init__('translator')
         self.subscription = self.create_subscription(
             VehicleStateMsg,
             'topic',
@@ -17,8 +17,9 @@ class MinimalSubscriber(Node):
             10)
         self.subscription  # prevent unused variable warning
 
+        self.publisher = self.create_publisher(Twist, '/carla/ego_vehicle/control/set_target_velocity', 10)
+
     def listener_callback(self, msg):
-        # self.get_logger().info('I heard: "%s"' % msg.num)
         pose_msg = Pose()
         pose_msg.position.x = msg.x.x
         pose_msg.position.y = msg.x.y
@@ -34,6 +35,7 @@ class MinimalSubscriber(Node):
         twist_msg.angular.x = msg.w.w_phi
         twist_msg.angular.y = msg.w.w_theta
         twist_msg.angular.z = msg.w.w_psi
+        self.publisher.publish(twist_msg)
         self.get_logger() \
             .info(f'Bridge received vehicle state x: {msg.x.x} y: {msg.x.y} z: {msg.x.z}')
         
@@ -41,14 +43,15 @@ class MinimalSubscriber(Node):
 def main(args=None):
     rclpy.init(args=args)
 
-    minimal_subscriber = MinimalSubscriber()
+    translator = Translator()
 
-    rclpy.spin(minimal_subscriber)
+    rclpy.spin(translator= Translator()
+)
 
     # Destroy the node explicitly
     # (optional - otherwise it will be done automatically
     # when the garbage collector destroys the node object)
-    minimal_subscriber.destroy_node()
+    translator.destroy_node()
     rclpy.shutdown()
 
 
