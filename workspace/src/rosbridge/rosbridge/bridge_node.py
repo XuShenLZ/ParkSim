@@ -17,7 +17,9 @@ class Translator(Node):
             10)
         self.subscription  # prevent unused variable warning
 
-        self.publisher = self.create_publisher(Twist, '/carla/ego_vehicle/control/set_target_velocity', 10)
+        self.publisher = self.create_publisher(Twist, '/carla/vehicle_1/control/set_target_velocity', 10)
+
+        self.publisher2 = self.create_publisher(Pose, '/carla/vehicle_2/control/set_transform', 10)
 
     def listener_callback(self, msg):
         pose_msg = Pose()
@@ -28,6 +30,9 @@ class Translator(Node):
         pose_msg.orientation.y = msg.q.qi
         pose_msg.orientation.z = msg.q.qj
         pose_msg.orientation.w = msg.q.qk
+        self.publisher2.publish(pose_msg)
+        # self.get_logger().info('moved vehicle 2')
+
         twist_msg = Twist()
         twist_msg.linear.x = msg.v.v_long
         twist_msg.linear.y = msg.v.v_tran

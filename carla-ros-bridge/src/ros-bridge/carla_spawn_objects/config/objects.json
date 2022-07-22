@@ -22,8 +22,28 @@
             "id": "map"
         },
         {
+            "type": "vehicle.audi.a2",
+            "id": "vehicle_2",
+            "spawn_point": {
+                "x": -84.0,
+                "y": 54.0,
+                "z": 19.0,
+                "roll": 0.0,
+                "pitch": 0.0,
+                "yaw": 154.0
+            },
+            "sensors": 
+            [
+                {
+                    "type": "actor.pseudo.control",
+                    "id": "control"
+                }
+            ]
+        },
+        {
             "type": "vehicle.tesla.model3",
             "id": "vehicle_1",
+            "spawn_point": {"x": 298.0,"y": 20.0, "z": 29.0,"roll": 0.0, "pitch": 0.0, "yaw": 154.0},
             "sensors": 
             [
                 {
