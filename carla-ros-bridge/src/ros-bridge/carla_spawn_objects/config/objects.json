@@ -41,6 +41,21 @@
             ]
         },
         {
+            "type": "sensor.camera.rgb",
+            "id": "camera_1",
+            "spawn_point": {
+                "x": 298.0,
+                "y": 20.0,
+                "z": 50.0,
+                "roll": 0.0,
+                "pitch": -90.0,
+                "yaw": 0.0
+            },
+            "image_size_x": 800,
+            "image_size_y": 600,
+            "fov": 90.0
+        },
+        {
             "type": "vehicle.tesla.model3",
             "id": "vehicle_1",
             "spawn_point": {"x": 298.0,"y": 20.0, "z": 29.0,"roll": 0.0, "pitch": 0.0, "yaw": 154.0},

@@ -1,156 +1,153 @@
-# ==============================================================================
-# -- find carla module ---------------------------------------------------------
-# ==============================================================================
+#!/usr/bin/env python
 
+from __future__ import print_function
 
-import pygame
-import glob
-import os
-import sys
-
-try:
-    sys.path.append(glob.glob('../carla/dist/carla-*%d.%d-%s.egg' % (
-        sys.version_info.major,
-        sys.version_info.minor,
-        'win-amd64' if os.name == 'nt' else 'linux-x86_64'))[0])
-except IndexError:
-    pass
-
-# ==============================================================================
-# -- imports -------------------------------------------------------------------
-# ==============================================================================
-
-
-import carla
-import pdb
-from carla import ColorConverter as cc
-
-import argparse
-import collections
 import datetime
-import logging
 import math
-import random
-import re
-import weakref
-import numpy as np
-import random
+from threading import Thread
 
-
-from carla_utils import *
-# if sys.version_info >= (3, 0):
-#     from configparser import ConfigParser
-# else:
-#     from ConfigParser import RawConfigParser as ConfigParser
+import numpy
+from transforms3d.euler import quat2euler
 try:
     import pygame
 except ImportError:
     raise RuntimeError('cannot import pygame, make sure pygame package is installed')
-try:
-    import numpy as np
-except ImportError:
-    raise RuntimeError('cannot import numpy, make sure numpy package is installed')
 
+import ros_compatibility as roscomp
+from ros_compatibility.node import CompatibleNode
+from ros_compatibility.qos import QoSProfile, DurabilityPolicy
+
+from carla_msgs.msg import CarlaStatus
+from carla_msgs.msg import CarlaEgoVehicleInfo
+from carla_msgs.msg import CarlaEgoVehicleStatus
+from carla_msgs.msg import CarlaEgoVehicleControl
+from carla_msgs.msg import CarlaLaneInvasionEvent
+from carla_msgs.msg import CarlaCollisionEvent
+from nav_msgs.msg import Odometry
+from sensor_msgs.msg import Image
+from sensor_msgs.msg import NavSatFix
+from std_msgs.msg import Bool
 
 # ==============================================================================
-# -- game_loop() ---------------------------------------------------------------
+# -- CarlaParkSim --------------------------------------------------------------
 # ==============================================================================
 
 
-def game_loop(args):
-    pygame.init()
-    pygame.font.init()
-    world = None
+class CarlaParkSim(CompatibleNode):
 
-    drone_camera = None
+    """
+    Handles the spawning of the ego vehicle and its sensors
 
-    spwnr = None
-    steady_spwnr = None
+    Derive from this class and implement method sensors()
+    """
 
-    try:
-        client = carla.Client(args.host, args.port)
-        client.set_timeout(2.0)
-        display = pygame.display.set_moode(
-            (args.width, args.height),
-            pygame.HWSURFACE | pygame.DOUBLEBUF)
-        
-        hud = HUD(args.width, args.height)
-        world = World(client.get_world(), hud, args.filter)
+    def __init__(self):
+        super(CarlaParkSim, self).__init__('carla_parksim')
+        self._surface = None
+        self.host = self.get_param('host', 'localhost')
+        self.port = self.get_param('port', 2000)
 
-        blueprint_library = world.world.get_blueprint_library()
-        drone_camera_bp = blueprint_library.find('sensor.camera.rgb')
-        drone_camera_bp.set_attribute('image_size_x', str(600))
-        drone_camera_bp.set_attribute('image_size_y', str(800))
-        drone_camera_bp.set_attribute('fov', '100')
-        drone_camera_bp.set_attribute('sensor_tick', '0.1')
-        drone_camera_transform = carla.Transform(carla.Location(x=298.0, y=20.0, z=50.0), carla.Rotation(yaw=154, pitch=-90))
-        drone_camera = world.world.spawn_actor(drone_camera_bp, drone_camera_transform)
+        self.camera_name = self.get_param("camera_name", "camera_1")
 
+        self.image_subscriber = self.new_subscription(
+            Image, "/carla/{}/image".format(self.camera_name),
+            self.on_view_image, qos_profile=10)
+        self.loginfo('parksim node intitialized')
 
-    except Exception as e:
-        print('go an exception', e)
-    finally:
-        if args.record:
-            client.stop_recorder()
-        if drone_camera:
-            drone_camera.destroy()
-        if world is not None:
-            # time.sleep(f)
-            steady_spwnr.remove()
-            spwnr.remove()
-            # extra_spwnr.remove()
-            world.destroy()
-        pygame.quit()
+    def on_collision(self, data):
+        """
+        Callback on collision event
+        """
+        intensity = math.sqrt(data.normal_impulse.x**2 +
+                              data.normal_impulse.y**2 + data.normal_impulse.z**2)
+        self.hud.notification('Collision with {} (impulse {})'.format(
+            data.other_actor_id, intensity))
+
+    def on_lane_invasion(self, data):
+        """
+        Callback on lane invasion event
+        """
+        text = []
+        for marking in data.crossed_lane_markings:
+            if marking is CarlaLaneInvasionEvent.LANE_MARKING_OTHER:
+                text.append("Other")
+            elif marking is CarlaLaneInvasionEvent.LANE_MARKING_BROKEN:
+                text.append("Broken")
+            elif marking is CarlaLaneInvasionEvent.LANE_MARKING_SOLID:
+                text.append("Solid")
+            else:
+                text.append("Unknown ")
+        self.hud.notification('Crossed line %s' % ' and '.join(text))
+
+    def on_view_image(self, image):
+        """
+        Callback when receiving a camera image
+        """
+        array = numpy.frombuffer(image.data, dtype=numpy.dtype("uint8"))
+        array = numpy.reshape(array, (image.height, image.width, 4))
+        array = array[:, :, :3]
+        array = array[:, :, ::-1]
+        self._surface = pygame.surfarray.make_surface(array.swapaxes(0, 1))
+
+    def render(self, game_clock, display):
+        """
+        render the current image
+        """
+
+        # do_quit = self.controller.parse_events(game_clock)
+        # if do_quit:
+        #     return
+        # self.hud.tick(game_clock)
+
+        if self._surface is not None:
+            display.blit(self._surface, (0, 0))
+        # self.hud.render(display)
+
+    
+
 
 # ==============================================================================
 # -- main() --------------------------------------------------------------------
 # ==============================================================================
 
 
-def main():
-    argparser = argparse.ArgumentParser(
-        description='CARLA Manual Control Client')
-    argparser.add_argument(
-        '-v', '--verbose',
-        action='store_true',
-        dest='debug',
-        help='print debug information')
-    argparser.add_argument(
-        '--host',
-        metavar='H',
-        default='127.0.0.1',
-        help='IP of the host server (default: 127.0.0.1)')
-    argparser.add_argument(
-        '-p', '--port',
-        metavar='P',
-        default=2000,
-        type=int,
-        help='TCP port to listen to (default: 2000)')
-    argparser.add_argument(
-        '-a', '--autopilot',
-        action='store_true',
-        help='enable autopilot')
-    argparser.add_argument(
-        '--res',
-        metavar='WIDTHxHEIGHT',
-        default='1280x720',
-        help='window resolution (default: 1280x720)')
-    argparser.add_argument(
-        '--filter',
-        metavar='PATTERN',
-        default='vehicle.*',
-        help='actor filter (default: "vehicle.*")')
+def main(args=None):
+    """
+    main function
+    """
+    roscomp.init("parksim", args=args)
 
+    resolution = {"width": 800, "height": 600}
 
-    args = argparser.parse_args()
-
-    args.width, args.height = [int(x) for x in args.res.split('x')]
+    pygame.init()
+    pygame.display.set_caption("CARLA ParkSim")
 
     try:
-        game_loop(args)
-    except KeyboardInterrupt:
-        print('\nCancelled by user.')
+        display = pygame.display.set_mode((resolution['width'], resolution['height']),
+                                          pygame.HWSURFACE | pygame.DOUBLEBUF)
 
+        parksim_node = CarlaParkSim()
+        clock = pygame.time.Clock()
+
+        executor = roscomp.executors.MultiThreadedExecutor()
+        executor.add_node(parksim_node)
+
+        spin_thread = Thread(target=parksim_node.spin)
+        spin_thread.start()
+
+        roscomp.loginfo("inside parksim main()")
+
+        while roscomp.ok():
+            clock.tick_busy_loop(60)
+            if parksim_node.render(clock, display):
+                return
+            pygame.display.flip()
+    except KeyboardInterrupt:
+        roscomp.loginfo("User requested shut down.")
+    finally:
+        roscomp.shutdown()
+        spin_thread.join()
+        pygame.quit()
 
 
 if __name__ == '__main__':

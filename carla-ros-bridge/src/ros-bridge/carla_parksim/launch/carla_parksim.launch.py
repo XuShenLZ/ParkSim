@@ -1,6 +1,7 @@
 import os
 
 import launch
+import launch_ros.actions
 from ament_index_python.packages import get_package_share_directory
 
 
@@ -21,6 +22,10 @@ def generate_launch_description():
         launch.actions.DeclareLaunchArgument(
             name='role_name',
             default_value='vehicle_1'
+        ),
+        launch.actions.DeclareLaunchArgument(
+            name='camera_name',
+            default_value='camera_1'
         ),
         launch.actions.DeclareLaunchArgument(
             name='vehicle_filter',
@@ -84,11 +89,19 @@ def generate_launch_description():
         #         'role_name': launch.substitutions.LaunchConfiguration('role_name')
         #     }.items()
         # )
-        launch.actions.IncludeLaunchDescription(
-            launch.launch_description_sources.PythonLaunchDescriptionSource(
-                os.path.join(get_package_share_directory(
-                    'carla_parksim'), 'carla_example_ego_vehicle.launch.py')
-            ),
+        launch_ros.actions.Node(
+            package='carla_parksim',
+            executable='carla_parksim.py',
+            name='carla_parksim',
+            output='screen',
+            emulate_tty=True,
+            parameters=[
+                {
+                    'host': launch.substitutions.LaunchConfiguration('host'),
+                    'port': launch.substitutions.LaunchConfiguration('port'),
+                    'camera_name': launch.substitutions.LaunchConfiguration('camera_name')
+                }
+            ]
         )
     ])
     return ld
