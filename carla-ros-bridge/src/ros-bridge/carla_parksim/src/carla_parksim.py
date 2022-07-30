@@ -117,7 +117,7 @@ def main(args=None):
     """
     roscomp.init("parksim", args=args)
 
-    resolution = {"width": 800, "height": 600}
+    resolution = {"width": 1200, "height": 800}
 
     pygame.init()
     pygame.display.set_caption("CARLA ParkSim")

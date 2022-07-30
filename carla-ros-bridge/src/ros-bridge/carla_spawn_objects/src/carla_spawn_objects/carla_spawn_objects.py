@@ -104,6 +104,7 @@ class CarlaSpawnObjects(CompatibleNode):
             raise RuntimeError("Parameter 'spawn_sensors_only' enabled, " +
                                "but 'sensor.pseudo.actor_list' is not instantiated, add it to your config file.")
 
+        self.loginfo("global_sensors: {}".format(global_sensors))
         self.setup_sensors(global_sensors)
 
         if self.spawn_sensors_only is True:
@@ -115,7 +116,7 @@ class CarlaSpawnObjects(CompatibleNode):
                         vehicle["carla_id"] = actor_info.id
 
         self.setup_vehicles(vehicles)
-        self.loginfo("All objects spawned.")
+        # self.loginfo("All objects spawned.")
 
     def setup_vehicles(self, vehicles):
         for vehicle in vehicles:
