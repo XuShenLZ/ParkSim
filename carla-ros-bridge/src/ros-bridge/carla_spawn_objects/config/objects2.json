@@ -1,0 +1,220 @@
+{   
+    "objects": 
+    [
+        {
+            "type": "sensor.pseudo.traffic_lights",
+            "id": "traffic_lights"
+        },
+        {
+            "type": "sensor.pseudo.objects",
+            "id": "objects"
+        },
+        {
+            "type": "sensor.pseudo.actor_list",
+            "id": "actor_list"
+        },
+        {
+            "type": "sensor.pseudo.markers",
+            "id": "markers"
+        },
+        {
+            "type": "sensor.pseudo.opendrive_map",
+            "id": "map"
+        },
+        {
+            "type": "sensor.camera.rgb",
+            "id": "camera_1",
+            "spawn_point": {"x": 84.0, "y": -170.0, "z": 150.0, "roll": 0.0, "pitch": 90.0, "yaw": -29.0
+            },
+            "image_size_x": 1200,
+            "image_size_y": 800,
+            "fov": 90.0
+        },
+        {
+            "type": "vehicle.audi.a2",                 
+            "id": "vehicle_1",
+            "spawn_point": {"x": 230.0, "y": -170.0, "z": 40.0, "roll": 0.0, "pitch": 0.0, "yaw": 0.0},
+            "sensors": [{"type": "actor.pseudo.control", "id": "control"}]
+        },
+        {
+            "type": "vehicle.audi.a2",                 
+            "id": "vehicle_2",
+            "spawn_point": {"x": 225.0, "y": -170.0, "z": 40.0, "roll": 0.0, "pitch": 0.0, "yaw": 0.0},
+            "sensors": [{"type": "actor.pseudo.control", "id": "control"}]
+        },
+        {
+            "type": "vehicle.audi.a2",                 
+            "id": "vehicle_3",
+            "spawn_point": {"x": 220.0, "y": -170.0, "z": 40.0, "roll": 0.0, "pitch": 0.0, "yaw": 0.0},
+            "sensors": [{"type": "actor.pseudo.control", "id": "control"}]
+        },
+        {
+            "type": "vehicle.audi.a2",                 
+            "id": "vehicle_4",
+            "spawn_point": {"x": 215.0, "y": -170.0, "z": 40.0, "roll": 0.0, "pitch": 0.0, "yaw": 0.0},
+            "sensors": [{"type": "actor.pseudo.control", "id": "control"}]
+        },
+        {
+            "type": "vehicle.audi.a2",                 
+            "id": "vehicle_5",
+            "spawn_point": {"x": 210.0, "y": -170.0, "z": 40.0, "roll": 0.0, "pitch": 0.0, "yaw": 0.0},
+            "sensors": [{"type": "actor.pseudo.control", "id": "control"}]
+        },
+        {
+            "type": "vehicle.audi.a2",                 
+            "id": "vehicle_6",
+            "spawn_point": {"x": 205.0, "y": -170.0, "z": 40.0, "roll": 0.0, "pitch": 0.0, "yaw": 0.0},
+            "sensors": [{"type": "actor.pseudo.control", "id": "control"}]
+        },
+        {
+            "type": "vehicle.audi.a2",                 
+            "id": "vehicle_7",
+            "spawn_point": {"x": 200.0, "y": -170.0, "z": 40.0, "roll": 0.0, "pitch": 0.0, "yaw": 0.0},
+            "sensors": [{"type": "actor.pseudo.control", "id": "control"}]
+        },
+        {
+            "type": "vehicle.audi.a2",                 
+            "id": "vehicle_8",
+            "spawn_point": {"x": 195.0, "y": -170.0, "z": 40.0, "roll": 0.0, "pitch": 0.0, "yaw": 0.0},
+            "sensors": [{"type": "actor.pseudo.control", "id": "control"}]
+        },
+        {
+            "type": "vehicle.audi.a2",                 
+            "id": "vehicle_9",
+            "spawn_point": {"x": 190.0, "y": -170.0, "z": 40.0, "roll": 0.0, "pitch": 0.0, "yaw": 0.0},
+            "sensors": [{"type": "actor.pseudo.control", "id": "control"}]
+        },
+        {
+            "type": "vehicle.audi.a2",                 
+            "id": "vehicle_10",
+            "spawn_point": {"x": 185.0, "y": -170.0, "z": 40.0, "roll": 0.0, "pitch": 0.0, "yaw": 0.0},
+            "sensors": [{"type": "actor.pseudo.control", "id": "control"}]
+        },
+        {
+            "type": "vehicle.audi.a2",                 
+            "id": "vehicle_11",
+            "spawn_point": {"x": 180.0, "y": -170.0, "z": 40.0, "roll": 0.0, "pitch": 0.0, "yaw": 0.0},
+            "sensors": [{"type": "actor.pseudo.control", "id": "control"}]
+        },
+        {
+            "type": "vehicle.audi.a2",                 
+            "id": "vehicle_12",
+            "spawn_point": {"x": 175.0, "y": -170.0, "z": 40.0, "roll": 0.0, "pitch": 0.0, "yaw": 0.0},
+            "sensors": [{"type": "actor.pseudo.control", "id": "control"}]
+        },
+        {
+            "type": "vehicle.audi.a2",                 
+            "id": "vehicle_13",
+            "spawn_point": {"x": 170.0, "y": -170.0, "z": 40.0, "roll": 0.0, "pitch": 0.0, "yaw": 0.0},
+            "sensors": [{"type": "actor.pseudo.control", "id": "control"}]
+        },
+        {
+            "type": "vehicle.audi.a2",                 
+            "id": "vehicle_14",
+            "spawn_point": {"x": 165.0, "y": -170.0, "z": 40.0, "roll": 0.0, "pitch": 0.0, "yaw": 0.0},
+            "sensors": [{"type": "actor.pseudo.control", "id": "control"}]
+        },
+        {
+            "type": "vehicle.audi.a2",                 
+            "id": "vehicle_15",
+            "spawn_point": {"x": 160.0, "y": -170.0, "z": 40.0, "roll": 0.0, "pitch": 0.0, "yaw": 0.0},
+            "sensors": [{"type": "actor.pseudo.control", "id": "control"}]
+        },
+        {
+            "type": "vehicle.audi.a2",                 
+            "id": "vehicle_16",
+            "spawn_point": {"x": 155.0, "y": -170.0, "z": 40.0, "roll": 0.0, "pitch": 0.0, "yaw": 0.0},
+            "sensors": [{"type": "actor.pseudo.control", "id": "control"}]
+        },
+        {
+            "type": "vehicle.audi.a2",                 
+            "id": "vehicle_17",
+            "spawn_point": {"x": 150.0, "y": -170.0, "z": 40.0, "roll": 0.0, "pitch": 0.0, "yaw": 0.0},
+            "sensors": [{"type": "actor.pseudo.control", "id": "control"}]
+        },
+        {
+            "type": "vehicle.audi.a2",                 
+            "id": "vehicle_18",
+            "spawn_point": {"x": 145.0, "y": -170.0, "z": 40.0, "roll": 0.0, "pitch": 0.0, "yaw": 0.0},
+            "sensors": [{"type": "actor.pseudo.control", "id": "control"}]
+        },
+        {
+            "type": "vehicle.audi.a2",                 
+            "id": "vehicle_19",
+            "spawn_point": {"x": 140.0, "y": -170.0, "z": 40.0, "roll": 0.0, "pitch": 0.0, "yaw": 0.0},
+            "sensors": [{"type": "actor.pseudo.control", "id": "control"}]
+        },
+        {
+            "type": "vehicle.audi.a2",                 
+            "id": "vehicle_20",
+            "spawn_point": {"x": 135.0, "y": -170.0, "z": 40.0, "roll": 0.0, "pitch": 0.0, "yaw": 0.0},
+            "sensors": [{"type": "actor.pseudo.control", "id": "control"}]
+        },
+        {
+            "type": "vehicle.audi.a2",                 
+            "id": "vehicle_21",
+            "spawn_point": {"x": 130.0, "y": -170.0, "z": 40.0, "roll": 0.0, "pitch": 0.0, "yaw": 0.0},
+            "sensors": [{"type": "actor.pseudo.control", "id": "control"}]
+        },
+        {
+            "type": "vehicle.audi.a2",                 
+            "id": "vehicle_22",
+            "spawn_point": {"x": 125.0, "y": -170.0, "z": 40.0, "roll": 0.0, "pitch": 0.0, "yaw": 0.0},
+            "sensors": [{"type": "actor.pseudo.control", "id": "control"}]
+        },
+        {
+            "type": "vehicle.audi.a2",                 
+            "id": "vehicle_23",
+            "spawn_point": {"x": 120.0, "y": -170.0, "z": 40.0, "roll": 0.0, "pitch": 0.0, "yaw": 0.0},
+            "sensors": [{"type": "actor.pseudo.control", "id": "control"}]
+        },
+        {
+            "type": "vehicle.audi.a2",                 
+            "id": "vehicle_24",
+            "spawn_point": {"x": 115.0, "y": -170.0, "z": 40.0, "roll": 0.0, "pitch": 0.0, "yaw": 0.0},
+            "sensors": [{"type": "actor.pseudo.control", "id": "control"}]
+        },
+        {
+            "type": "vehicle.audi.a2",                 
+            "id": "vehicle_25",
+            "spawn_point": {"x": 110.0, "y": -170.0, "z": 40.0, "roll": 0.0, "pitch": 0.0, "yaw": 0.0},
+            "sensors": [{"type": "actor.pseudo.control", "id": "control"}]
+        },
+        {
+            "type": "vehicle.audi.a2",                 
+            "id": "vehicle_26",
+            "spawn_point": {"x": 105.0, "y": -170.0, "z": 40.0, "roll": 0.0, "pitch": 0.0, "yaw": 0.0},
+            "sensors": [{"type": "actor.pseudo.control", "id": "control"}]
+        },
+        {
+            "type": "vehicle.audi.a2",                 
+            "id": "vehicle_27",
+            "spawn_point": {"x": 100.0, "y": -170.0, "z": 40.0, "roll": 0.0, "pitch": 0.0, "yaw": 0.0},
+            "sensors": [{"type": "actor.pseudo.control", "id": "control"}]
+        },
+        {
+            "type": "vehicle.audi.a2",                 
+            "id": "vehicle_28",
+            "spawn_point": {"x": 95.0, "y": -170.0, "z": 40.0, "roll": 0.0, "pitch": 0.0, "yaw": 0.0},
+            "sensors": [{"type": "actor.pseudo.control", "id": "control"}]
+        },
+        {
+            "type": "vehicle.audi.a2",                 
+            "id": "vehicle_29",
+            "spawn_point": {"x": 90.0, "y": -170.0, "z": 40.0, "roll": 0.0, "pitch": 0.0, "yaw": 0.0},
+            "sensors": [{"type": "actor.pseudo.control", "id": "control"}]
+        },
+        {
+            "type": "vehicle.audi.a2",                 
+            "id": "vehicle_30",
+            "spawn_point": {"x": 85.0, "y": -170.0, "z": 40.0, "roll": 0.0, "pitch": 0.0, "yaw": 0.0},
+            "sensors": [{"type": "actor.pseudo.control", "id": "control"}]
+        },
+        {
+            "type": "vehicle.audi.a2",                 
+            "id": "vehicle_31",
+            "spawn_point": {"x": 80.0, "y": -170.0, "z": 40.0, "roll": 0.0, "pitch": 0.0, "yaw": 0.0},
+            "sensors": [{"type": "actor.pseudo.control", "id": "control"}]
+        }
+    ]
+}
