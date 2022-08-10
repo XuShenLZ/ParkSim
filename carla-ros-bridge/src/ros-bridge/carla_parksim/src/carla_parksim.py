@@ -137,6 +137,8 @@ def main(args=None):
 
         roscomp.loginfo("inside parksim main()")
 
+        pygame.event.get()
+
         while roscomp.ok():
             clock.tick_busy_loop(60)
             if parksim_node.render(clock, display):

@@ -46,8 +46,10 @@ class TranslatorNode(MPClabNode):
 
         self.twist_pubs = {}
         self.pose_pubs = {}
-        with open('objects.json') as handle:
+        with open(str(Path.home()) + '/ParkSim/carla-ros-bridge/src/ros-bridge/carla_spawn_objects/config/objects2.json') as handle:
             self.objects_json = json.loads(handle.read())
+        
+        self.removed_vehicles = set()
         self.setup_pubs()
 
         self.states: Dict[int, VehicleState] = defaultdict(lambda: None)
@@ -70,14 +72,15 @@ class TranslatorNode(MPClabNode):
             self.unpack_msg(msg, state)
             self.states[vehicle_id] = state
 
-            twist_msg = Twist()
-            twist_msg.linear.x = state.v.v_long
-            twist_msg.linear.y = state.v.v_tran
-            twist_msg.linear.z = state.v.v_n
-            twist_msg.angular.x = state.w.w_phi
-            twist_msg.angular.y = state.w.w_theta
-            twist_msg.angular.z = state.w.w_psi
-            self.twist_pubs[vehicle_id].publish(twist_msg)
+            # twist_msg = Twist()
+            # twist_msg.linear.x = state.v.v_long
+            # twist_msg.linear.y = state.v.v_tran
+            # twist_msg.linear.z = state.v.v_n
+            # twist_msg.angular.x = state.w.w_phi
+            # twist_msg.angular.y = state.w.w_theta
+            # twist_msg.angular.z = state.w.w_psi
+            # self.twist_pubs[vehicle_id].publish(twist_msg)
+            self.publish_twist(vehicle_id, state.v.v_long, state.v.v_tran, state.v.v_n, state.w.w_phi, state.w.w_theta, state.w.w_psi)
 
         return callback
 
@@ -91,31 +94,47 @@ class TranslatorNode(MPClabNode):
 
     # create publishers for all vehicles for set velocity and position
     def setup_pubs(self):
-        vehicles = list(filter(lambda obj: obj['type'].split('.')[0] == 'vehicle', self.objects_json))
+        objects = self.objects_json['objects']
+        vehicles = list(filter(lambda obj: obj['type'].split('.')[0] == 'vehicle', objects))
         for vehicle in vehicles:
-            vehicle_id = vehicle['id'][8:]
+            vehicle_id = int(vehicle['id'][8:])
             self.twist_pubs[vehicle_id] = self.create_publisher(Twist, f'/carla/vehicle_{vehicle_id}/control/set_target_velocity', 10)
-            self.pose_pubs[vehicle_id] = self.create_publisher(Pose, f'/carla/vehicle_{vehicle_id}/contro/set_transform', 10)
+            self.pose_pubs[vehicle_id] = self.create_publisher(Pose, f'/carla/vehicle_{vehicle_id}/control/set_transform', 10)
+            self.removed_vehicles.add(int(vehicle_id))
 
     # move vehicle to entrance of parking lot
     def spawn_vehicle(self, vehicle_id):
         self.publish_pose(vehicle_id, 298.0, 20.0, 29.0, 0.0, 0.0, 154.0)
+        if vehicle_id in self.removed_vehicles:
+            self.removed_vehicles.remove(vehicle_id)
 
     # move vehicle back to its off-screen starting location as specified in objects2.json
     def remove_vehicle(self, vehicle_id):
         objects = self.objects_json
-        vehicle = list(filter(lambda obj: obj.id == f'vehicle_{vehicle_id}', objects['objects']))[0]
+        vehicle = list(filter(lambda obj: obj['id'] == f'vehicle_{vehicle_id}', objects['objects']))[0]
 
-        x = vehicle['spawn_objects']['x']
-        y = vehicle['spawn_objects']['y']
-        z = vehicle['spawn_objects']['z']
-        roll = vehicle['spawn_objects']['roll']
-        pitch = vehicle['spawn_objects']['pitch']
-        yaw = vehicle['spawn_objects']['yaw']
+        x = vehicle['spawn_point']['x']
+        y = vehicle['spawn_point']['y']
+        z = vehicle['spawn_point']['z']
+        roll = vehicle['spawn_point']['roll']
+        pitch = vehicle['spawn_point']['pitch']
+        yaw = vehicle['spawn_point']['yaw']
 
         self.publish_pose(vehicle_id, x, y, z, roll, pitch, yaw)
+        self.removed_vehicles.add(vehicle_id)
+        
+    # helper method to set velocity
+    def publish_twist(self, vehicle_id, l_x, l_y, l_z, a_x, a_y, a_z):
+        twist_msg = Twist()
+        twist_msg.linear.x = l_x
+        twist_msg.linear.y = l_y
+        twist_msg.linear.z = l_z
+        twist_msg.angular.x = a_x
+        twist_msg.angular.y = a_y
+        twist_msg.angular.z = a_z
+        self.twist_pubs[vehicle_id].publish(twist_msg)
 
-    # helper method to create and publish a Pose message
+    # helper method to set position
     def publish_pose(self, vehicle_id, x, y, z, roll, pitch, yaw):
         pose_msg = Pose()
         pose_msg.position.x = x
@@ -189,6 +208,12 @@ class TranslatorNode(MPClabNode):
         update the list of subscribers and plot
         """
         self.update_subs()
+
+        for vehicle_id in self.removed_vehicles:
+            # self.remove_vehicle(vehicle_id)
+            # self.publish_twist(vehicle_id, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+            pass
+            # self.twist_pubs[vehicle_id].publish()
 
         sim_status_msg = Bool()
         sim_status_msg.data = True

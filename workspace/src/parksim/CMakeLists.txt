@@ -58,6 +58,7 @@ install(PROGRAMS
   src/test_vehicle_node.py
   src/simulator_node.py
   src/vehicle_node.py
+  src/translator_node.py
   DESTINATION lib/${PROJECT_NAME}
 )
 

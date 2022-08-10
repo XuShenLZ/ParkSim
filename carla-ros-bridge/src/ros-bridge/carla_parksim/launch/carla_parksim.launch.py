@@ -102,6 +102,13 @@ def generate_launch_description():
                     'camera_name': launch.substitutions.LaunchConfiguration('camera_name')
                 }
             ]
+        ),
+        launch_ros.actions.Node(
+            package='parksim',
+            executable='translator_node.py',
+            name='translator_node',
+            output='screen',
+            emulate_tty=True
         )
     ])
     return ld

@@ -78,9 +78,11 @@ class CarlaSpawnObjects(CompatibleNode):
         :return:
         """
         # Read sensors from file
-        if not self.objects_definition_file or not os.path.exists(self.objects_definition_file):
+        if not os.path.exists(self.objects_definition_file):
             raise RuntimeError(
-                "Could not read object definitions from {}".format(self.objects_definition_file))
+                "File path does not exist {}".format(self.objects_definition_file))
+        if not self.objects_definition_file :
+            raise RuntimeError("Objects definition file not defined")
         with open(self.objects_definition_file) as handle:
             json_actors = json.loads(handle.read())
 

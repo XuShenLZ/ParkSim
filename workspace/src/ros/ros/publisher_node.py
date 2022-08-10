@@ -18,8 +18,8 @@ class VehiclePublisher(Node):
         state_msg = VehicleStateMsg()
         self.populate_state_msg(state_msg)
         self.publisher_.publish(state_msg)
-        self.get_logger() \
-            .info(f'ROS sent vehicle state x: {state_msg.v.v_long} y: {state_msg.v.v_tran} z: {state_msg.v.v_n}')
+        # self.get_logger() \
+        #     .info(f'ROS sent vehicle state x: {state_msg.v.v_long} y: {state_msg.v.v_tran} z: {state_msg.v.v_n}')
         self.i += 1
     
     def populate_state_msg(self, msg):

@@ -34,7 +34,6 @@ endif()
 
 install(PROGRAMS
   src/carla_parksim.py
-  src/carla_utils.py
   DESTINATION lib/${PROJECT_NAME}
 )
 

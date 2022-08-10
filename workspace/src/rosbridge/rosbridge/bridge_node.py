@@ -41,8 +41,8 @@ class Translator(Node):
         twist_msg.angular.y = msg.w.w_theta
         twist_msg.angular.z = msg.w.w_psi
         self.publisher.publish(twist_msg)
-        self.get_logger() \
-            .info(f'Bridge received vehicle state x: {msg.v.v_long} y: {msg.v.v_tran} z: {msg.v.v_n}')
+        # self.get_logger() \
+        #     .info(f'Bridge received vehicle state x: {msg.v.v_long} y: {msg.v.v_tran} z: {msg.v.v_n}')
         
 
 def main(args=None):
