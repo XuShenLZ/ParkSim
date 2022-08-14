@@ -24,8 +24,7 @@
         {
             "type": "sensor.camera.rgb",
             "id": "camera_1",
-            "spawn_point": {"x": 84.0, "y": -170.0, "z": 50.0, "roll": 0.0, "pitch": 90.0, "yaw": -29.0
-            },
+            "spawn_point": {"x": 245.0, "y": -15.0, "z": 103.0, "roll": 0.0, "pitch": 90.0, "yaw": -29.0},
             "image_size_x": 1200,
             "image_size_y": 800,
             "fov": 90.0
@@ -205,7 +204,7 @@
             "sensors": [{"type": "actor.pseudo.control", "id": "control"}]
         },
         {
-            "type": "vehicle.audi.a2",                 
+            "type": "vehicle.mercedes.coupe",                 
             "id": "vehicle_30",
             "spawn_point": {"x": 85.0, "y": -170.0, "z": 40.0, "roll": 0.0, "pitch": 0.0, "yaw": 0.0},
             "sensors": [{"type": "actor.pseudo.control", "id": "control"}]

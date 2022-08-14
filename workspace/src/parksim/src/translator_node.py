@@ -48,7 +48,9 @@ class TranslatorNode(MPClabNode):
         self.pose_pubs = {}
         with open(str(Path.home()) + '/ParkSim/carla-ros-bridge/src/ros-bridge/carla_spawn_objects/config/objects2.json') as handle:
             self.objects_json = json.loads(handle.read())
-        
+        self.starting_positions = {}
+        self.i = 0
+
         self.removed_vehicles = set()
         self.setup_pubs()
 
@@ -71,15 +73,6 @@ class TranslatorNode(MPClabNode):
             state = VehicleState()
             self.unpack_msg(msg, state)
             self.states[vehicle_id] = state
-
-            # twist_msg = Twist()
-            # twist_msg.linear.x = state.v.v_long
-            # twist_msg.linear.y = state.v.v_tran
-            # twist_msg.linear.z = state.v.v_n
-            # twist_msg.angular.x = state.w.w_phi
-            # twist_msg.angular.y = state.w.w_theta
-            # twist_msg.angular.z = state.w.w_psi
-            # self.twist_pubs[vehicle_id].publish(twist_msg)
             self.publish_twist(vehicle_id, state.v.v_long, state.v.v_tran, state.v.v_n, state.w.w_phi, state.w.w_theta, state.w.w_psi)
 
         return callback
@@ -101,6 +94,7 @@ class TranslatorNode(MPClabNode):
             self.twist_pubs[vehicle_id] = self.create_publisher(Twist, f'/carla/vehicle_{vehicle_id}/control/set_target_velocity', 10)
             self.pose_pubs[vehicle_id] = self.create_publisher(Pose, f'/carla/vehicle_{vehicle_id}/control/set_transform', 10)
             self.removed_vehicles.add(int(vehicle_id))
+            self.starting_positions[vehicle_id] = vehicle['spawn_point']
 
     # move vehicle to entrance of parking lot
     def spawn_vehicle(self, vehicle_id):
@@ -112,15 +106,9 @@ class TranslatorNode(MPClabNode):
     def remove_vehicle(self, vehicle_id):
         objects = self.objects_json
         vehicle = list(filter(lambda obj: obj['id'] == f'vehicle_{vehicle_id}', objects['objects']))[0]
+        spawn = vehicle['spawn_point']
 
-        x = vehicle['spawn_point']['x']
-        y = vehicle['spawn_point']['y']
-        z = vehicle['spawn_point']['z']
-        roll = vehicle['spawn_point']['roll']
-        pitch = vehicle['spawn_point']['pitch']
-        yaw = vehicle['spawn_point']['yaw']
-
-        self.publish_pose(vehicle_id, x, y, z, roll, pitch, yaw)
+        self.publish_pose(vehicle_id, spawn['x'], spawn['y'], spawn['z'], spawn['roll'], spawn['pitch'], spawn['yaw'])
         self.removed_vehicles.add(vehicle_id)
         
     # helper method to set velocity
@@ -140,9 +128,6 @@ class TranslatorNode(MPClabNode):
         pose_msg.position.x = x
         pose_msg.position.y = y
         pose_msg.position.z = z
-        roll = roll
-        pitch = pitch
-        yaw = yaw
         quat = euler2quat(math.radians(roll), math.radians(pitch), math.radians(yaw))
         pose_msg.orientation.w = quat[0]
         pose_msg.orientation.x = quat[1]
@@ -197,7 +182,7 @@ class TranslatorNode(MPClabNode):
                     self.info_subs.pop(vehicle_id)
                     if vehicle_id in self.infos:
                         self.infos.pop(vehicle_id)
-                    self.get_logger().info("Vehicle %d is not publishing anymore. Info ubscriber is destroyed." % vehicle_id)
+                    self.get_logger().info("Vehicle %d is not publishing anymore. Info subscriber is destroyed." % vehicle_id)
 
             else:
                 continue
@@ -209,11 +194,15 @@ class TranslatorNode(MPClabNode):
         """
         self.update_subs()
 
-        for vehicle_id in self.removed_vehicles:
-            # self.remove_vehicle(vehicle_id)
-            # self.publish_twist(vehicle_id, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
-            pass
-            # self.twist_pubs[vehicle_id].publish()
+        if self.i % 20 == 0:
+            for vehicle_id in self.removed_vehicles:
+                spawn = self.starting_positions[vehicle_id]
+                self.publish_pose(vehicle_id, spawn['x'], spawn['y'], spawn['z'], spawn['roll'], spawn['pitch'], spawn['yaw'])
+
+        self.i += 1
+
+        # self.publish_twist(30, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+        # self.publish_pose(30, 85.0, -170.0, 40.0, 0.0, 0.0, 0.0)
 
         sim_status_msg = Bool()
         sim_status_msg.data = True

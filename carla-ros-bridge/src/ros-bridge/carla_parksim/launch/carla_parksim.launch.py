@@ -4,6 +4,14 @@ import launch
 import launch_ros.actions
 from ament_index_python.packages import get_package_share_directory
 
+from parksim.base_node import read_yaml_file
+
+
+parksim_dir = get_package_share_directory('parksim')
+config_dir = os.path.join(parksim_dir, 'config')
+
+global_params_file = os.path.join(config_dir, 'global_params.yaml')
+global_params = read_yaml_file(global_params_file)
 
 def generate_launch_description():
     ld = launch.LaunchDescription([
@@ -109,7 +117,16 @@ def generate_launch_description():
             name='translator_node',
             output='screen',
             emulate_tty=True
+        ),
+        launch_ros.actions.Node(
+            package='parksim',
+            executable='simulator_node.py',
+            name='simulator',
+            parameters=[os.path.join(config_dir, 'simulator.yaml')]+global_params,
+            output='screen',
+            emulate_tty=True
         )
+            
     ])
     return ld
 
