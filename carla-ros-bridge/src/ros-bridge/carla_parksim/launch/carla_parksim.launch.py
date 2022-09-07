@@ -29,7 +29,7 @@ def generate_launch_description():
         ),
         launch.actions.DeclareLaunchArgument(
             name='role_name',
-            default_value='vehicle_1'
+            default_value='car_ego'
         ),
         launch.actions.DeclareLaunchArgument(
             name='camera_name',

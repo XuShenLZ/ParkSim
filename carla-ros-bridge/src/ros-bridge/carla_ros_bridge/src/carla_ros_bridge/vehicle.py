@@ -40,6 +40,7 @@ class Vehicle(TrafficParticipant):
         :type carla_actor: carla.Vehicle
         """
         self.classification = Object.CLASSIFICATION_CAR
+        self.vehicle_control_override = False
         if 'object_type' in carla_actor.attributes:
             if carla_actor.attributes['object_type'] == 'car':
                 self.classification = Object.CLASSIFICATION_CAR

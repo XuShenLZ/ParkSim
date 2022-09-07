@@ -204,6 +204,9 @@ class TranslatorNode(MPClabNode):
         # self.publish_twist(30, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
         # self.publish_pose(30, 85.0, -170.0, 40.0, 0.0, 0.0, 0.0)
 
+        # hidden_sub = self.get_subscriptions_info_by_topic('/carla/vehicle_1/vehicle_control_manual_override')
+        # self.get_logger().info("The name of the hidden subscriber is" + str(hidden_sub))
+
         sim_status_msg = Bool()
         sim_status_msg.data = True
         self.sim_status_pub.publish(sim_status_msg)
