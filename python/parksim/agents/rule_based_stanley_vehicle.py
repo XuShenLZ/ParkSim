@@ -804,6 +804,7 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         else: 
             self.update_state()
 
+        self.state.t = time
         self.state_hist.append(self.state.copy())
         self.logger.append(f't = {time}: x = {self.state.x.x:.2f}, y = {self.state.x.y:.2f}')
 

@@ -11,6 +11,7 @@ from rclpy.handle import InvalidHandle
 from pathlib import Path
 import os
 import numpy as np
+from scipy.io import savemat
 import pickle
 from std_msgs.msg import Int16MultiArray, Bool
 from parksim.msg import VehicleStateMsg, VehicleInfoMsg
@@ -290,6 +291,13 @@ class VehicleNode(MPClabNode):
             with open(log_dir_path + "/vehicle_%d.log" % self.vehicle_id, 'a') as f:
                 f.writelines(str(self.total_non_idle_time))
                 self.vehicle.logger.clear()
+
+            # write velocity data
+            velocities = []
+            st = self.vehicle.state_hist[0].t
+            for s in self.vehicle.state_hist:
+                velocities.append([s.t - st, s.v.v])
+            savemat(str(Path.home()) + "/ParkSim/vehicle_log/DJI_0030/simulated_vehicle_" + str(self.vehicle_id) + ".mat", {"velocity": velocities})
 
             self.destroy_node()
 

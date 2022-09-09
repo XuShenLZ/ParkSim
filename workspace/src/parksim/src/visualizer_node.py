@@ -147,24 +147,27 @@ class VisualizerNode(MPClabNode):
         if self.use_existing_agents:
             scene_token = self.vis.dlpvis.dataset.list_scenes()[0]
             agent_token_list = self.vis.dlpvis.dataset.get('scene', scene_token)['agents']
-            frame = self.vis.dlpvis.dataset.get_frame_at_time(
-                scene_token=scene_token, timestamp=max(self.sim_time + self.dlp_time_offset, 0))
-            inst_tokens = frame['instances']
-            for inst_token in inst_tokens:
-                instance = self.vis.dlpvis.dataset.get('instance', inst_token)
-                agent = self.vis.dlpvis.dataset.get('agent', instance['agent_token'])
+            try:
+                frame = self.vis.dlpvis.dataset.get_frame_at_time(
+                    scene_token=scene_token, timestamp=max(self.sim_time + self.dlp_time_offset, 0))
+                inst_tokens = frame['instances']
+                for inst_token in inst_tokens:
+                    instance = self.vis.dlpvis.dataset.get('instance', inst_token)
+                    agent = self.vis.dlpvis.dataset.get('agent', instance['agent_token'])
 
-                vehicle_id = agent_token_list.index(instance['agent_token'])
-                if agent['type'] in {'Pedestrian', 'Undefined', 'Bicycle'}:
-                    continue
-                state = VehicleState()
-                state.x.x = instance['coords'][0]
-                state.x.y = instance['coords'][1]
-                state.e.psi = instance['heading']
+                    vehicle_id = agent_token_list.index(instance['agent_token'])
+                    if agent['type'] in {'Pedestrian', 'Undefined', 'Bicycle'}:
+                        continue
+                    state = VehicleState()
+                    state.x.x = instance['coords'][0]
+                    state.x.y = instance['coords'][1]
+                    state.e.psi = instance['heading']
 
-                self.vis.draw_vehicle(state, fill=self.dlp_color)
-                self.vis.draw_text([state.x.x + self.disp_text_offset[0], state.x.y +
-                                   self.disp_text_offset[1]], str(vehicle_id), size=self.disp_text_size)
+                    self.vis.draw_vehicle(state, fill=self.dlp_color)
+                    self.vis.draw_text([state.x.x + self.disp_text_offset[0], state.x.y +
+                                    self.disp_text_offset[1]], str(vehicle_id), size=self.disp_text_size)
+            except:
+                pass
 
         for vehicle_id in self.states:
             state = self.states[vehicle_id]
