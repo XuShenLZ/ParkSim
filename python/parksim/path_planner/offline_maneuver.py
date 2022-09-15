@@ -19,7 +19,7 @@ class OfflineManeuver(object):
                         x_position=random.choice(['left', 'right']),
                         spot=random.choice(['north', 'south']),
                         heading=random.choice(['up', 'down'])) -> VehiclePrediction:
-        print('Trajectory requested:', (driving_dir, x_position, spot, heading))
+        # print('Trajectory requested:', (driving_dir, x_position, spot, heading))
         
         traj = self.lib[(driving_dir, x_position, spot, heading)]
 

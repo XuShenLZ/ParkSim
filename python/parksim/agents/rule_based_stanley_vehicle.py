@@ -182,47 +182,62 @@ class RuleBasedStanleyVehicle(AbstractAgent):
             # exiting
             x_ref, y_ref, yaw_ref = graph_sol.compute_ref_path(offset)
         else:
-            # parking
-            last_edge = graph_sol.edges[-1]
-            pointed_right = last_edge.v2.coords[0] - last_edge.v1.coords[0] > 0
 
-            if pointed_right:
-                overshoot_ranges = self.overshoot_ranges['pointed_right']
+            if len(graph_sol.vertices) == 0: # just point right by default
+
+                start_coords = np.array([self.state.x.x, self.state.x.y])
+                start_vertex_idx = self.graph.search(start_coords)
+                last_x, last_y = self.graph.vertices[start_vertex_idx].coords
+                graph_sol.vertices = [Vertex(np.array([last_x, last_y])), Vertex(np.array([last_x + 4, last_y]))]
+
+            elif len(graph_sol.vertices) == 1: # just point right by default
+                
+                last_x, last_y = graph_sol.vertices[0].coords
+                graph_sol.vertices.append([Vertex(np.array([last_x + 4, last_y]))])
+
             else:
-                overshoot_ranges = self.overshoot_ranges['pointed_left']
 
-            self.should_overshoot = any([spot_index >= r[0] and spot_index <= r[1] for r in overshoot_ranges])
+                # parking
+                last_edge = graph_sol.edges[-1]
+                pointed_right = last_edge.v2.coords[0] - last_edge.v1.coords[0] > 0
 
-            last_x, last_y = last_edge.v2.coords
-
-            if self.should_overshoot:
-                # add point past the final waypoint, that signifies going past the spot by 4 meters, so it parks in the right place
-                # if the last edge was pointed right, offset to the right
                 if pointed_right:
-                    new_vertex = Vertex(np.array([last_x+4, last_y]))
+                    overshoot_ranges = self.overshoot_ranges['pointed_right']
                 else:
-                    new_vertex = Vertex(np.array([last_x-4, last_y]))
-                graph_sol.vertices.append(new_vertex)
-            else:
-                # if the last edge was pointed right, offset to the left
-                if pointed_right:
-                    new_vertex = Vertex(np.array([last_x-4, last_y]))
-                else:
-                    new_vertex = Vertex(np.array([last_x+4, last_y]))
+                    overshoot_ranges = self.overshoot_ranges['pointed_left']
 
-                last_waypoint = None
-                for i, v in enumerate(reversed(graph_sol.vertices)):
+                self.should_overshoot = any([spot_index >= r[0] and spot_index <= r[1] for r in overshoot_ranges])
+
+                last_x, last_y = last_edge.v2.coords
+
+                if self.should_overshoot:
+                    # add point past the final waypoint, that signifies going past the spot by 4 meters, so it parks in the right place
+                    # if the last edge was pointed right, offset to the right
                     if pointed_right:
-                        if v.coords[0] < new_vertex.coords[0]:
-                            last_waypoint = -i-1
-                            break
+                        new_vertex = Vertex(np.array([last_x+4, last_y]))
                     else:
-                        if v.coords[0] > new_vertex.coords[0]:
-                            last_waypoint = -i-1
-                            break
+                        new_vertex = Vertex(np.array([last_x-4, last_y]))
+                    graph_sol.vertices.append(new_vertex)
+                else:
+                    # if the last edge was pointed right, offset to the left
+                    if pointed_right:
+                        new_vertex = Vertex(np.array([last_x-4, last_y]))
+                    else:
+                        new_vertex = Vertex(np.array([last_x+4, last_y]))
 
-                graph_sol.vertices = graph_sol.vertices[:last_waypoint+1]
-                graph_sol.vertices.append(new_vertex)
+                    last_waypoint = len(graph_sol.vertices) - 1
+                    for i, v in enumerate(reversed(graph_sol.vertices)):
+                        if pointed_right:
+                            if v.coords[0] < new_vertex.coords[0]:
+                                last_waypoint = -i-1
+                                break
+                        else:
+                            if v.coords[0] > new_vertex.coords[0]:
+                                last_waypoint = -i-1
+                                break
+
+                    graph_sol.vertices = graph_sol.vertices[:last_waypoint+1]
+                    graph_sol.vertices.append(new_vertex)
 
             x_ref, y_ref, yaw_ref = graph_sol.compute_ref_path(offset)
 

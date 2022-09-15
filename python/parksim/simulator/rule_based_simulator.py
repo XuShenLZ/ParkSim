@@ -7,8 +7,11 @@ from dlp.visualizer import Visualizer as DlpVisualizer
 from pathlib import Path
 
 import pickle
+import os
+import glob
 
 import numpy as np
+from scipy.io import savemat
 from parksim.pytypes import VehicleState
 
 from parksim.vehicle_types import VehicleBody, VehicleConfig, VehicleTask
@@ -17,75 +20,90 @@ from parksim.visualizer.realtime_visualizer import RealtimeVisualizer
 
 from parksim.agents.rule_based_stanley_vehicle import RuleBasedStanleyVehicle
 
-np.random.seed(39) # ones with interesting cases: 20, 33, 44, 60
+from parksim.controller.stanley_controller import StanleyController
+from parksim.controller_types import StanleyParams
+
+np.random.seed(39)
 
 # These parameters should all become ROS param for simulator and vehicle
 spots_data_path = '/ParkSim/data/spots_data.pickle'
 offline_maneuver_path = '/ParkSim/data/parking_maneuvers.pickle'
 waypoints_graph_path = '/ParkSim/data/waypoints_graph.pickle'
 intent_model_path = '/ParkSim/data/smallRegularizedCNN_L0.068_01-29-2022_19-50-35.pth'
-entrance_coords = [14.38, 76.21]
-block_spots = [43, 44, 45]
-
-overshoot_ranges = {'pointed_right': [(42, 48), (67, 69), (92, 94), (113, 115), (134, 136), (159, 161), (184, 186), (205, 207), (226, 228), (251, 253), (276, 278), (297, 299), (318, 320), (343, 345)],
-                    'pointed_left': [(64, 66), (89, 91), (156, 158), (181, 183), (248, 250), (273, 275), (340, 342)]}
-
-north_spot_idx_ranges = [(0, 41), (67, 91), (113, 133), (159, 183), (205, 225), (251, 275), (297, 317)]
-spot_y_offset = 5
 
 class RuleBasedSimulator(object):
     def __init__(self, dataset: Dataset, vis: RealtimeVisualizer):
+
+        self.timer_period = 0.1
+
+        self.blocked_spots = [42, 43, 44, 45, 64, 65, 66, 67, 68, 69, 92, 93, 94, 110, 111, 112, 113, 114, 115, 134, 135, 136, 156, 157, 158, 159, 160, 161, 184, 185, 186, 202, 203, 204, 205, 206, 207, 226, 227, 228, 248, 249, 250, 251, 252, 253, 276, 277, 278, 294, 295, 256, 297, 298, 299, 318, 319, 320, 340, 341, 342, 343, 344, 345] # Spots to be blocked in advance: 3 left and 3 right spaces of each row, except right spaces of right row, since doesn't unpark into an aisle
+        self.entrance_coords = [14.38, 76.21]
+
+        self.spawn_entering = 30
+        self.spawn_exiting = 30
+        self.y_bound_to_resume_spawning = 70
+        self.spawn_interval_mean = 5 # (s)
+
+        self.spots_data_path = '/ParkSim/data/spots_data.pickle'
+        self.agents_data_path = '/ParkSim/data/agents_data.pickle'
+
+        self.use_existing_agents = True
+
+        self.write_log = False
+        self.log_path = '/ParkSim/vehicle_log'
+
         self.dlpvis = DlpVisualizer(dataset)
-
         self.vis = vis
-
-        self.parking_spaces, self.occupied = self._gen_occupancy()
-
-        for idx in block_spots:
-            self.occupied[idx] = True
+        self.should_visualize = True
 
         self.graph = WaypointsGraph()
         self.graph.setup_with_vis(self.dlpvis)
 
-        # Save data to offline files
-        # with open('waypoints_graph.pickle', 'wb') as f:
-        #     data_to_save = {'graph': self.graph, 
-        #                     'entrance_coords': entrance_coords}
-        #     pickle.dump(data_to_save, f)
+        # Clean up the log folder if needed
+        if self.write_log:
+            log_dir_path = str(Path.home()) + self.log_path
 
-        # with open('spots_data.pickle', 'wb') as f:
-        #     data_to_save = {'parking_spaces': self.parking_spaces, 
-        #                     'overshoot_ranges': overshoot_ranges, 
-        #                     'north_spot_idx_ranges': north_spot_idx_ranges,
-        #                     'spot_y_offset': spot_y_offset}
-        #     pickle.dump(data_to_save, f)
+            if not os.path.exists(log_dir_path):
+                os.mkdir(log_dir_path)
+            log_files = glob.glob(log_dir_path+'/*.log')
+            for f in log_files:
+                os.remove(f)
 
-        # spawn stuff
-        
-        spawn_interval_mean = 5 # Mean time for exp distribution
-        spawn_interval_min = 2 # Min time for each spawn
+        # Parking Spaces
+        self.parking_spaces, self.occupied = self._gen_occupancy()
+        for idx in self.blocked_spots:
+            self.occupied[idx] = True
 
-        spawn_entering = 3 # number of vehicles to enter
-        spawn_exiting = 3 # number of vehicles to exit
+        # Agents
+        self._gen_agents()
 
-        self.spawn_entering_time = sorted(np.random.exponential(spawn_interval_mean, spawn_entering))
-        for i in range(spawn_entering):
-            self.spawn_entering_time[i] += i * spawn_interval_min
+        # Spawning
+        self.spawn_entering_time = list(np.random.exponential(self.spawn_interval_mean, self.spawn_entering))
+        self.spawn_exiting_time = list(np.random.exponential(self.spawn_interval_mean, self.spawn_exiting))
 
-        self.spawn_exiting_time = sorted(np.random.exponential(spawn_interval_mean, spawn_exiting))
+        self.last_enter_id = None
+        self.last_enter_state = VehicleState()
+        self.keep_spawn_entering = True
+
+        self.start_time = 0
+
+        self.last_enter_time = self.start_time
+        self.last_exit_time = self.start_time
+
+        self.vehicles = []
+        self.num_vehicles = 0
+        self.vehicle_non_idle_times = {}
+
+        self.sim_is_running = True
 
         self.num_vehicles = 0
         self.vehicles: List[RuleBasedStanleyVehicle] = []
 
-        self.max_simulation_time = 150
+        self.max_simulation_time = 1200
 
         self.time = 0.0
-        self.loops = 0
-
-        # crash detection
-        self.did_crash = False
-        self.crash_polytopes = None
-
+        self.loops = 0   
+        
     def _gen_occupancy(self):
 
         # Spot guide (note: NOT VERTICES) — the i in parking_spaces[i]
@@ -112,73 +130,172 @@ class RuleBasedSimulator(object):
 
         return parking_spaces, occupied
 
+    def _gen_agents(self):
+        home_path = str(Path.home())
+        with open(home_path + self.agents_data_path, 'rb') as f:
+            self.agents_dict = pickle.load(f)
+
     # goes to an anchor point
     # convention: if entering, spot_index is positive, and if exiting, it's negative
-    def add_vehicle(self, spot_index: int, vehicle_body: VehicleBody=VehicleBody(), vehicle_config: VehicleConfig=VehicleConfig()):
+    def add_vehicle(self, spot_index: int=None, vehicle_body: VehicleBody=VehicleBody(), vehicle_config: VehicleConfig=VehicleConfig(), vehicle_id: int=None):
+        
         # Start vehicle indexing from 1
         self.num_vehicles += 1
+        if vehicle_id is None:
+            vehicle_id = self.num_vehicles
 
-        # NOTE: These lines are here for now. In the ROS implementation, they will all be in the vehicle node, no the simulator node
-        vehicle = RuleBasedStanleyVehicle(vehicle_id=self.num_vehicles, vehicle_body=vehicle_body, vehicle_config=vehicle_config)
+        if self.use_existing_agents:
+            agents = pickle.load(open(str(Path.home()) + self.agents_data_path, "rb"))
+            agent_dict = agents[vehicle_id]
+
+            vehicle_body.w = agent_dict["width"]
+            vehicle_body.l = agent_dict["length"]
+
+        controller_params = StanleyParams(dt=self.timer_period)
+        controller = StanleyController(control_params=controller_params, vehicle_body=vehicle_body, vehicle_config=vehicle_config)
+        motion_predictor = StanleyController(control_params=controller_params, vehicle_body=vehicle_body, vehicle_config=vehicle_config)
+
+        vehicle = RuleBasedStanleyVehicle(
+            vehicle_id=vehicle_id, 
+            vehicle_body=vehicle_body, 
+            vehicle_config=vehicle_config, 
+            controller=controller,
+            motion_predictor=motion_predictor,
+            inst_centric_generator=None, 
+            intent_predictor=None
+            )
+
         vehicle.load_parking_spaces(spots_data_path=spots_data_path)
         vehicle.load_graph(waypoints_graph_path=waypoints_graph_path)
         vehicle.load_maneuver(offline_maneuver_path=offline_maneuver_path)
         # vehicle.load_intent_model(model_path=intent_model_path)
 
         task_profile = []
-        if spot_index > 0:
-            cruise_task = VehicleTask(
-                name="CRUISE", v_cruise=5, target_spot_index=spot_index)
-            park_task = VehicleTask(name="PARK", target_spot_index=spot_index)
-            task_profile = [cruise_task, park_task]
 
-            state = VehicleState()
-            state.x.x = entrance_coords[0] - vehicle_config.offset
-            state.x.y = entrance_coords[1]
-            state.e.psi = - np.pi/2
+        if not self.use_existing_agents:
+            if spot_index > 0:
+                cruise_task = VehicleTask(
+                    name="CRUISE", v_cruise=5, target_spot_index=spot_index)
+                park_task = VehicleTask(name="PARK", target_spot_index=spot_index)
+                task_profile = [cruise_task, park_task]
 
-            vehicle.set_vehicle_state(state=state)
-            vehicle.set_task_profile(task_profile=task_profile)
+                state = VehicleState()
+                state.x.x = self.entrance_coords[0] - vehicle_config.offset
+                state.x.y = self.entrance_coords[1]
+                state.e.psi = - np.pi/2
+
+                vehicle.set_vehicle_state(state=state)
+            else:
+                unpark_task = VehicleTask(name="UNPARK")
+                cruise_task = VehicleTask(
+                    name="CRUISE", v_cruise=5, target_coords=np.array(self.entrance_coords))
+                task_profile = [unpark_task, cruise_task]
+
+                vehicle.set_vehicle_state(spot_index=abs(spot_index))
         else:
-            unpark_task = VehicleTask(name="UNPARK")
-            cruise_task = VehicleTask(
-                name="CRUISE", v_cruise=5, target_coords=np.array(entrance_coords))
-            task_profile = [unpark_task, cruise_task]
+            raw_tp = agent_dict["task_profile"]
+            for task in raw_tp:
+                if task["name"] == "IDLE":
+                    task_profile.append(VehicleTask(name="IDLE", duration=task["duration"]))
+                elif task["name"] == "PARK":
+                    task_profile.append(VehicleTask(name="PARK", target_spot_index=task["target_spot_index"]))
+                elif task["name"] == "UNPARK":
+                    task_profile.append(VehicleTask(name="UNPARK", target_spot_index=task["target_spot_index"]))
+                elif task["name"] == "CRUISE":
+                    if "target_coords" in task:
+                        task_profile.append(VehicleTask(name="CRUISE", v_cruise=task["v_cruise"], target_coords=task["target_coords"]))
+                    else:
+                        task_profile.append(VehicleTask(name="CRUISE", v_cruise=task["v_cruise"], target_spot_index=task["target_spot_index"]))
 
-            vehicle.set_vehicle_state(spot_index=abs(spot_index))
-            vehicle.set_task_profile(task_profile)
+            if "init_spot" in agent_dict:
+                init_spot = agent_dict["init_spot"]
+                init_heading = agent_dict["init_heading"]
+                vehicle.set_vehicle_state(spot_index=init_spot, heading=init_heading)
+            else:
+                agent_state = VehicleState()
+                agent_state.x.x = agent_dict["init_coords"][0]
+                agent_state.x.y = agent_dict["init_coords"][1]
+                agent_state.e.psi = agent_dict["init_heading"]
+                agent_state.v.v = agent_dict["init_v"]
+                vehicle.set_vehicle_state(state=agent_state)
 
+        vehicle.set_task_profile(task_profile=task_profile)
         vehicle.execute_next_task()
+
+        self.vehicle_non_idle_times[vehicle_id] = 0
+        self.last_enter_state = vehicle.state
 
         self.vehicles.append(vehicle)
     
+    def try_spawn_entering(self):
+        current_time = self.time
+
+        if self.spawn_entering_time and current_time - self.last_enter_time > self.spawn_entering_time[0]:
+            empty_spots = [i for i in range(len(self.occupied)) if not self.occupied[i]]
+            chosen_spot = np.random.choice(empty_spots)
+            self.add_vehicle(chosen_spot) # pick from empty spots randomly
+            self.occupied[chosen_spot] = True
+            self.spawn_entering_time.pop(0)
+
+            self.last_enter_time = current_time
+            self.last_enter_id = self.num_vehicles
+            self.keep_spawn_entering = False
+
+    def try_spawn_exiting(self):
+        current_time = self.time
+
+        if self.spawn_exiting_time and current_time - self.last_exit_time > self.spawn_exiting_time[0]:
+            empty_spots = [i for i in range(len(self.occupied)) if not self.occupied[i]]
+            chosen_spot = np.random.choice(empty_spots)
+            self.add_vehicle(-1 * chosen_spot)
+            self.occupied[chosen_spot] = True
+            self.spawn_exiting_time.pop(0)
+
+            self.last_exit_time = current_time
+
+    def try_spawn_existing(self):
+        current_time = self.time - self.start_time
+        added_vehicles = []
+
+        for agent in self.agents_dict:
+            if self.agents_dict[agent]["init_time"] < current_time:
+                self.add_vehicle(vehicle_id=agent)
+                added_vehicles.append(agent)
+
+        for added in added_vehicles:
+            print(str(added), self.agents_dict[added]["task_profile"])
+            del self.agents_dict[added]
 
     def run(self):
+
+        if self.write_log:
+            # write logs
+            log_dir_path = str(Path.home()) + self.log_path
+            if not os.path.exists(log_dir_path):
+                os.mkdir(log_dir_path)
+
         # while not run out of time and we have not reached the last waypoint yet
         while self.max_simulation_time >= self.time:
 
-            if not self.vis.is_running():
-                self.vis.render()
-                continue
+            if self.should_visualize:
+                if not self.vis.is_running():
+                    self.vis.render()
+                    continue
 
-            # clear visualizer
-            self.vis.clear_frame()
+                # clear visualizer
+                self.vis.clear_frame()
 
-            
-            # spawn vehicles
-            if self.spawn_entering_time and self.time > self.spawn_entering_time[0]:
-                empty_spots = [i for i in range(len(self.occupied)) if not self.occupied[i]]
-                chosen_spot = np.random.choice(empty_spots)
-                self.add_vehicle(chosen_spot)
-                self.occupied[chosen_spot] = True
-                self.spawn_entering_time.pop(0)
-            
-            if self.spawn_exiting_time and self.time > self.spawn_exiting_time[0]:
-                empty_spots = [i for i in range(len(self.occupied)) if not self.occupied[i]]
-                chosen_spot = np.random.choice(empty_spots)
-                self.add_vehicle(-1 * chosen_spot)
-                self.occupied[chosen_spot] = True
-                self.spawn_exiting_time.pop(0)
+            # If vehicle left entrance area, start spawning another one
+            if self.last_enter_state.x.y < self.y_bound_to_resume_spawning:
+                self.keep_spawn_entering = True
+
+            if self.sim_is_running:
+                if not self.use_existing_agents:
+                    if self.keep_spawn_entering:
+                        self.try_spawn_entering()
+                    self.try_spawn_exiting()
+                else:
+                    self.try_spawn_existing()
 
             active_vehicles: Dict[int, RuleBasedStanleyVehicle] = {}
             for vehicle in self.vehicles:
@@ -200,6 +317,7 @@ class RuleBasedSimulator(object):
             # intent_pred_results = []
             # ===========
 
+            # obtain states for all vehicles first, then solve for all vehicles (mimics ROS)
             for vehicle_id in active_vehicles:
                 vehicle = active_vehicles[vehicle_id]
 
@@ -207,45 +325,78 @@ class RuleBasedSimulator(object):
                 vehicle.get_central_occupancy(self.occupied)
                 vehicle.set_method_to_change_central_occupancy(self.occupied)
 
-                vehicle.solve(time=self.time)
+            for vehicle_id in active_vehicles:
+                vehicle = active_vehicles[vehicle_id]
+                
+                if self.write_log:
+                    with open(log_dir_path + "/vehicle_%d.log" % vehicle.vehicle_id, 'a') as f:
+                        f.writelines(str(self.vehicle_non_idle_times[vehicle.vehicle_id]))
+                        vehicle.logger.clear()
+
+                    # write velocity data
+                    velocities = []
+                    st = vehicle.state_hist[0].t
+                    for s in vehicle.state_hist:
+                        velocities.append([s.t - st, s.v.v])
+                    savemat(str(Path.home()) + "/ParkSim/vehicle_log/DJI_0022/simulated_vehicle_" + str(vehicle.vehicle_id) + ".mat", {"velocity": velocities})
+
+                if vehicle.current_task != "IDLE":
+                    self.vehicle_non_idle_times[vehicle.vehicle_id] += self.timer_period
+
+                if self.sim_is_running:
+                    vehicle.solve(time=self.time)
+                elif self.write_log and len(vehicle.logger) > 0:
+                    # write logs
+                    log_dir_path = str(Path.home()) + self.log_path
+                    if not os.path.exists(log_dir_path):
+                        os.mkdir(log_dir_path)
+                    
+                    with open(log_dir_path + "/vehicle_%d.log" % vehicle.vehicle_id, 'a') as f:
+                        f.writelines('\n'.join(vehicle.logger))
+                        vehicle.logger.clear()
+
                 # ========== For real-time prediction only
                 # result = vehicle.predict_intent()
                 # intent_pred_results.append(result)
                 # ===========
             
             self.loops += 1
-            self.time += 0.1
+            self.time += self.timer_period
 
-            # Visualize
-            for vehicle in self.vehicles:
+            if self.loops % 100 == 0:
+                print(self.time)
 
-                if vehicle.is_all_done():
-                    fill = (0, 0, 0, 255)
-                elif vehicle.is_braking:
-                    fill = (255, 0, 0, 255)
-                elif vehicle.current_task in ["PARK", "UNPARK"]:
-                    fill = (255, 128, 0, 255)
-                else:
-                    fill = (0, 255, 0, 255)
+            if self.should_visualize:
 
-                self.vis.draw_vehicle(state=vehicle.state, fill=fill)
-                # self.vis.draw_line(points=np.array([vehicle.x_ref, vehicle.y_ref]).T, color=(39,228,245, 193))
-                on_vehicle_text =  str(vehicle.vehicle_id) + ":"
-                on_vehicle_text += "N" if vehicle.priority is None else str(round(vehicle.priority, 3))
-                # self.vis.draw_text([vehicle.state.x.x - 2, vehicle.state.x.y + 2], on_vehicle_text, size=25)
-                
-            # ========== For real-time prediction only
-            # likelihood_radius = 15
-            # for result in intent_pred_results:
-            #     distribution = result.distribution
-            #     for i in range(len(distribution) - 1):
-            #         coords = result.all_spot_centers[i]
-            #         prob = format(distribution[i], '.2f')
-            #         self.vis.draw_circle(center=coords, radius=likelihood_radius*distribution[i], color=(255,65,255,255))
-            #         self.vis.draw_text([coords[0]-2, coords[1]], prob, 15)
-            # ===========
-    
-            self.vis.render()
+                # Visualize
+                for vehicle in self.vehicles:
+
+                    if vehicle.is_all_done():
+                        fill = (0, 0, 0, 255)
+                    elif vehicle.is_braking:
+                        fill = (255, 0, 0, 255)
+                    elif vehicle.current_task in ["PARK", "UNPARK"]:
+                        fill = (255, 128, 0, 255)
+                    else:
+                        fill = (0, 255, 0, 255)
+
+                    self.vis.draw_vehicle(state=vehicle.state, fill=fill)
+                    # self.vis.draw_line(points=np.array([vehicle.x_ref, vehicle.y_ref]).T, color=(39,228,245, 193))
+                    on_vehicle_text =  str(vehicle.vehicle_id)
+                    self.vis.draw_text([vehicle.state.x.x - 2, vehicle.state.x.y + 2], on_vehicle_text, size=25)
+                    
+                # ========== For real-time prediction only
+                # likelihood_radius = 15
+                # for result in intent_pred_results:
+                #     distribution = result.distribution
+                #     for i in range(len(distribution) - 1):
+                #         coords = result.all_spot_centers[i]
+                #         prob = format(distribution[i], '.2f')
+                #         self.vis.draw_circle(center=coords, radius=likelihood_radius*distribution[i], color=(255,65,255,255))
+                #         self.vis.draw_text([coords[0]-2, coords[1]], prob, 15)
+                # ===========
+        
+                self.vis.render()
 
 def main():
     # Load dataset
@@ -253,7 +404,7 @@ def main():
 
     home_path = str(Path.home())
     print('Loading dataset...')
-    ds.load(home_path + '/dlp-dataset/data/DJI_0012')
+    ds.load(home_path + '/dlp-dataset/data/DJI_0022')
     print("Dataset loaded.")
 
     vis = RealtimeVisualizer(ds, VehicleBody())
