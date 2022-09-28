@@ -162,3 +162,6 @@ class StanleyController(object):
         state.e.psi = normalize_angle(state.e.psi)
         # advance velocity
         state.v.v += acceleration * self.dt
+
+    def get_ref_length(self):
+        return np.sum([np.linalg.norm([self.y_ref[i + 1] - self.y_ref[i], self.x_ref[i + 1] - self.x_ref[i]]) for i in range(len(self.x_ref) - 1)])

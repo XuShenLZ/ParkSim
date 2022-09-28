@@ -9,8 +9,10 @@ from pathlib import Path
 import pickle
 import os
 import glob
+import csv
 
 import numpy as np
+import torch
 from scipy.io import savemat
 from parksim.pytypes import VehicleState
 
@@ -22,8 +24,10 @@ from parksim.agents.rule_based_stanley_vehicle import RuleBasedStanleyVehicle
 
 from parksim.controller.stanley_controller import StanleyController
 from parksim.controller_types import StanleyParams
+from parksim.spot_nn.spot_nn import SpotNet
+from parksim.spot_nn.feature_generator import SpotFeatureGenerator
 
-np.random.seed(39)
+# np.random.seed(10)
 
 # These parameters should all become ROS param for simulator and vehicle
 spots_data_path = '/ParkSim/data/spots_data.pickle'
@@ -32,29 +36,32 @@ waypoints_graph_path = '/ParkSim/data/waypoints_graph.pickle'
 intent_model_path = '/ParkSim/data/smallRegularizedCNN_L0.068_01-29-2022_19-50-35.pth'
 
 class RuleBasedSimulator(object):
-    def __init__(self, dataset: Dataset, vis: RealtimeVisualizer):
+    def __init__(self, dataset: Dataset, vis: RealtimeVisualizer, params):
+
+        self.params = params
 
         self.timer_period = 0.1
 
         self.blocked_spots = [42, 43, 44, 45, 64, 65, 66, 67, 68, 69, 92, 93, 94, 110, 111, 112, 113, 114, 115, 134, 135, 136, 156, 157, 158, 159, 160, 161, 184, 185, 186, 202, 203, 204, 205, 206, 207, 226, 227, 228, 248, 249, 250, 251, 252, 253, 276, 277, 278, 294, 295, 256, 297, 298, 299, 318, 319, 320, 340, 341, 342, 343, 344, 345] # Spots to be blocked in advance: 3 left and 3 right spaces of each row, except right spaces of right row, since doesn't unpark into an aisle
         self.entrance_coords = [14.38, 76.21]
 
-        self.spawn_entering = 30
-        self.spawn_exiting = 30
+        self.spawn_entering = params.spawn_entering
+        self.spawn_exiting = params.spawn_exiting
         self.y_bound_to_resume_spawning = 70
-        self.spawn_interval_mean = 5 # (s)
+        self.spawn_interval_mean = params.spawn_interval_mean # (s)
 
         self.spots_data_path = '/ParkSim/data/spots_data.pickle'
         self.agents_data_path = '/ParkSim/data/agents_data.pickle'
 
-        self.use_existing_agents = True
+        self.use_existing_agents = False
+        self.use_existing_obstacles = params.use_existing_obstacles
 
         self.write_log = False
         self.log_path = '/ParkSim/vehicle_log'
 
         self.dlpvis = DlpVisualizer(dataset)
         self.vis = vis
-        self.should_visualize = True
+        self.should_visualize = params.should_visualize
 
         self.graph = WaypointsGraph()
         self.graph.setup_with_vis(self.dlpvis)
@@ -103,6 +110,8 @@ class RuleBasedSimulator(object):
 
         self.time = 0.0
         self.loops = 0   
+
+        self.vehicle_features = {}
         
     def _gen_occupancy(self):
 
@@ -124,7 +133,7 @@ class RuleBasedSimulator(object):
         scene = self.dlpvis.dataset.get('scene', self.dlpvis.dataset.list_scenes()[0])
 
         # figure out which parking spaces are occupied
-        car_coords = [self.dlpvis.dataset.get('obstacle', o)['coords'] for o in scene['obstacles']]
+        car_coords = [self.dlpvis.dataset.get('obstacle', o)['coords'] for o in scene['obstacles']] if self.use_existing_obstacles else []
         # 1D array of booleans — are the centers of any of the cars contained within this spot's boundaries?
         occupied = np.array([any([c[0] > arr[i][2] and c[0] < arr[i][4] and c[1] < arr[i][3] and c[1] > arr[i][9] for c in car_coords]) for i in range(len(arr))])
 
@@ -137,12 +146,12 @@ class RuleBasedSimulator(object):
 
     # goes to an anchor point
     # convention: if entering, spot_index is positive, and if exiting, it's negative
-    def add_vehicle(self, spot_index: int=None, vehicle_body: VehicleBody=VehicleBody(), vehicle_config: VehicleConfig=VehicleConfig(), vehicle_id: int=None):
-        
-        # Start vehicle indexing from 1
-        self.num_vehicles += 1
-        if vehicle_id is None:
-            vehicle_id = self.num_vehicles
+    def add_vehicle(self, spot_index: int=None, vehicle_body: VehicleBody=VehicleBody(), vehicle_config: VehicleConfig=VehicleConfig(), vehicle_id: int=None, for_nn: bool=False):
+        if not for_nn:
+            # Start vehicle indexing from 1
+            self.num_vehicles += 1
+            if vehicle_id is None:
+                vehicle_id = self.num_vehicles
 
         if self.use_existing_agents:
             agents = pickle.load(open(str(Path.home()) + self.agents_data_path, "rb"))
@@ -173,7 +182,7 @@ class RuleBasedSimulator(object):
         task_profile = []
 
         if not self.use_existing_agents:
-            if spot_index > 0:
+            if spot_index >= 0:
                 cruise_task = VehicleTask(
                     name="CRUISE", v_cruise=5, target_spot_index=spot_index)
                 park_task = VehicleTask(name="PARK", target_spot_index=spot_index)
@@ -222,18 +231,26 @@ class RuleBasedSimulator(object):
         vehicle.set_task_profile(task_profile=task_profile)
         vehicle.execute_next_task()
 
-        self.vehicle_non_idle_times[vehicle_id] = 0
-        self.last_enter_state = vehicle.state
+        if not for_nn:
+            self.vehicle_non_idle_times[vehicle_id] = 0
+            self.last_enter_state = vehicle.state
 
-        self.vehicles.append(vehicle)
-    
+            self.vehicles.append(vehicle)
+        else:
+            return vehicle
+
     def try_spawn_entering(self):
         current_time = self.time
 
+        active_vehicles = []
+        for vehicle in self.vehicles:
+            if not vehicle.is_all_done():
+                active_vehicles.append(vehicle)
+
         if self.spawn_entering_time and current_time - self.last_enter_time > self.spawn_entering_time[0]:
             empty_spots = [i for i in range(len(self.occupied)) if not self.occupied[i]]
-            chosen_spot = np.random.choice(empty_spots)
-            self.add_vehicle(chosen_spot) # pick from empty spots randomly
+            chosen_spot = self.params.choose_spot(self, empty_spots, active_vehicles)
+            self.add_vehicle(chosen_spot)
             self.occupied[chosen_spot] = True
             self.spawn_entering_time.pop(0)
 
@@ -263,7 +280,6 @@ class RuleBasedSimulator(object):
                 added_vehicles.append(agent)
 
         for added in added_vehicles:
-            print(str(added), self.agents_dict[added]["task_profile"])
             del self.agents_dict[added]
 
     def run(self):
@@ -341,7 +357,10 @@ class RuleBasedSimulator(object):
                     savemat(str(Path.home()) + "/ParkSim/vehicle_log/DJI_0022/simulated_vehicle_" + str(vehicle.vehicle_id) + ".mat", {"velocity": velocities})
 
                 if vehicle.current_task != "IDLE":
-                    self.vehicle_non_idle_times[vehicle.vehicle_id] += self.timer_period
+                    self.vehicle_non_idle_times[vehicle_id] += self.timer_period
+
+                if vehicle_id not in self.vehicle_features:
+                    self.vehicle_features[vehicle_id] = SpotFeatureGenerator.generate_features(vehicle, [active_vehicles[id] for id in active_vehicles], self.spawn_interval_mean)
 
                 if self.sim_is_running:
                     vehicle.solve(time=self.time)
@@ -362,9 +381,6 @@ class RuleBasedSimulator(object):
             
             self.loops += 1
             self.time += self.timer_period
-
-            if self.loops % 100 == 0:
-                print(self.time)
 
             if self.should_visualize:
 
@@ -397,6 +413,83 @@ class RuleBasedSimulator(object):
                 # ===========
         
                 self.vis.render()
+"""
+Change these parameters to run tests using the neural network
+"""
+class RuleBasedSimulatorParams():
+    def __init__(self):
+        self.num_simulations = 1 # number of simulations run (e.g. times started from scratch)
+
+        self.spawn_entering = 30
+        self.spawn_exiting = 0
+        self.spawn_interval_mean = 8 # (s)
+
+        self.use_existing_obstacles = False # able to park in "occupied" spots from dataset? False if yes, True if no
+
+        self.load_existing_net = True # generate a new net form scratch or use the one stored at self.spot_model_path
+        self.use_nn = False # pick spots using NN or not
+        self.should_visualize = True # display simulator or not
+        self.spot_model_path = '/Parksim/python/parksim/spot_nn/model.pickle' # this model is trained with loss [sum([(net_discount ** i) * simulator.vehicle_non_idle_times[v + i] for i in range(5)]
+        self.losses_csv_path = '/parksim/python/parksim/spot_nn/losses.csv' # where losses are stored
+
+        # load net
+        if self.load_existing_net:
+            self.net = torch.load(str(Path.home()) + self.spot_model_path)
+        else:
+            self.net = SpotNet()
+
+    # run simulations, including training the net (if necessary) and saving/printing any results
+    def run_simulations(self, ds, vis):
+        losses = []
+
+        for i in range(self.num_simulations):
+            simulator = RuleBasedSimulator(dataset=ds, vis=vis, params=self)
+            simulator.run()
+            total_loss = self.update_net(simulator)
+            losses.append(total_loss if total_loss is not None else 0)
+            print(i, total_loss, sum([simulator.vehicle_non_idle_times[i] for i in simulator.vehicle_non_idle_times]))
+
+        self.save_net()
+        
+        with open(str(Path.home()) + self.losses_csv_path, 'w', newline='') as file:
+            writer = csv.writer(file)
+            writer.writerow(["Simulation", "Loss"])
+            for i, l in enumerate(losses):
+                writer.writerow([i, l])
+
+    # loss function for neural net
+    def loss(self, simulator: RuleBasedSimulator, vehicle_id: int):
+        # net_discount = 0.5
+        # return torch.FloatTensor([sum([(net_discount ** i) * simulator.vehicle_non_idle_times[v + i] for i in range(5)])])
+        return torch.FloatTensor([simulator.vehicle_non_idle_times[vehicle_id]])
+
+    # update network and return loss
+    def update_net(self, simulator: RuleBasedSimulator):
+        if not self.use_nn:
+            total_loss = 0
+            for v in range(1, simulator.spawn_entering + 1): # IDs
+                loss = self.net.update(simulator.vehicle_features[v], self.loss(simulator, v))
+                total_loss += loss.detach().numpy()
+            return total_loss
+        return None
+
+    # save NN parameters to disk
+    def save_net(self):
+        torch.save(self.net, str(Path.home()) + self.spot_model_path)
+
+    # spot selection algorithm
+    def choose_spot(self, simulator: RuleBasedSimulator, empty_spots: List[int], active_vehicles: List[RuleBasedStanleyVehicle]):
+        if self.use_nn:
+            return min([spot for spot in empty_spots], key=lambda spot: self.net(SpotFeatureGenerator.generate_features(simulator.add_vehicle(spot_index=spot, for_nn=True), active_vehicles, simulator.spawn_interval_mean)))
+            # if self.num_vehicles % 2 == 0:
+            #     chosen_spot = min([spot for spot in empty_spots], key=lambda spot: self.spot_net(SpotFeatureGenerator.generate_features(self.add_vehicle(spot_index=spot, for_nn=True), active_vehicles, self.spawn_interval_mean)))
+            # else:
+            #     chosen_spot = min([spot for spot in empty_spots], key=lambda spot: self.vanilla_net(SpotFeatureGenerator.generate_features(self.add_vehicle(spot_index=spot, for_nn=True), active_vehicles, self.spawn_interval_mean)))
+        else:
+            # chosen_spot = np.random.choice(empty_spots)
+            # chosen_spot = self.spot_order[0]
+            # self.spot_order = self.spot_order[1:]
+            return np.random.choice([i for i in empty_spots if (i >= 46 and i <= 66) or (i >= 70 and i <= 91) or (i >= 137 and i <= 158) or (i >= 162 and i <= 183)])
 
 def main():
     # Load dataset
@@ -409,11 +502,10 @@ def main():
 
     vis = RealtimeVisualizer(ds, VehicleBody())
 
-    simulator = RuleBasedSimulator(dataset=ds, vis=vis)
+    params = RuleBasedSimulatorParams()
 
-    simulator.run()
-
-
+    params.run_simulations(ds, vis)
+    
 
 if __name__ == "__main__":
     main()
