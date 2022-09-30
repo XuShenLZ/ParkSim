@@ -189,7 +189,7 @@ class WaypointsGraph(object):
         self.connect(vis.waypoints['R4C1BR'][-1], vis.waypoints['R4L'][-1])
         
         self.connect(vis.waypoints['C2'][0], vis.waypoints['R1C2BL'][0])
-        self.connect(vis.waypoints['R1C2BL'][-1], vis.waypoints['R1L'][2])
+        self.connect(vis.waypoints['R1C2BL'][-1], vis.waypoints['R1L'][6])
         self.connect(vis.waypoints['C2'][2], vis.waypoints['R2C2TL'][0])
         self.connect(vis.waypoints['R2C2TL'][-1], vis.waypoints['R2L'][0])
         self.connect(vis.waypoints['C2'][4], vis.waypoints['R2C2BL'][0])
@@ -223,7 +223,7 @@ class WaypointsGraph(object):
         self.connect(vis.waypoints['EXT'][1], vis.waypoints['EXTL'][0])
         self.connect(vis.waypoints['EXT'][1], vis.waypoints['EXTR'][0])
         self.connect(vis.waypoints['EXTL'][0], vis.waypoints['R1L'][-1])
-        self.connect(vis.waypoints['EXTR'][0], vis.waypoints['R1L'][-5])
+        self.connect(vis.waypoints['EXTR'][0], vis.waypoints['R1L'][-13])
 
     def _dist_to_edge(self, target_coords: np.ndarray, edge: 'Edge'):
         """
