@@ -8,7 +8,8 @@ from parksim.spot_nn.feature_generator import SpotFeatureGenerator
 class SpotNet(nn.Module):
     def __init__(self):
         super(SpotNet, self).__init__()
-        self.fc1 = nn.Linear(SpotFeatureGenerator.number_of_features(), 84)
+        self.feature_generator = SpotFeatureGenerator()
+        self.fc1 = nn.Linear(self.feature_generator.number_of_features(), 84)
         self.fc2 = nn.Linear(84, 10)
         self.fc3 = nn.Linear(10, 1)
         self.optimizer = optim.Adam(self.parameters(), lr=0.01)

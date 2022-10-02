@@ -1,38 +1,80 @@
+import pickle
 from typing import List
 import torch
 import numpy as np
+from pathlib import Path
 
 from parksim.pytypes import VehicleState
 from parksim.agents.rule_based_stanley_vehicle import RuleBasedStanleyVehicle
 
 class SpotFeatureGenerator():
+    def __init__(self):
+        with open(str(Path.home()) + "/parksim/python/parksim/spot_nn/create_features_data.pickle", "rb") as file:
+            self.create_features_data = pickle.load(file)
+        with open(str(Path.home()) + '/ParkSim/data/spots_data.pickle', 'rb') as f:
+            data = pickle.load(f)
+            self.parking_spaces = data['parking_spaces']
 
-    @staticmethod
-    def generate_features(vehicle: RuleBasedStanleyVehicle, active_vehicles: List[RuleBasedStanleyVehicle], spawn_mean: int):
-        heatmap = SpotFeatureGenerator.generate_vehicle_heatmap(active_vehicles)
-        squares_traveled = set()
-        for i in range(len(vehicle.controller.x_ref)):
-            squares_traveled.add(SpotFeatureGenerator.coord_to_heatmap_square(vehicle.controller.x_ref[i], vehicle.controller.y_ref[i]))
+    def generate_features(self, spot_index: int, active_vehicles: List[RuleBasedStanleyVehicle], spawn_mean: int):
+        heatmap = self.generate_vehicle_heatmap(active_vehicles)
         # subtract one because you're in your own path always
-        vehicles_along_path = sum([heatmap[sq] for sq in squares_traveled]) - 1
+        vehicles_along_path = sum([heatmap[sq] for sq in self.create_features_data['trajectory_squares'][spot_index]]) - 1
         # subtract one because you're parking near yourself
-        vehicles_parking_nearby = sum([np.linalg.norm([v.controller.x_ref[-1] - vehicle.controller.x_ref[-1], v.controller.y_ref[-1] - vehicle.controller.y_ref[-1]]) < 10 for v in active_vehicles]) - 1
+        vehicles_parking_nearby = sum([np.linalg.norm([v.controller.x_ref[-1] - self.create_features_data['last_waypoint'][spot_index][0], v.controller.y_ref[-1] - self.create_features_data['last_waypoint'][spot_index][1]]) < 10 for v in active_vehicles]) - 1
 
-        return torch.FloatTensor([vehicle.controller.get_ref_length(), vehicle.parking_spaces[vehicle.spot_index][0], vehicle.parking_spaces[vehicle.spot_index][1], vehicles_along_path, vehicles_parking_nearby, spawn_mean])
+        return torch.FloatTensor([self.create_features_data['trajectory_length'][spot_index], self.parking_spaces[spot_index][0], self.parking_spaces[spot_index][1], vehicles_along_path, vehicles_parking_nearby, spawn_mean])
 
-    @staticmethod
-    def number_of_features():
+    def number_of_features(self):
         return 6
 
-    @staticmethod
-    def generate_vehicle_heatmap(vehicles: List[RuleBasedStanleyVehicle]) -> List[int]:
-        heatmap = [0] * 112
+    def generate_vehicle_heatmap(self, vehicles: List[RuleBasedStanleyVehicle]) -> List[int]:
+        heatmap = [0] * self.number_of_heatmap_squares()
         for v in vehicles:
             if v.state.x.x < 0 or v.state.x.x >= 140 or v.state.x.y < 0 or v.state.x.y >= 80:
                 continue
-            heatmap[SpotFeatureGenerator.coord_to_heatmap_square(v.state.x.x, v.state.x.y)] += 1
+            heatmap[self.coord_to_heatmap_square(v.state.x.x, v.state.x.y)] += 1
         return heatmap
 
-    @staticmethod
-    def coord_to_heatmap_square(x, y):
-        return int(x // 10) * 8 + int(y // 10)
+    def number_of_heatmap_squares(self):
+        return 221
+
+    def coord_to_heatmap_square(self, x, y):
+        if x < 7.71:
+            horz = 0
+        elif x < 76.54:
+            horz = 1 + (x - 7.71) // 8.60375 # divide up into 8 boxes
+        elif x < 83.83:
+            horz = 9
+        elif x < 138.42:
+            horz = 10 + (x - 83.82) // 9.1 # divide up into 6 boxes
+        else:
+            horz = 16
+
+        if y < 6.48:
+            vert = 0
+        elif y < 13.51:
+            vert = 1
+        elif y < 19.095:
+            vert = 2
+        elif y < 24.68:
+            vert = 3
+        elif y < 31.93:
+            vert = 4
+        elif y < 37.585:
+            vert = 5
+        elif y < 43.24:
+            vert = 6
+        elif y < 50.4:
+            vert = 7
+        elif y < 55.9:
+            vert = 8
+        elif y < 61.4:
+            vert = 9
+        elif y < 68.51:
+            vert = 10
+        elif y < 73.73:
+            vert = 11
+        else:
+            vert = 12
+
+        return int(horz * 13 + vert)

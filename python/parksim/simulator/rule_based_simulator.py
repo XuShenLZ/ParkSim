@@ -1,4 +1,3 @@
-import time
 from typing import Dict, List
 
 from dlp.dataset import Dataset
@@ -10,6 +9,7 @@ import pickle
 import os
 import glob
 import csv
+import dataclasses
 
 import numpy as np
 import torch
@@ -27,8 +27,6 @@ from parksim.controller_types import StanleyParams
 from parksim.spot_nn.spot_nn import SpotNet
 from parksim.spot_nn.feature_generator import SpotFeatureGenerator
 
-# np.random.seed(10)
-
 # These parameters should all become ROS param for simulator and vehicle
 spots_data_path = '/ParkSim/data/spots_data.pickle'
 offline_maneuver_path = '/ParkSim/data/parking_maneuvers.pickle'
@@ -42,7 +40,7 @@ class RuleBasedSimulator(object):
 
         self.timer_period = 0.1
 
-        self.blocked_spots = [42, 43, 44, 45, 64, 65, 66, 67, 68, 69, 92, 93, 94, 110, 111, 112, 113, 114, 115, 134, 135, 136, 156, 157, 158, 159, 160, 161, 184, 185, 186, 202, 203, 204, 205, 206, 207, 226, 227, 228, 248, 249, 250, 251, 252, 253, 276, 277, 278, 294, 295, 256, 297, 298, 299, 318, 319, 320, 340, 341, 342, 343, 344, 345] # Spots to be blocked in advance: 3 left and 3 right spaces of each row, except right spaces of right row, since doesn't unpark into an aisle
+        self.blocked_spots = [42, 43, 44, 45, 46, 47, 48, 49, 64, 65, 66, 67, 68, 69, 92, 93, 94, 110, 111, 112, 113, 114, 115, 134, 135, 136, 156, 157, 158, 159, 160, 161, 184, 185, 186, 202, 203, 204, 205, 206, 207, 226, 227, 228, 248, 249, 250, 251, 252, 253, 276, 277, 278, 294, 295, 256, 297, 298, 299, 318, 319, 320, 340, 341, 342, 343, 344, 345] # Spots to be blocked in advance: 3 left and 3 right spaces of each row, except right spaces of right row, since doesn't unpark into an aisle
         self.entrance_coords = [14.38, 76.21]
 
         self.spawn_entering = params.spawn_entering
@@ -65,6 +63,12 @@ class RuleBasedSimulator(object):
 
         self.graph = WaypointsGraph()
         self.graph.setup_with_vis(self.dlpvis)
+
+        # Save data to offline files
+        # with open(str(Path.home()) + '/parksim/data/waypoints_graph.pickle', 'wb') as f:
+        #     data_to_save = {'graph': self.graph, 
+        #                     'entrance_coords': self.entrance_coords}
+        #     pickle.dump(data_to_save, f)
 
         # Clean up the log folder if needed
         if self.write_log:
@@ -112,6 +116,12 @@ class RuleBasedSimulator(object):
         self.loops = 0   
 
         self.vehicle_features = {}
+        self.feature_generator = SpotFeatureGenerator()
+        self.vehicle_ids_entered = []
+
+        # self.discretization = {}
+        # self.traj_len = {}
+        # self.last_pt = {}
         
     def _gen_occupancy(self):
 
@@ -177,7 +187,6 @@ class RuleBasedSimulator(object):
         vehicle.load_parking_spaces(spots_data_path=spots_data_path)
         vehicle.load_graph(waypoints_graph_path=waypoints_graph_path)
         vehicle.load_maneuver(offline_maneuver_path=offline_maneuver_path)
-        # vehicle.load_intent_model(model_path=intent_model_path)
 
         task_profile = []
 
@@ -194,6 +203,8 @@ class RuleBasedSimulator(object):
                 state.e.psi = - np.pi/2
 
                 vehicle.set_vehicle_state(state=state)
+                
+                self.vehicle_ids_entered.append(vehicle_id)
             else:
                 unpark_task = VehicleTask(name="UNPARK")
                 cruise_task = VehicleTask(
@@ -233,10 +244,31 @@ class RuleBasedSimulator(object):
 
         if not for_nn:
             self.vehicle_non_idle_times[vehicle_id] = 0
-            self.last_enter_state = vehicle.state
+            if spot_index >= 0:
+                self.last_enter_state = vehicle.state
 
             self.vehicles.append(vehicle)
         else:
+            # squares_traveled = set()
+            # for i in range(len(vehicle.controller.x_ref)):
+            #     x = vehicle.controller.x_ref[i]
+            #     y = vehicle.controller.y_ref[i]
+            #     sq = self.feature_generator.coord_to_heatmap_square(vehicle.controller.x_ref[i], vehicle.controller.y_ref[i])
+            #     squares_traveled.add(sq)
+            #     if x > 7.71 and x <= 28.53 and y > 61.4 and y <= 68.51:
+            #         squares_traveled.add(sq - 1)
+            #     elif x > 76.54 and x <= 83.82 and y > 61.4 and y <= 68.51:
+            #         squares_traveled.add(sq + 1)
+            #     elif x > 7.71 and x <= 76.54 and y > 6.48 and y <= 68.51:
+            #         squares_traveled.add(sq - 1)
+            #         squares_traveled.add(sq + 1)
+            #     elif x > 83.82 and x <= 138.42 and y > 6.48 and y <= 68.51:
+            #         squares_traveled.add(sq - 1)
+            #         squares_traveled.add(sq + 1)
+            # self.discretization[spot_index] = squares_traveled
+            # self.traj_len[spot_index] = vehicle.controller.get_ref_length()
+            # self.last_pt[spot_index] = (vehicle.controller.x_ref[-1], vehicle.controller.y_ref[-1])
+
             return vehicle
 
     def try_spawn_entering(self):
@@ -250,6 +282,14 @@ class RuleBasedSimulator(object):
         if self.spawn_entering_time and current_time - self.last_enter_time > self.spawn_entering_time[0]:
             empty_spots = [i for i in range(len(self.occupied)) if not self.occupied[i]]
             chosen_spot = self.params.choose_spot(self, empty_spots, active_vehicles)
+            # dat = {}
+            # dat["trajectory_squares"] = self.discretization
+            # dat["trajectory_length"] = self.traj_len
+            # dat["last_waypoint"] = self.last_pt
+            # with open(str(Path.home()) + "/parksim/python/parksim/spot_nn/create_features_data.pickle", 'wb') as file:
+            #     pickle.dump(dat, file)
+            #     print("done")
+            #     file.close()
             self.add_vehicle(chosen_spot)
             self.occupied[chosen_spot] = True
             self.spawn_entering_time.pop(0)
@@ -319,7 +359,7 @@ class RuleBasedSimulator(object):
                     active_vehicles[vehicle.vehicle_id] = vehicle
 
             if not self.spawn_entering_time and not self.spawn_exiting_time and not active_vehicles:
-                print("No Active Vehicles")
+                # print("No Active Vehicles")
                 break
 
             # ========== For real-time prediction only
@@ -360,7 +400,7 @@ class RuleBasedSimulator(object):
                     self.vehicle_non_idle_times[vehicle_id] += self.timer_period
 
                 if vehicle_id not in self.vehicle_features:
-                    self.vehicle_features[vehicle_id] = SpotFeatureGenerator.generate_features(vehicle, [active_vehicles[id] for id in active_vehicles], self.spawn_interval_mean)
+                    self.vehicle_features[vehicle_id] = self.feature_generator.generate_features(vehicle.spot_index, [active_vehicles[id] for id in active_vehicles], self.spawn_interval_mean)
 
                 if self.sim_is_running:
                     vehicle.solve(time=self.time)
@@ -418,15 +458,17 @@ Change these parameters to run tests using the neural network
 """
 class RuleBasedSimulatorParams():
     def __init__(self):
+        self.seed = None
+
         self.num_simulations = 1 # number of simulations run (e.g. times started from scratch)
 
-        self.spawn_entering = 30
-        self.spawn_exiting = 0
-        self.spawn_interval_mean = 8 # (s)
+        self.spawn_entering_fn = lambda: 50
+        self.spawn_exiting_fn = lambda: 0
+        self.spawn_interval_mean_fn = lambda: 5 # (s)
 
-        self.use_existing_obstacles = False # able to park in "occupied" spots from dataset? False if yes, True if no
+        self.use_existing_obstacles = True # able to park in "occupied" spots from dataset? False if yes, True if no
 
-        self.load_existing_net = True # generate a new net form scratch or use the one stored at self.spot_model_path
+        self.load_existing_net = True # generate a new net form scratch (and overwrite model.pickle) or use the one stored at self.spot_model_path
         self.use_nn = False # pick spots using NN or not
         self.should_visualize = True # display simulator or not
         self.spot_model_path = '/Parksim/python/parksim/spot_nn/model.pickle' # this model is trained with loss [sum([(net_discount ** i) * simulator.vehicle_non_idle_times[v + i] for i in range(5)]
@@ -438,16 +480,22 @@ class RuleBasedSimulatorParams():
         else:
             self.net = SpotNet()
 
+        self.feature_generator = SpotFeatureGenerator()
+
     # run simulations, including training the net (if necessary) and saving/printing any results
     def run_simulations(self, ds, vis):
         losses = []
 
         for i in range(self.num_simulations):
+            self.spawn_entering = self.spawn_entering_fn()
+            self.spawn_exiting = self.spawn_exiting_fn()
+            self.spawn_interval_mean = self.spawn_interval_mean_fn()
             simulator = RuleBasedSimulator(dataset=ds, vis=vis, params=self)
+            print('Experiment ' + str(i) + ': ' + str(self.spawn_entering) + ' entering, ' + str(self.spawn_exiting) + ' exiting, ' + str(self.spawn_interval_mean) + ' spawn interval mean')
             simulator.run()
             total_loss = self.update_net(simulator)
             losses.append(total_loss if total_loss is not None else 0)
-            print(i, total_loss, sum([simulator.vehicle_non_idle_times[i] for i in simulator.vehicle_non_idle_times]))
+            print('Results: ' + (str(total_loss / self.spawn_entering) if total_loss is not None else 'N/A') + ' average loss, ' + str(sum([simulator.vehicle_non_idle_times[i] for i in simulator.vehicle_ids_entered]) / self.spawn_entering) + ' average entering time')
 
         self.save_net()
         
@@ -457,18 +505,35 @@ class RuleBasedSimulatorParams():
             for i, l in enumerate(losses):
                 writer.writerow([i, l])
 
-    # loss function for neural net
-    def loss(self, simulator: RuleBasedSimulator, vehicle_id: int):
-        # net_discount = 0.5
-        # return torch.FloatTensor([sum([(net_discount ** i) * simulator.vehicle_non_idle_times[v + i] for i in range(5)])])
-        return torch.FloatTensor([simulator.vehicle_non_idle_times[vehicle_id]])
+    # spot selection algorithm
+    def choose_spot(self, simulator: RuleBasedSimulator, empty_spots: List[int], active_vehicles: List[RuleBasedStanleyVehicle]):
+        if self.use_nn:
+            return min([spot for spot in empty_spots], key=lambda spot: self.net(self.feature_generator.generate_features(spot, active_vehicles, simulator.spawn_interval_mean)))
+            # if self.num_vehicles % 2 == 0:
+            #     chosen_spot = min([spot for spot in empty_spots], key=lambda spot: self.spot_net(SpotFeatureGenerator.generate_features(self.add_vehicle(spot_index=spot, for_nn=True), active_vehicles, self.spawn_interval_mean)))
+            # else:
+            #     chosen_spot = min([spot for spot in empty_spots], key=lambda spot: self.vanilla_net(SpotFeatureGenerator.generate_features(self.add_vehicle(spot_index=spot, for_nn=True), active_vehicles, self.spawn_interval_mean)))
+        else:
+            return np.random.choice(empty_spots)
+            # chosen_spot = self.spot_order[0]
+            # self.spot_order = self.spot_order[1:]
+            # return np.random.choice([i for i in empty_spots if (i >= 46 and i <= 66) or (i >= 70 and i <= 91) or (i >= 137 and i <= 158) or (i >= 162 and i <= 183)])
+
+    # target function for neural net
+    def target(self, simulator: RuleBasedSimulator, vehicle_id: int, vehicles_included: List[int]):
+        net_discount = 0.9
+        return torch.FloatTensor([sum([(net_discount ** i) * simulator.vehicle_non_idle_times[vehicles_included[i]] for i in range(len(vehicles_included))])])
+        # return torch.FloatTensor([simulator.vehicle_non_idle_times[vehicle_id]])
 
     # update network and return loss
     def update_net(self, simulator: RuleBasedSimulator):
+        num_vehicles_included = 5
         if not self.use_nn:
             total_loss = 0
-            for v in range(1, simulator.spawn_entering + 1): # IDs
-                loss = self.net.update(simulator.vehicle_features[v], self.loss(simulator, v))
+            # for v in simulator.vehicle_ids_entered: # IDs
+            #     loss = self.net.update(simulator.vehicle_features[v], self.target(simulator, v))
+            for i, v in enumerate(simulator.vehicle_ids_entered[:-num_vehicles_included]):
+                loss = self.net.update(simulator.vehicle_features[v], self.target(simulator, v, simulator.vehicle_ids_entered[i:i+num_vehicles_included]))
                 total_loss += loss.detach().numpy()
             return total_loss
         return None
@@ -476,20 +541,6 @@ class RuleBasedSimulatorParams():
     # save NN parameters to disk
     def save_net(self):
         torch.save(self.net, str(Path.home()) + self.spot_model_path)
-
-    # spot selection algorithm
-    def choose_spot(self, simulator: RuleBasedSimulator, empty_spots: List[int], active_vehicles: List[RuleBasedStanleyVehicle]):
-        if self.use_nn:
-            return min([spot for spot in empty_spots], key=lambda spot: self.net(SpotFeatureGenerator.generate_features(simulator.add_vehicle(spot_index=spot, for_nn=True), active_vehicles, simulator.spawn_interval_mean)))
-            # if self.num_vehicles % 2 == 0:
-            #     chosen_spot = min([spot for spot in empty_spots], key=lambda spot: self.spot_net(SpotFeatureGenerator.generate_features(self.add_vehicle(spot_index=spot, for_nn=True), active_vehicles, self.spawn_interval_mean)))
-            # else:
-            #     chosen_spot = min([spot for spot in empty_spots], key=lambda spot: self.vanilla_net(SpotFeatureGenerator.generate_features(self.add_vehicle(spot_index=spot, for_nn=True), active_vehicles, self.spawn_interval_mean)))
-        else:
-            # chosen_spot = np.random.choice(empty_spots)
-            # chosen_spot = self.spot_order[0]
-            # self.spot_order = self.spot_order[1:]
-            return np.random.choice([i for i in empty_spots if (i >= 46 and i <= 66) or (i >= 70 and i <= 91) or (i >= 137 and i <= 158) or (i >= 162 and i <= 183)])
 
 def main():
     # Load dataset
@@ -504,6 +555,9 @@ def main():
 
     params = RuleBasedSimulatorParams()
 
+    if params.seed is not None:
+        np.random.seed(params.seed)
+        
     params.run_simulations(ds, vis)
     
 
