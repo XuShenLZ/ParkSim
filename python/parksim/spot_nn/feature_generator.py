@@ -20,7 +20,7 @@ class SpotFeatureGenerator():
         # subtract one because you're in your own path always
         vehicles_along_path = sum([heatmap[sq] for sq in self.create_features_data['trajectory_squares'][spot_index]]) - 1
         # subtract one because you're parking near yourself
-        vehicles_parking_nearby = sum([np.linalg.norm([v.controller.x_ref[-1] - self.create_features_data['last_waypoint'][spot_index][0], v.controller.y_ref[-1] - self.create_features_data['last_waypoint'][spot_index][1]]) < 10 for v in active_vehicles]) - 1
+        vehicles_parking_nearby = sum([np.linalg.norm([v.controller.x_ref[-1] - self.create_features_data['last_waypoint'][spot_index][0], v.controller.y_ref[-1] - self.create_features_data['last_waypoint'][spot_index][1]]) < 10 for v in active_vehicles if len(v.controller.x_ref) > 0]) - 1
 
         return torch.FloatTensor([self.create_features_data['trajectory_length'][spot_index], self.parking_spaces[spot_index][0], self.parking_spaces[spot_index][1], vehicles_along_path, vehicles_parking_nearby, spawn_mean])
 

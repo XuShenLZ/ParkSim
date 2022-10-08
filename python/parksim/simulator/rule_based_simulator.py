@@ -51,7 +51,7 @@ class RuleBasedSimulator(object):
         self.spots_data_path = '/ParkSim/data/spots_data.pickle'
         self.agents_data_path = '/ParkSim/data/agents_data.pickle'
 
-        self.use_existing_agents = False
+        self.use_existing_agents = params.use_existing_agents
         self.use_existing_obstacles = params.use_existing_obstacles
 
         self.write_log = False
@@ -119,6 +119,7 @@ class RuleBasedSimulator(object):
         self.feature_generator = SpotFeatureGenerator()
         self.vehicle_ids_entered = []
 
+        # uncomment this to regenerate data used to generate features (1/3)
         # self.discretization = {}
         # self.traj_len = {}
         # self.last_pt = {}
@@ -154,6 +155,13 @@ class RuleBasedSimulator(object):
         with open(home_path + self.agents_data_path, 'rb') as f:
             self.agents_dict = pickle.load(f)
 
+            # determine when vehicles will unpark, so that we don't assign cars to park in those spots before other vehicles appear to unpark
+            # self.unparking times[spot_index] = time a vehicle will unpark from there
+            self.unparking_times = {}
+            for agent in self.agents_dict:
+                if self.agents_dict[agent]["task_profile"][0]["name"] == "UNPARK":
+                    self.unparking_times[self.agents_dict[agent]["task_profile"][0]["target_spot_index"]] = self.agents_dict[agent]["init_time"]
+
     # goes to an anchor point
     # convention: if entering, spot_index is positive, and if exiting, it's negative
     def add_vehicle(self, spot_index: int=None, vehicle_body: VehicleBody=VehicleBody(), vehicle_config: VehicleConfig=VehicleConfig(), vehicle_id: int=None, for_nn: bool=False):
@@ -164,8 +172,7 @@ class RuleBasedSimulator(object):
                 vehicle_id = self.num_vehicles
 
         if self.use_existing_agents:
-            agents = pickle.load(open(str(Path.home()) + self.agents_data_path, "rb"))
-            agent_dict = agents[vehicle_id]
+            agent_dict = self.agents_dict[vehicle_id]
 
             vehicle_body.w = agent_dict["width"]
             vehicle_body.l = agent_dict["length"]
@@ -176,8 +183,8 @@ class RuleBasedSimulator(object):
 
         vehicle = RuleBasedStanleyVehicle(
             vehicle_id=vehicle_id, 
-            vehicle_body=vehicle_body, 
-            vehicle_config=vehicle_config, 
+            vehicle_body=dataclasses.replace(vehicle_body), 
+            vehicle_config=dataclasses.replace(vehicle_config), 
             controller=controller,
             motion_predictor=motion_predictor,
             inst_centric_generator=None, 
@@ -219,6 +226,7 @@ class RuleBasedSimulator(object):
                     task_profile.append(VehicleTask(name="IDLE", duration=task["duration"]))
                 elif task["name"] == "PARK":
                     task_profile.append(VehicleTask(name="PARK", target_spot_index=task["target_spot_index"]))
+                    self.occupied[task["target_spot_index"]] = True
                 elif task["name"] == "UNPARK":
                     task_profile.append(VehicleTask(name="UNPARK", target_spot_index=task["target_spot_index"]))
                 elif task["name"] == "CRUISE":
@@ -227,13 +235,25 @@ class RuleBasedSimulator(object):
                     else:
                         task_profile.append(VehicleTask(name="CRUISE", v_cruise=task["v_cruise"], target_spot_index=task["target_spot_index"]))
 
+            # determine which vehicles entered from the entrance for stats purposes later
+            for task in raw_tp:
+                if task["name"] == "PARK" and "init_coords" in agent_dict and agent_dict["init_coords"][1] > 70:
+                    vehicle.spot_index = task["target_spot_index"]
+                    self.vehicle_ids_entered.append(vehicle_id)
+                elif task["name"] == "UNPARK":
+                    break
+
             if "init_spot" in agent_dict:
                 init_spot = agent_dict["init_spot"]
                 init_heading = agent_dict["init_heading"]
                 vehicle.set_vehicle_state(spot_index=init_spot, heading=init_heading)
             else:
                 agent_state = VehicleState()
-                agent_state.x.x = agent_dict["init_coords"][0]
+                # vehicles tend to enter from the same place they exit, which can cause overlaps/jams
+                if agent_dict["init_coords"][1] > 70:
+                    agent_state.x.x = agent_dict["init_coords"][0] - 3
+                else:
+                    agent_state.x.x = agent_dict["init_coords"][0]
                 agent_state.x.y = agent_dict["init_coords"][1]
                 agent_state.e.psi = agent_dict["init_heading"]
                 agent_state.v.v = agent_dict["init_v"]
@@ -244,11 +264,12 @@ class RuleBasedSimulator(object):
 
         if not for_nn:
             self.vehicle_non_idle_times[vehicle_id] = 0
-            if spot_index >= 0:
+            if spot_index and spot_index >= 0:
                 self.last_enter_state = vehicle.state
 
             self.vehicles.append(vehicle)
         else:
+            # uncomment this to regenerate data used to generate features (2/3)
             # squares_traveled = set()
             # for i in range(len(vehicle.controller.x_ref)):
             #     x = vehicle.controller.x_ref[i]
@@ -282,14 +303,6 @@ class RuleBasedSimulator(object):
         if self.spawn_entering_time and current_time - self.last_enter_time > self.spawn_entering_time[0]:
             empty_spots = [i for i in range(len(self.occupied)) if not self.occupied[i]]
             chosen_spot = self.params.choose_spot(self, empty_spots, active_vehicles)
-            # dat = {}
-            # dat["trajectory_squares"] = self.discretization
-            # dat["trajectory_length"] = self.traj_len
-            # dat["last_waypoint"] = self.last_pt
-            # with open(str(Path.home()) + "/parksim/python/parksim/spot_nn/create_features_data.pickle", 'wb') as file:
-            #     pickle.dump(dat, file)
-            #     print("done")
-            #     file.close()
             self.add_vehicle(chosen_spot)
             self.occupied[chosen_spot] = True
             self.spawn_entering_time.pop(0)
@@ -316,6 +329,47 @@ class RuleBasedSimulator(object):
 
         for agent in self.agents_dict:
             if self.agents_dict[agent]["init_time"] < current_time:
+
+                # change task profile to park in nn spot if the vehicle is entering from the entrance
+                if not self.params.use_existing_entrances and "init_coords" in self.agents_dict[agent] and self.agents_dict[agent]["init_coords"][1] > 70:
+                    last_unpark = -1 # index of the most recent unparking
+                    already_parked = None # None if the vehicle has not parked yet, else it's the spot index we've assigned
+                    new_tp = self.agents_dict[agent]["task_profile"] # task profile we will change
+                    
+                    # look for a parking task so we can change it
+                    for i, task in enumerate(new_tp):
+                        # if see an unpark
+                        if task["name"] == "UNPARK":
+                            # if haven't already determined new parking spot, set this as the most recent unpark
+                            if already_parked is None:
+                                last_unpark = i
+                            else: # if already determined new parking spot, this is an unpark after a park, so set the spot we are unparking from to our new spot
+                                new_tp[i]["target_spot_index"] = already_parked
+                        elif task["name"] == "PARK" and i > 0:
+
+                            # collect arguments to choose spot
+                            active_vehicles = []
+                            for vehicle in self.vehicles:
+                                if not vehicle.is_all_done():
+                                    active_vehicles.append(vehicle)
+                            empty_spots = [i for i in range(len(self.occupied)) if not self.occupied[i] and (i not in self.unparking_times or self.unparking_times[i] < self.time)]
+
+                            # choose new spot
+                            new_spot_index = self.params.choose_spot(self, empty_spots, active_vehicles)
+
+                            # create tasks and insert into task profile
+                            cruise_speed = max([t["v_cruise"] for t in new_tp[last_unpark + 1:i] if t["name"] == "CRUISE"])
+                            cruise_task = {"name": "CRUISE", "v_cruise": cruise_speed, "target_spot_index": new_spot_index}
+                            park_task = {"name": "PARK", "target_spot_index": new_spot_index}
+                            new_tp = new_tp[:last_unpark + 1] + new_tp[i + 1:]
+                            new_tp.insert(last_unpark + 1, cruise_task)
+                            new_tp.insert(last_unpark + 2, park_task)
+
+                            # state management
+                            already_parked = new_spot_index
+                            self.occupied[new_spot_index] = True
+                    self.agents_dict[agent]["task_profile"] = new_tp
+
                 self.add_vehicle(vehicle_id=agent)
                 added_vehicles.append(agent)
 
@@ -323,12 +377,30 @@ class RuleBasedSimulator(object):
             del self.agents_dict[added]
 
     def run(self):
+        # uncomment this to regenerate data used to generate features (3/3)
+        # for ve in range(364):
+        #     self.add_vehicle(ve, for_nn=True)
+        # print(self.discretization)
+        # dat = {}
+        # dat["trajectory_squares"] = self.discretization
+        # dat["trajectory_length"] = self.traj_len
+        # dat["last_waypoint"] = self.last_pt
+        # with open(str(Path.home()) + "/parksim/python/parksim/spot_nn/create_features_data.pickle", 'wb') as file:
+        #     pickle.dump(dat, file)
+        #     print("done")
+        #     file.close()
+
+        # a = 3/0
 
         if self.write_log:
             # write logs
             log_dir_path = str(Path.home()) + self.log_path
             if not os.path.exists(log_dir_path):
                 os.mkdir(log_dir_path)
+
+        # determine when to end sim for use_existing_agents
+        if self.use_existing_agents:
+            last_existing_init_time = max([self.agents_dict[agent]["init_time"] for agent in self.agents_dict])
 
         # while not run out of time and we have not reached the last waypoint yet
         while self.max_simulation_time >= self.time:
@@ -358,8 +430,10 @@ class RuleBasedSimulator(object):
                 if not vehicle.is_all_done():
                     active_vehicles[vehicle.vehicle_id] = vehicle
 
-            if not self.spawn_entering_time and not self.spawn_exiting_time and not active_vehicles:
+            if not self.use_existing_agents and not self.spawn_entering_time and not self.spawn_exiting_time and not active_vehicles:
                 # print("No Active Vehicles")
+                break
+            elif self.use_existing_agents and self.time > last_existing_init_time and not active_vehicles:
                 break
 
             # ========== For real-time prediction only
@@ -399,7 +473,7 @@ class RuleBasedSimulator(object):
                 if vehicle.current_task != "IDLE":
                     self.vehicle_non_idle_times[vehicle_id] += self.timer_period
 
-                if vehicle_id not in self.vehicle_features:
+                if vehicle_id not in self.vehicle_features and vehicle.spot_index and vehicle.spot_index >= 0:
                     self.vehicle_features[vehicle_id] = self.feature_generator.generate_features(vehicle.spot_index, [active_vehicles[id] for id in active_vehicles], self.spawn_interval_mean)
 
                 if self.sim_is_running:
@@ -461,17 +535,23 @@ class RuleBasedSimulatorParams():
         self.seed = None
 
         self.num_simulations = 1 # number of simulations run (e.g. times started from scratch)
+        self.use_existing_agents = True # replay video data
 
-        self.spawn_entering_fn = lambda: 50
-        self.spawn_exiting_fn = lambda: 0
-        self.spawn_interval_mean_fn = lambda: 5 # (s)
+        # use existing agents
+        self.use_existing_entrances = True # have vehicles park in spots that they parked in real life
+
+        # don't use existing agents
+        self.spawn_entering_fn = lambda: 20 
+        self.spawn_exiting_fn = lambda: 20
+        self.spawn_interval_mean_fn = lambda: 10 # (s)
 
         self.use_existing_obstacles = True # able to park in "occupied" spots from dataset? False if yes, True if no
 
         self.load_existing_net = True # generate a new net form scratch (and overwrite model.pickle) or use the one stored at self.spot_model_path
-        self.use_nn = False # pick spots using NN or not
+        self.use_nn = True # pick spots using NN or not (irrelevant if self.use_existing_entrances is True)
+        self.train_nn = False # train NN or not
         self.should_visualize = True # display simulator or not
-        self.spot_model_path = '/Parksim/python/parksim/spot_nn/model.pickle' # this model is trained with loss [sum([(net_discount ** i) * simulator.vehicle_non_idle_times[v + i] for i in range(5)]
+        self.spot_model_path = '/Parksim/python/parksim/spot_nn/selfish_model.pickle' # this model is trained with loss [sum([(net_discount ** i) * simulator.vehicle_non_idle_times[v + i] for i in range(5)]
         self.losses_csv_path = '/parksim/python/parksim/spot_nn/losses.csv' # where losses are stored
 
         # load net
@@ -495,7 +575,7 @@ class RuleBasedSimulatorParams():
             simulator.run()
             total_loss = self.update_net(simulator)
             losses.append(total_loss if total_loss is not None else 0)
-            print('Results: ' + (str(total_loss / self.spawn_entering) if total_loss is not None else 'N/A') + ' average loss, ' + str(sum([simulator.vehicle_non_idle_times[i] for i in simulator.vehicle_ids_entered]) / self.spawn_entering) + ' average entering time')
+            print('Results: ' + (str(total_loss / len(simulator.vehicle_ids_entered)) if total_loss is not None else 'N/A') + ' average loss, ' + str(sum([simulator.vehicle_non_idle_times[i] for i in simulator.vehicle_ids_entered]) / len(simulator.vehicle_ids_entered)) + ' average entering time')
 
         self.save_net()
         
@@ -515,8 +595,6 @@ class RuleBasedSimulatorParams():
             #     chosen_spot = min([spot for spot in empty_spots], key=lambda spot: self.vanilla_net(SpotFeatureGenerator.generate_features(self.add_vehicle(spot_index=spot, for_nn=True), active_vehicles, self.spawn_interval_mean)))
         else:
             return np.random.choice(empty_spots)
-            # chosen_spot = self.spot_order[0]
-            # self.spot_order = self.spot_order[1:]
             # return np.random.choice([i for i in empty_spots if (i >= 46 and i <= 66) or (i >= 70 and i <= 91) or (i >= 137 and i <= 158) or (i >= 162 and i <= 183)])
 
     # target function for neural net
@@ -528,7 +606,7 @@ class RuleBasedSimulatorParams():
     # update network and return loss
     def update_net(self, simulator: RuleBasedSimulator):
         num_vehicles_included = 5
-        if not self.use_nn:
+        if self.train_nn:
             total_loss = 0
             # for v in simulator.vehicle_ids_entered: # IDs
             #     loss = self.net.update(simulator.vehicle_features[v], self.target(simulator, v))

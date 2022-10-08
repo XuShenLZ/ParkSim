@@ -544,6 +544,8 @@ class RuleBasedStanleyVehicle(AbstractAgent):
             self.parking_maneuver = interpolate_states_inputs(offline_maneuver, time_seq)
 
             self.parking_start_time = time.time()
+
+            self.change_central_occupancy(self.spot_index, True)
             
             
         step = self.parking_step
@@ -775,7 +777,7 @@ class RuleBasedStanleyVehicle(AbstractAgent):
                         should_unbrake = True
                     else:
                         if (self.waiting_for not in self.nearby_vehicles  
-                            or (not self.other_is_braking[self.waiting_for] 
+                            or ((not self.other_is_braking[self.waiting_for] and self.other_task[self.waiting_for] != "IDLE")
                             and self.has_passed(this_id=self.waiting_for))
                             or (self.dist_from(self.waiting_for) > self.vehicle_config.braking_distance) and self.dist_from(self.waiting_for) > self.last_braking_distance):
                             should_unbrake = True
