@@ -52,7 +52,7 @@ class RuleBasedSimulator(object):
         self.agents_data_path = '/ParkSim/data/agents_data.pickle'
 
         self.use_existing_agents = params.use_existing_agents
-        self.use_existing_obstacles = params.use_existing_obstacles
+        self.use_existing_obstacles = params.use_existing_obstacles or params.use_existing_agents
 
         self.write_log = False
         self.log_path = '/ParkSim/vehicle_log'
@@ -157,10 +157,15 @@ class RuleBasedSimulator(object):
 
             # determine when vehicles will unpark, so that we don't assign cars to park in those spots before other vehicles appear to unpark
             # self.unparking times[spot_index] = time a vehicle will unpark from there
+            self.total_vehicle_count = len(self.agents_dict)
             self.unparking_times = {}
+            max_init_time = -1
             for agent in self.agents_dict:
                 if self.agents_dict[agent]["task_profile"][0]["name"] == "UNPARK":
                     self.unparking_times[self.agents_dict[agent]["task_profile"][0]["target_spot_index"]] = self.agents_dict[agent]["init_time"]
+                max_init_time = max(max_init_time, self.agents_dict[agent]["init_time"])
+            if self.use_existing_agents:
+                self.spawn_interval_mean = max_init_time / len(self.agents_dict) * 2 # times 2 since entering and exiting both come in with that mean
 
     # goes to an anchor point
     # convention: if entering, spot_index is positive, and if exiting, it's negative
@@ -473,7 +478,7 @@ class RuleBasedSimulator(object):
                 if vehicle.current_task != "IDLE":
                     self.vehicle_non_idle_times[vehicle_id] += self.timer_period
 
-                if vehicle_id not in self.vehicle_features and vehicle.spot_index and vehicle.spot_index >= 0:
+                if vehicle_id in self.vehicle_ids_entered and vehicle_id not in self.vehicle_features:
                     self.vehicle_features[vehicle_id] = self.feature_generator.generate_features(vehicle.spot_index, [active_vehicles[id] for id in active_vehicles], self.spawn_interval_mean)
 
                 if self.sim_is_running:
@@ -532,26 +537,26 @@ Change these parameters to run tests using the neural network
 """
 class RuleBasedSimulatorParams():
     def __init__(self):
-        self.seed = None
+        self.seed = 0
 
         self.num_simulations = 1 # number of simulations run (e.g. times started from scratch)
         self.use_existing_agents = True # replay video data
 
         # use existing agents
-        self.use_existing_entrances = True # have vehicles park in spots that they parked in real life
+        self.use_existing_entrances = False # have vehicles park in spots that they parked in real life
 
         # don't use existing agents
-        self.spawn_entering_fn = lambda: 20 
-        self.spawn_exiting_fn = lambda: 20
-        self.spawn_interval_mean_fn = lambda: 10 # (s)
+        self.spawn_entering_fn = lambda: 30 
+        self.spawn_exiting_fn = lambda: 0
+        self.spawn_interval_mean_fn = lambda: 8 # (s)
 
-        self.use_existing_obstacles = True # able to park in "occupied" spots from dataset? False if yes, True if no
+        self.use_existing_obstacles = False # able to park in "occupied" spots from dataset? False if yes, True if no
 
         self.load_existing_net = True # generate a new net form scratch (and overwrite model.pickle) or use the one stored at self.spot_model_path
-        self.use_nn = True # pick spots using NN or not (irrelevant if self.use_existing_entrances is True)
+        self.use_nn = False # pick spots using NN or not (irrelevant if self.use_existing_entrances is True)
         self.train_nn = False # train NN or not
         self.should_visualize = True # display simulator or not
-        self.spot_model_path = '/Parksim/python/parksim/spot_nn/selfish_model.pickle' # this model is trained with loss [sum([(net_discount ** i) * simulator.vehicle_non_idle_times[v + i] for i in range(5)]
+        self.spot_model_path = '/Parksim/python/parksim/spot_nn/trained_models/selfish_model.pickle' # this model is trained with loss [sum([(net_discount ** i) * simulator.vehicle_non_idle_times[v + i] for i in range(5)]
         self.losses_csv_path = '/parksim/python/parksim/spot_nn/losses.csv' # where losses are stored
 
         # load net
@@ -565,25 +570,30 @@ class RuleBasedSimulatorParams():
     # run simulations, including training the net (if necessary) and saving/printing any results
     def run_simulations(self, ds, vis):
         losses = []
+        average_times = []
 
         for i in range(self.num_simulations):
             self.spawn_entering = self.spawn_entering_fn()
             self.spawn_exiting = self.spawn_exiting_fn()
             self.spawn_interval_mean = self.spawn_interval_mean_fn()
             simulator = RuleBasedSimulator(dataset=ds, vis=vis, params=self)
-            print('Experiment ' + str(i) + ': ' + str(self.spawn_entering) + ' entering, ' + str(self.spawn_exiting) + ' exiting, ' + str(self.spawn_interval_mean) + ' spawn interval mean')
+            if not self.use_existing_agents:
+                print('Experiment ' + str(i) + ': ' + str(self.spawn_entering) + ' entering, ' + str(self.spawn_exiting) + ' exiting, ' + str(self.spawn_interval_mean) + ' spawn interval mean')
             simulator.run()
+            if self.use_existing_agents:
+                print('Experiment ' + str(i) + ': ' + str(len(simulator.vehicle_ids_entered)) + ' entering, ' + str(simulator.total_vehicle_count) + ' total, ' + str(simulator.spawn_interval_mean) + ' spawn interval mean')
             total_loss = self.update_net(simulator)
-            losses.append(total_loss if total_loss is not None else 0)
-            print('Results: ' + (str(total_loss / len(simulator.vehicle_ids_entered)) if total_loss is not None else 'N/A') + ' average loss, ' + str(sum([simulator.vehicle_non_idle_times[i] for i in simulator.vehicle_ids_entered]) / len(simulator.vehicle_ids_entered)) + ' average entering time')
+            losses.append(total_loss / len(simulator.vehicle_ids_entered) if total_loss is not None else 0)
+            average_times.append(sum([simulator.vehicle_non_idle_times[i] for i in simulator.vehicle_ids_entered]) / len(simulator.vehicle_ids_entered))
+            print('Results: ' + (str(losses[-1]) if total_loss is not None else 'N/A') + ' average loss, ' + str(average_times[-1]) + ' average entering time')
 
-        self.save_net()
+            self.save_net()
         
         with open(str(Path.home()) + self.losses_csv_path, 'w', newline='') as file:
             writer = csv.writer(file)
-            writer.writerow(["Simulation", "Loss"])
-            for i, l in enumerate(losses):
-                writer.writerow([i, l])
+            writer.writerow(["Simulation", "Loss", "Average Entering Time"])
+            for i in range(len(losses)):
+                writer.writerow([i, losses[i], average_times[i]])
 
     # spot selection algorithm
     def choose_spot(self, simulator: RuleBasedSimulator, empty_spots: List[int], active_vehicles: List[RuleBasedStanleyVehicle]):
@@ -596,16 +606,17 @@ class RuleBasedSimulatorParams():
         else:
             return np.random.choice(empty_spots)
             # return np.random.choice([i for i in empty_spots if (i >= 46 and i <= 66) or (i >= 70 and i <= 91) or (i >= 137 and i <= 158) or (i >= 162 and i <= 183)])
+            # return min([spot for spot in empty_spots], key=lambda spot: np.linalg.norm([simulator.entrance_coords[0] - simulator.parking_spaces[spot][0], simulator.entrance_coords[1] - simulator.parking_spaces[spot][1]]))
 
     # target function for neural net
     def target(self, simulator: RuleBasedSimulator, vehicle_id: int, vehicles_included: List[int]):
         net_discount = 0.9
-        return torch.FloatTensor([sum([(net_discount ** i) * simulator.vehicle_non_idle_times[vehicles_included[i]] for i in range(len(vehicles_included))])])
-        # return torch.FloatTensor([simulator.vehicle_non_idle_times[vehicle_id]])
+        # return torch.FloatTensor([sum([(net_discount ** i) * simulator.vehicle_non_idle_times[vehicles_included[i]] for i in range(len(vehicles_included))])])
+        return torch.FloatTensor([simulator.vehicle_non_idle_times[vehicle_id]])
 
     # update network and return loss
     def update_net(self, simulator: RuleBasedSimulator):
-        num_vehicles_included = 5
+        num_vehicles_included = 1
         if self.train_nn:
             total_loss = 0
             # for v in simulator.vehicle_ids_entered: # IDs
