@@ -5,6 +5,7 @@ from typing import Optional, Union, Callable
 import torch.nn.functional as F
 import copy
 import pytorch_lightning as pl
+from torch.autograd import Variable
 from parksim.trajectory_predict.intent_transformer.model_utils import generate_square_subsequent_mask
 
 def _get_clones(module, N):
@@ -556,3 +557,149 @@ class BaseTransformerLightningModule(pl.LightningModule):
             # Concatenate previous input with predicted best word
             y_input = torch.cat((y_input, next_item), dim=1)
         return y_input[:,1:]
+
+class FeatureExtractorCNN(nn.Module):
+    """
+    Simple CNN.
+    """
+    def __init__(self, input_shape, num_output_features=128, dropout_p = 0.2, num_conv_layers=2):
+        """
+        Instantiate the model
+        """
+        super(FeatureExtractorCNN, self).__init__()
+        
+        self.image_layers = []
+
+        self.num_output_features = num_output_features
+
+        self.image_layers.append(nn.Sequential(
+            nn.Conv2d(in_channels=3, out_channels=8, kernel_size=7, padding='same'),
+            nn.Dropout(dropout_p),
+            nn.LeakyReLU(negative_slope=0.01, inplace=True),
+            nn.BatchNorm2d(num_features=8),
+            nn.MaxPool2d(2),
+        ))
+
+        for _ in range(num_conv_layers):
+            self.image_layers.append(nn.Sequential(
+                nn.Conv2d(in_channels=8, out_channels=8, kernel_size=5, padding='same'),
+                nn.Dropout(dropout_p),
+                nn.LeakyReLU(negative_slope=0.01, inplace=True),
+                nn.BatchNorm2d(num_features=8),
+                #nn.MaxPool2d(2),
+            ))
+
+        self.image_layers.append(nn.Sequential(
+            nn.Conv2d(in_channels=8, out_channels=num_output_features, kernel_size=3, padding='same'),
+            nn.Dropout(dropout_p),
+            nn.LeakyReLU(negative_slope=0.01, inplace=True),
+            nn.BatchNorm2d(num_features=num_output_features),
+            nn.MaxPool2d(2),
+        ))
+
+        self.image_layers.append(nn.Sequential(
+            nn.Conv2d(in_channels=num_output_features, out_channels=num_output_features, kernel_size=3, padding='same'),
+            nn.Dropout(dropout_p),
+            nn.LeakyReLU(negative_slope=0.01, inplace=True),
+            nn.BatchNorm2d(num_features=num_output_features),
+        ))
+
+        #Height and width divided by 4 because of 2 max pools
+        channels, height, width = input_shape
+        self.feature_size = (height // 4) * (width // 4)
+        
+        self.image_layer = nn.Sequential(*self.image_layers)
+
+    # generate input sample and forward to get shape
+    def _get_conv_output_size(self, shape):
+        bs = 1
+        input = Variable(torch.rand(bs, *shape))
+        output_feat = self._forward_conv(input)
+        n_size = output_feat.data.view(bs, -1).size(1)
+        return n_size
+
+    def _forward_conv(self, img_feature):
+        x = self.image_layer(img_feature)
+        return x
+
+    def forward(self, img_feature):
+        """
+        forward method
+        """
+        N, _, _, _ = img_feature.shape
+        x = self._forward_conv(img_feature)
+        x = x.reshape(N, self.num_output_features, self.feature_size)
+        return x
+
+class PatchCNN(nn.Module):
+    """
+    Simple CNN.
+    """
+    def __init__(self, input_shape, num_output_features=128, dropout_p = 0.2, num_conv_layers=2):
+        """
+        Instantiate the model
+        """
+        super(PatchCNN, self).__init__()
+        
+        self.image_layers = []
+
+        self.num_output_features = num_output_features
+
+        self.image_layers.append(nn.Sequential(
+            nn.Conv2d(in_channels=3, out_channels=8, kernel_size=7, padding='same'),
+            nn.Dropout(dropout_p),
+            nn.LeakyReLU(negative_slope=0.01, inplace=True),
+            nn.BatchNorm2d(num_features=8),
+            nn.MaxPool2d(2),
+        ))
+
+        for _ in range(num_conv_layers):
+            self.image_layers.append(nn.Sequential(
+                nn.Conv2d(in_channels=8, out_channels=8, kernel_size=5, padding='same'),
+                nn.Dropout(dropout_p),
+                nn.LeakyReLU(negative_slope=0.01, inplace=True),
+                nn.BatchNorm2d(num_features=8),
+                #nn.MaxPool2d(2),
+            ))
+
+        self.image_layers.append(nn.Sequential(
+            nn.Conv2d(in_channels=8, out_channels=num_output_features, kernel_size=3, padding='same'),
+            nn.Dropout(dropout_p),
+            nn.LeakyReLU(negative_slope=0.01, inplace=True),
+            nn.BatchNorm2d(num_features=num_output_features),
+            nn.MaxPool2d(2),
+        ))
+
+        self.image_layers.append(nn.Sequential(
+            nn.Conv2d(in_channels=num_output_features, out_channels=num_output_features, kernel_size=3, padding='same'),
+            nn.Dropout(dropout_p),
+            nn.LeakyReLU(negative_slope=0.01, inplace=True),
+            nn.BatchNorm2d(num_features=num_output_features),
+        ))
+
+        #Height and width divided by 4 because of 2 max pools
+        channels, height, width = input_shape
+        self.feature_size = (height // 4) * (width // 4)
+        
+        self.image_layer = nn.Sequential(*self.image_layers)
+
+    # generate input sample and forward to get shape
+    def _get_conv_output_size(self, shape):
+        bs = 1
+        input = Variable(torch.rand(bs, *shape))
+        output_feat = self._forward_conv(input)
+        n_size = output_feat.data.view(bs, -1).size(1)
+        return n_size
+
+    def _forward_conv(self, img_feature):
+        x = self.image_layer(img_feature)
+        return x
+
+    def forward(self, img_feature):
+        """
+        forward method
+        """
+        N, _, _, _ = img_feature.shape
+        x = self._forward_conv(img_feature)
+        x = x.reshape(N, self.num_output_features, self.feature_size)
+        return x

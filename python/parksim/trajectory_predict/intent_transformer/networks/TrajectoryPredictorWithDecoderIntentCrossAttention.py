@@ -1,6 +1,6 @@
 import os
 from parksim.trajectory_predict.intent_transformer.networks.common_blocks import PositionalEncoding, IntentCrossAttentionDecoder, IntentCrossAttentionDecoderLayer, IntentFF, BaseTransformerLightningModule
-from parksim.intent_predict.cnnV2.network import SmallRegularizedCNN
+from parksim.intent_predict.cnn.models.small_regularized_cnn import SmallRegularizedCNN
 from torch import nn
 import torch
 import torch.nn.functional as F
