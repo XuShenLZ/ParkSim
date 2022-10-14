@@ -1,16 +1,14 @@
-from cv2 import norm
-from parksim.intent_predict.cnnV2.network import SmallRegularizedCNN
+from parksim.intent_predict.cnn.network import SmallRegularizedCNN
 from parksim.spot_detector.detector import LocalDetector
 import torch
 from torchvision import transforms
 import numpy as np
-from parksim.intent_predict.cnnV2.data_processing.create_dataset import ENTRANCE_TO_PARKING_LOT
+from parksim.intent_predict.cnn.data_processing.create_dataset import ENTRANCE_TO_PARKING_LOT
 from parksim.route_planner.a_star import WaypointsGraph
 from parksim.route_planner.a_star import AStarGraph, AStarPlanner
 import PIL
 import cv2
 import os
-import time
 from pathlib import Path
 
 ROOT_DIR = Path(os.path.dirname(os.path.abspath(__file__)))

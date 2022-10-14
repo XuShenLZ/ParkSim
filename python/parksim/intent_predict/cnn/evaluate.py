@@ -1,17 +1,10 @@
 import torch
-from parksim.intent_predict.cnnV2.network import SimpleCNN, RegularizedCNN, SmallRegularizedCNN
-from parksim.intent_predict.cnnV2.utils import CNNDataset
+from parksim.intent_predict.cnn.models.small_regularized_cnn import SmallRegularizedCNN
+from parksim.intent_predict.cnn.utils import CNNDataset
 from torch.utils.data import DataLoader
 from torchvision import transforms
 import torch
-from torch.utils.data import DataLoader
-from torchvision import transforms
-import torch.optim as optim
 from tqdm import tqdm
-
-import os
-from datetime import datetime
-import numpy as np
 
 def main():
     model = SmallRegularizedCNN()

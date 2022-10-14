@@ -1,9 +1,8 @@
-from parksim.intent_predict.cnnV2.network import SmallRegularizedCNN
+from parksim.intent_predict.cnn.models.small_regularized_cnn import SmallRegularizedCNN
 import time
-from turtle import home
-from parksim.intent_predict.cnnV2.predictor import Predictor
+from parksim.intent_predict.cnn.models import Predictor
 from dlp.dataset import Dataset
-from parksim.intent_predict.cnnV2.data_processing.utils import CNNDataProcessor
+from parksim.intent_predict.cnn.data_processing.utils import CNNDataProcessor
 from pathlib import Path
 
 

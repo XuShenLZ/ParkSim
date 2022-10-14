@@ -2,7 +2,6 @@ from torch.utils.data import Dataset
 import numpy as np
 import torch
 from tqdm import tqdm
-from .network import SmallRegularizedCNN
 from torch.utils.data import DataLoader
 from torchvision import transforms
 

@@ -1,7 +1,7 @@
 from turtle import home
-from parksim.intent_predict.cnnV2.predictor import Predictor
+from parksim.intent_predict.cnn.predictor import Predictor
 from dlp.dataset import Dataset
-from parksim.intent_predict.cnnV2.data_processing.utils import CNNDataProcessor
+from parksim.intent_predict.cnn.data_processing.utils import CNNDataProcessor
 import time
 from pathlib import Path
 
