@@ -15,10 +15,9 @@ from parksim.trajectory_predict.data_processing.utils import TransformerDataProc
 from parksim.trajectory_predict.intent_transformer.dataset import IntentTransformerDataset
 from parksim.trajectory_predict.intent_transformer.model_utils import generate_square_subsequent_mask
 
-from parksim.intent_predict.cnnV2.network import SmallRegularizedCNN
-from parksim.intent_predict.cnnV2.utils import CNNDataset
-from parksim.intent_predict.cnnV2.data_processing.utils import CNNDataProcessor
-from parksim.intent_predict.cnnV2.predictor import PredictionResponse, Predictor
+from parksim.intent_predict.cnn.models.small_regularized_cnn import SmallRegularizedCNN
+from parksim.intent_predict.cnn.data_processing.utils import CNNDataProcessor
+from parksim.intent_predict.cnn.predictor import PredictionResponse, Predictor
 
 from parksim.route_planner.graph import Vertex, WaypointsGraph
 import heapq

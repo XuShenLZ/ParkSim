@@ -1,18 +1,11 @@
-from pathlib import Path
 import os
 import math
 import numpy as np
-from IPython.display import display
-import matplotlib.pyplot as plt
-import matplotlib.patches as patches
 import argparse
 
 from dlp.dataset import Dataset
 import traceback
-from parksim.intent_predict.cnnV2.utils import CNNDataProcessor
-from tqdm import tqdm
-import multiprocessing
-from itertools import product
+from parksim.intent_predict.cnn.utils import CNNDataProcessor
 
 #out1, out2, out3 = zip(*pool.map(calc_stuff, range(0, 10 * offset, offset)))
 

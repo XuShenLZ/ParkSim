@@ -1,19 +1,18 @@
-from cv2 import norm
-from parksim.intent_predict.cnnV2.network import SmallRegularizedCNN
+from parksim.intent_predict.cnn.network import SmallRegularizedCNN
 from parksim.spot_detector.detector import LocalDetector
 import torch
 from torchvision import transforms
 import numpy as np
-from parksim.intent_predict.cnnV2.data_processing.create_dataset import ENTRANCE_TO_PARKING_LOT
+from parksim.intent_predict.cnn.data_processing.create_dataset import ENTRANCE_TO_PARKING_LOT
 from parksim.route_planner.a_star import WaypointsGraph
 from parksim.route_planner.a_star import AStarGraph, AStarPlanner
 import PIL
 import cv2
 import os
-import time
 from pathlib import Path
 
 ROOT_DIR = Path(os.path.dirname(os.path.abspath(__file__)))
+DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 class PredictionResponse:
     def __init__(self, all_spot_centers, distribution):
@@ -35,7 +34,7 @@ class Predictor:
     def __init__(self, resolution=0.1, sensing_limit=20, use_cuda=False):
         # Resolution is distance in meters per pixel
         # sensing_limit: the longest distance to sense along 4 directions (m). The side length of the square = 2*sensing_limit
-        self.use_cuda = use_cuda
+        self.use_cuda = torch.cuda.is_available()
         self.spot_detector = LocalDetector(spot_color_rgb=(0, 255, 0))
         self.resolution = resolution
         self.sensing_limit = sensing_limit

@@ -16,7 +16,7 @@ sns.set_theme(style="darkgrid")
 # # Transformer with Intent
 
 # %%
-from parksim.trajectory_predict.intent_transformer.network import TrajectoryPredictorWithIntent
+from parksim.trajectory_predict.intent_transformer.models.trajectory_predictor_with_intent import TrajectoryPredictorWithIntent
 from parksim.trajectory_predict.intent_transformer.dataset import IntentTransformerDataset
 
 # %%

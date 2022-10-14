@@ -5,14 +5,13 @@ from torch._utils import _accumulate
 from typing import Sequence, Optional, Generator, TypeVar
 import matplotlib.pyplot as plt
 import os
-import collections
 import einops
 from datetime import datetime
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
 from torch.utils.tensorboard import SummaryWriter
-from parksim.intent_predict.cnnV2.pytorchtools import EarlyStopping
+from parksim.intent_predict.cnn.pytorchtools import EarlyStopping
 
 
 EARLY_STOPPING_PATH = 'models/checkpoint.pt'
@@ -79,14 +78,19 @@ def save_model(model, path):
     }
     torch.save(model_info, path)
 
-def load_model(path, manual_class=None):
+def load_model(path, manual_class=None, manual_config=None):
     model_info = torch.load(path)
     if manual_class:
         model_class = manual_class
     else:
         model_class = model_info['model_class']
-    model_state = model_info['model_state']
-    model_config = model_info['model_config']
+
+    if manual_config:
+        model_config = manual_config
+        model_state = model_info
+    else:
+        model_config = model_info['model_config']
+        model_state = model_info['model_state']
     base_model = model_class(model_config)
     base_model.load_state_dict(model_state)
     return base_model
