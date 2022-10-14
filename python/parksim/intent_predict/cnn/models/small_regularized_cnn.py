@@ -16,7 +16,7 @@ class SmallRegularizedCNN(nn.Module):
         self.image_layers.append(nn.Sequential(
             nn.Conv2d(in_channels=3, out_channels=8, kernel_size=7),
             nn.BatchNorm2d(num_features=8),
-            nn.Dropout(0.2),
+            nn.Dropout(dropout_p),
             nn.LeakyReLU(negative_slope=0.01, inplace=True),
             nn.MaxPool2d(2),
             #nn.BatchNorm2d(num_features=20)
@@ -25,7 +25,7 @@ class SmallRegularizedCNN(nn.Module):
         self.image_layers.append(nn.Sequential(
             nn.Conv2d(in_channels=8, out_channels=8, kernel_size=5),
             nn.BatchNorm2d(num_features=8),
-            nn.Dropout(0.2),
+            nn.Dropout(dropout_p),
             nn.LeakyReLU(negative_slope=0.01, inplace=True),
             nn.MaxPool2d(2),
             #nn.BatchNorm2d(num_features=15)
@@ -34,7 +34,7 @@ class SmallRegularizedCNN(nn.Module):
         self.image_layers.append(nn.Sequential(
             nn.Conv2d(in_channels=8, out_channels=3, kernel_size=3),
             nn.BatchNorm2d(num_features=3),
-            nn.Dropout(0.2),
+            nn.Dropout(dropout_p),
             nn.LeakyReLU(negative_slope=0.01, inplace=True),
             nn.MaxPool2d(2),
             #nn.BatchNorm2d(num_features=15)s
@@ -53,7 +53,7 @@ class SmallRegularizedCNN(nn.Module):
         self.linear_layer1 = nn.Sequential(
             nn.Linear(IMG_LAYER_OUTPUT_SIZE + NON_SPATIAL_FEATURE_SIZE, 100),
             nn.BatchNorm1d(num_features=100),
-            nn.Dropout(0.2)
+            nn.Dropout(dropout_p)
             #nn.LeakyReLU(negative_slope=0.01, inplace=True),
         )
         self.linear_layer2 = nn.Sequential(
