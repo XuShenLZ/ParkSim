@@ -121,7 +121,7 @@ class IntentTransformerV2DataModule(pl.LightningDataModule):
 
 class IntentTransformerV2Dataset(IntentTransformerDataset):
     """
-    Dataset containing the instance-centric crop image, the spatial traj features, intent and the label
+    Like V1, but only uses the last image of history instead of the entire history
     """
     def __getitem__(self, idx):
         """
