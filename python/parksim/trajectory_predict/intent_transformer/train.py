@@ -3,9 +3,9 @@ from torchvision import transforms
 from torch.utils.data import DataLoader
 from torch import nn
 import os
-from parksim.trajectory_predict.intent_transformer.model_utils import train_model, split_dataset, load_model
+from parksim.trajectory_predict.intent_transformer.model_utils import train_model, split_dataset
 from parksim.trajectory_predict.intent_transformer.dataset import IntentTransformerDataset
-from parksim.trajectory_predict.intent_transformer.network import TrajectoryPredictorWithIntent
+from parksim.trajectory_predict.intent_transformer.models.trajectory_predictor_with_intent import TrajectoryPredictorWithIntent
 
 _CURRENT = os.path.abspath(os.path.dirname(__file__))
 

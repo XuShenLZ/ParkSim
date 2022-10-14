@@ -9,11 +9,11 @@ from multiprocessing import Pool, cpu_count
 
 from dlp.dataset import Dataset
 
-from parksim.intent_predict.cnnV2.data_processing.utils import CNNDataProcessor
+from parksim.intent_predict.cnn.data_processing.utils import CNNDataProcessor
 from parksim.trajectory_predict.data_processing.utils import TransformerDataProcessor
 
-from parksim.intent_predict.cnnV2.network import SmallRegularizedCNN
-from parksim.trajectory_predict.intent_transformer.network import TrajectoryPredictorWithIntent
+from parksim.intent_predict.cnn.models.small_regularized_cnn import SmallRegularizedCNN
+from parksim.trajectory_predict.intent_transformer.models.trajectory_predictor_with_intent import TrajectoryPredictorWithIntent
 from parksim.trajectory_predict.intent_transformer.model_utils import load_model
 
 from parksim.trajectory_predict.intent_transformer.multimodal_prediction import predict_multimodal

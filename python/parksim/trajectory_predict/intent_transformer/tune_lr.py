@@ -3,7 +3,7 @@ from torchvision import transforms
 from torch import nn
 from torch.utils.data import DataLoader
 from parksim.trajectory_predict.intent_transformer.dataset import IntentTransformerV2Dataset
-from parksim.trajectory_predict.intent_transformer.network import TrajectoryPredictorWithIntentV2, TrajectoryPredictorWithIntentV3
+from parksim.trajectory_predict.intent_transformer.models.trajectory_predictor_with_intent_v3 import TrajectoryPredictorWithIntentV3
 from parksim.trajectory_predict.intent_transformer.model_utils import tune_learning_rate
 
 config = {

@@ -16,7 +16,7 @@ from sympy import divisors
 
 
 from parksim.trajectory_predict.intent_transformer.dataset import IntentTransformerV2Dataset
-from parksim.trajectory_predict.intent_transformer.network import TrajectoryPredictorWithIntentV2
+from parksim.trajectory_predict.intent_transformer.models.trajectory_predictor_with_intent_v2 import TrajectoryPredictorWithIntentV2
 
 _CURRENT = os.path.abspath(os.path.dirname(__file__))
 

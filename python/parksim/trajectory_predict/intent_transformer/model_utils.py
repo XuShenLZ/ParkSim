@@ -5,14 +5,13 @@ from torch._utils import _accumulate
 from typing import Sequence, Optional, Generator, TypeVar
 import matplotlib.pyplot as plt
 import os
-import collections
 import einops
 from datetime import datetime
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
 from torch.utils.tensorboard import SummaryWriter
-from parksim.intent_predict.cnnV2.pytorchtools import EarlyStopping
+from parksim.intent_predict.cnn.pytorchtools import EarlyStopping
 
 
 EARLY_STOPPING_PATH = 'models/checkpoint.pt'

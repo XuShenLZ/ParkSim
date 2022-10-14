@@ -13,7 +13,7 @@ import multiprocessing
 import os
 
 from dlp.dataset import Dataset
-from parksim.trajectory_predict.intent_transformer.network import TrajectoryPredictorWithIntent, TrajectoryPredictorWithIntentV2
+from parksim.trajectory_predict.intent_transformer.models.trajectory_predictor_with_intent_v2 import TrajectoryPredictorWithIntentV2
 from parksim.trajectory_predict.data_processing.utils import TransformerDataProcessor
 from parksim.trajectory_predict.intent_transformer.model_utils import load_model
 
