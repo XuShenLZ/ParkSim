@@ -12,7 +12,9 @@ DEFAULT_CONFIG = {}
 if __name__ == '__main__':
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(device)
-    
+    """
+    SPECIFY CONFIG HERE:
+    """
     config={
             'dim_model' : 512,
             'num_heads' : 16,
@@ -24,10 +26,14 @@ if __name__ == '__main__':
             'loss' : 'L1'
     }
 
-    custom_dataset_nums = ["../data/DJI_" + str(i).zfill(4) for i in range(7, 26)]
+    """
+    SPECIFY MODEL HERE:
+    """
+    model = TrajectoryPredictorVisionTransformer(config)
+    #model = TrajectoryPredictorVisionTransformer(DEFAULT_CONFIG)
+
+
     datamodule = IntentTransformerV2DataModule()
-    #model = TrajectoryPredictorVisionTransformer(config)
-    model = TrajectoryPredictorVisionTransformer(DEFAULT_CONFIG)
     patience = 10
     earlystopping = EarlyStopping(monitor="val_total_loss", mode="min", patience=patience)
     checkpoint_callback = ModelCheckpoint(

@@ -12,6 +12,9 @@ if __name__ == '__main__':
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(device)
     
+    """
+    SPECIFY CONFIG HERE:
+    """
     config={
         'dim_model': 64, 
         'num_heads': 16, 
@@ -22,7 +25,12 @@ if __name__ == '__main__':
         'detach_cnn': False
     }
 
+    """
+    SPECIFY MODEL HERE:
+    """
     model = TrajectoryPredictorWithDecoderIntentCrossAttention(config)
+
+
     datamodule = IntentTransformerDataModule()
     patience = 25
     earlystopping = EarlyStopping(monitor="val_total_loss", mode="min", patience=patience)
