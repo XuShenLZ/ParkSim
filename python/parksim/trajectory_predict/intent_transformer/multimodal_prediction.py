@@ -10,9 +10,8 @@ from typing import Tuple
 from dlp.dataset import Dataset
 from dlp.visualizer import SemanticVisualizer
 
-from parksim.trajectory_predict.intent_transformer.networks.common_blocks import  BaseTransformerLightningModule
+from parksim.trajectory_predict.intent_transformer.models.common_blocks import  BaseTransformerLightningModule
 from parksim.trajectory_predict.data_processing.utils import TransformerDataProcessor
-from parksim.trajectory_predict.intent_transformer.dataset import IntentTransformerDataset
 from parksim.trajectory_predict.intent_transformer.model_utils import generate_square_subsequent_mask
 
 from parksim.intent_predict.cnn.models.small_regularized_cnn import SmallRegularizedCNN

@@ -1,6 +1,5 @@
 from parksim.trajectory_predict.intent_transformer.model_utils import patchify
-from parksim.trajectory_predict.intent_transformer.networks.common_blocks import IntentFF, BaseTransformerLightningModule, PositionalEncoding
-from parksim.trajectory_predict.intent_transformer.networks.TrajectoryPredictorWithEncoderImageCrossAttention import TransformerWithEncoderImageCrossAttention
+from parksim.trajectory_predict.intent_transformer.models.common_blocks import TrajectoryEncoder, TrajectoryEncoderLayer, IntentFF, BaseTransformerLightningModule, PositionalEncoding
 from torch import nn
 import torch
 import torch.nn.functional as F
@@ -12,26 +11,28 @@ INTENT_FEATURE_SIZE = 2
 DEFAULT_CONFIG = {
     'dropout' : 0.1,
     'num_heads' : 8,
-    'num_encoder_layers' : 6,
-    'num_decoder_layers' : 6,
-    'dim_model' : 64,
+    'num_img_encoder_layers' : 2,
+    'num_trajectory_encoder_layers' : 2,
+    'num_decoder_layers' : 2,
+    'dim_model' : 256,
     'd_hidden' : 256,
     'patch_size' : 20,
 }
 
-class TrajectoryPredictorWithPatchImageFeatures(BaseTransformerLightningModule):
+class TrajectoryPredictorVisionTransformer(BaseTransformerLightningModule):
     """
-    Creates patches from image features, and linearly encodes them.
-    Uses this encoding in the TransformerWithEncoderImageCrossAttention module
-    for cross attention.
+    Uses a transformer to encode patches of image features, and then uses these
+    encodings in the TransformerWithEncoderImageCrossAttention module
+    for cross attention. 
     """
     def __init__(self, config: dict=DEFAULT_CONFIG, input_shape=(3, 100, 100), loss_fn=F.l1_loss):
         super().__init__(config, input_shape, loss_fn)
-        self.lr = 6.918309709189363e-05
+        self.lr = .0005
         self.input_shape=input_shape
         self.dropout=config['dropout']
         self.num_heads=config['num_heads']
-        self.num_encoder_layers=config['num_encoder_layers']
+        self.num_img_encoder_layers=config['num_img_encoder_layers']
+        self.num_trajectory_encoder_layers=config['num_trajectory_encoder_layers']
         self.num_decoder_layers=config['num_decoder_layers']
         self.dim_model=config['dim_model']
         self.d_hidden=config['d_hidden']
@@ -42,32 +43,39 @@ class TrajectoryPredictorWithPatchImageFeatures(BaseTransformerLightningModule):
 
         self.num_patches = (input_shape[1] // self.patch_size) ** 2
 
-        self.positional_encoder = PositionalEncoding(
-            d_model=self.dim_model, dropout=0, max_len=5000
-        )
-
         self.intentff = IntentFF(
             d_in=INTENT_FEATURE_SIZE, d_out=self.dim_model, d_hidden=self.d_hidden, dropout_p=self.dropout)
 
-        encoder_layer = nn.TransformerEncoderLayer(self.dim_model, self.num_heads, dropout=self.dropout, activation=F.gelu, batch_first=True)
-        self.encoder = nn.TransformerEncoder(encoder_layer, num_layers=4)
 
-        self.transformer = TransformerWithEncoderImageCrossAttention(
-                                dim_model=self.dim_model, 
-                                dim_feature_in=TRAJECTORY_FEATURE_SIZE, 
-                                dim_feature_out=TRAJECTORY_FEATURE_SIZE, 
-                                num_heads=self.num_heads,
-                                num_encoder_layers=self.num_encoder_layers,
-                                num_decoder_layers=self.num_decoder_layers,
-                                dropout_p=self.dropout)
+        """
+        Image -> [Image Encoder] -> Encoded Image -> [Trajectory Encoder, with
+        Trajectory Serving as Keys + Values, and Encoded Image as the Query] ->
+        Encoded Trajectory Info
+        """
 
-        self.proj_enc_in = nn.Linear(TRAJECTORY_FEATURE_SIZE, self.dim_model)
-        self.proj_dec_in = nn.Linear(TRAJECTORY_FEATURE_SIZE, self.dim_model)
-        self.proj_dec_out = nn.Linear(self.dim_model, TRAJECTORY_FEATURE_SIZE)
-        self.patch_projection = nn.Linear(self.patch_size * self.patch_size * input_shape[0], self.dim_model)
+        self.positional_encoder = PositionalEncoding(
+            d_model=self.dim_model, dropout=0, max_len=5000
+        )
+        img_encoder_layer = nn.TransformerEncoderLayer(self.dim_model, self.num_heads, dropout=self.dropout, activation=F.gelu, batch_first=True)
+        self.img_encoder = nn.TransformerEncoder(img_encoder_layer, num_layers=self.num_img_encoder_layers)
+        trajectory_encoder_layer = TrajectoryEncoderLayer(self.dim_model, self.num_heads, dropout=self.dropout)
+        self.trajectory_encoder = TrajectoryEncoder(trajectory_encoder_layer, num_layers=self.num_trajectory_encoder_layers)
+        trajectory_decoder_layer = nn.TransformerDecoderLayer(self.dim_model, self.num_heads, dropout=self.dropout, activation=F.gelu, batch_first=True)
+        self.trajectory_decoder = nn.TransformerDecoder(trajectory_decoder_layer, num_layers=self.num_decoder_layers)
+        self.encoder_input_projection = nn.Linear(TRAJECTORY_FEATURE_SIZE, self.dim_model)
+        self.decoder_input_projection = nn.Linear(TRAJECTORY_FEATURE_SIZE, self.dim_model)
+        self.decoder_output_projection = nn.Linear(self.dim_model, TRAJECTORY_FEATURE_SIZE)
+        self.patch_projection = nn.Sequential(
+            nn.Linear(self.patch_size * self.patch_size * input_shape[0], self.dim_model),
+            nn.Dropout(self.dropout, inplace=True),
+            nn.ReLU(inplace=True),
+            nn.BatchNorm1d(num_features=self.num_patches),
+            nn.Linear(self.dim_model, self.dim_model)
+        )
         self.img_position_encoding = nn.Parameter(
             torch.randn(1, self.num_patches, self.dim_model) * 0.02
         )
+
 
     def forward(self, image, trajectories_past, intent, trajectories_future=None, tgt_mask=None):
         """
@@ -112,18 +120,11 @@ class TrajectoryPredictorWithPatchImageFeatures(BaseTransformerLightningModule):
         N, T_1, _ = trajectories_past.shape
         _, T_2, _ = trajectories_future.shape
         patches = self.patch_projection(patchify(image, self.patch_size)) + self.img_position_encoding
-
-        img_features = self.encoder(patches)
-
+        img_features = self.img_encoder(patches)
         intent = self.intentff(intent)
+        projected_traj_history = self.positional_encoder(self.encoder_input_projection(trajectories_past))
+        projected_traj_future = self.positional_encoder(self.decoder_input_projection(trajectories_future))
+        encoded_trajectory = self.trajectory_encoder(src=projected_traj_history, img_encoding=img_features, intent=intent)
+        decoded_trajectory = self.trajectory_decoder(tgt=projected_traj_future, memory=encoded_trajectory, tgt_mask=tgt_mask)
+        return self.decoder_output_projection(decoded_trajectory)
 
-        # trajectory_history: (N, 10, 3)
-
-        # transformer_input: (N, 10, 18)
-
-        src = self.positional_encoder(self.proj_enc_in(trajectories_past))
-        tgt = self.positional_encoder(self.proj_dec_in(trajectories_future))
-
-        output = self.transformer(
-            src=src, intent=intent, img_features=img_features, tgt=tgt, tgt_mask=tgt_mask)  # (N, T_2, 3)
-        return self.proj_dec_out(output)
