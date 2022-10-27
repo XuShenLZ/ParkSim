@@ -52,7 +52,7 @@ class RuleBasedSimulator(object):
         self.agents_data_path = '/ParkSim/data/agents_data.pickle'
 
         self.use_existing_agents = params.use_existing_agents
-        self.use_existing_obstacles = params.use_existing_obstacles or params.use_existing_agents
+        self.use_existing_obstacles = params.use_existing_obstacles 
 
         self.write_log = False
         self.log_path = '/ParkSim/vehicle_log'
@@ -90,10 +90,12 @@ class RuleBasedSimulator(object):
 
         # Spawning
         self.spawn_entering_time = list(np.random.exponential(self.spawn_interval_mean, self.spawn_entering))
+        self.spawn_entering_time_cumsum = list(np.cumsum(np.array(self.spawn_entering_time)))
         self.spawn_exiting_time = list(np.random.exponential(self.spawn_interval_mean, self.spawn_exiting))
 
         self.last_enter_id = None
         self.last_enter_state = VehicleState()
+        self.last_entering_vehicle_left_entrance = False
         self.keep_spawn_entering = True
 
         self.start_time = 0
@@ -118,6 +120,8 @@ class RuleBasedSimulator(object):
         self.vehicle_features = {}
         self.feature_generator = SpotFeatureGenerator()
         self.vehicle_ids_entered = []
+
+        self.queue_length = 0
 
         # uncomment this to regenerate data used to generate features (1/3)
         # self.discretization = {}
@@ -242,7 +246,7 @@ class RuleBasedSimulator(object):
 
             # determine which vehicles entered from the entrance for stats purposes later
             for task in raw_tp:
-                if task["name"] == "PARK" and "init_coords" in agent_dict and agent_dict["init_coords"][1] > 70:
+                if task["name"] == "PARK" and "init_coords" in agent_dict and agent_dict["init_coords"][1] > self.y_bound_to_resume_spawning:
                     vehicle.spot_index = task["target_spot_index"]
                     self.vehicle_ids_entered.append(vehicle_id)
                 elif task["name"] == "UNPARK":
@@ -255,7 +259,7 @@ class RuleBasedSimulator(object):
             else:
                 agent_state = VehicleState()
                 # vehicles tend to enter from the same place they exit, which can cause overlaps/jams
-                if agent_dict["init_coords"][1] > 70:
+                if agent_dict["init_coords"][1] > self.y_bound_to_resume_spawning:
                     agent_state.x.x = agent_dict["init_coords"][0] - 3
                 else:
                     agent_state.x.x = agent_dict["init_coords"][0]
@@ -269,8 +273,10 @@ class RuleBasedSimulator(object):
 
         if not for_nn:
             self.vehicle_non_idle_times[vehicle_id] = 0
-            if spot_index and spot_index >= 0:
+            if (spot_index and spot_index >= 0) or (self.use_existing_agents and self.vehicle_entering(vehicle_id)):
                 self.last_enter_state = vehicle.state
+                self.last_enter_id = vehicle_id
+                self.last_entering_vehicle_left_entrance = False
 
             self.vehicles.append(vehicle)
         else:
@@ -305,12 +311,15 @@ class RuleBasedSimulator(object):
             if not vehicle.is_all_done():
                 active_vehicles.append(vehicle)
 
-        if self.spawn_entering_time and current_time - self.last_enter_time > self.spawn_entering_time[0]:
+        # if self.spawn_entering_time and current_time - self.last_enter_time > self.spawn_entering_time[0]:
+        # TODO: this is a change in spawning
+        if self.spawn_entering_time and current_time > self.spawn_entering_time_cumsum[0]:
             empty_spots = [i for i in range(len(self.occupied)) if not self.occupied[i]]
             chosen_spot = self.params.choose_spot(self, empty_spots, active_vehicles)
             self.add_vehicle(chosen_spot)
             self.occupied[chosen_spot] = True
             self.spawn_entering_time.pop(0)
+            self.spawn_entering_time_cumsum.pop(0)
 
             self.last_enter_time = current_time
             self.last_enter_id = self.num_vehicles
@@ -330,56 +339,73 @@ class RuleBasedSimulator(object):
 
     def try_spawn_existing(self):
         current_time = self.time - self.start_time
-        added_vehicles = []
 
+        # determine vehicles to add — one entering + any others
+        vehicles_to_add = []
+        earliest_entering_vehicle = None
         for agent in self.agents_dict:
-            if self.agents_dict[agent]["init_time"] < current_time:
+            if self.agents_dict[agent]["init_time"] < current_time: # time check
+                if not self.vehicle_entering(agent): # if not entering, always spawn
+                    vehicles_to_add.append(agent)
+                elif self.last_entering_vehicle_left_entrance:
+                    if earliest_entering_vehicle is None: # first entering vehicle we've checked
+                        earliest_entering_vehicle = (agent, self.agents_dict[agent]["init_time"])
+                    elif earliest_entering_vehicle[1] > self.agents_dict[agent]["init_time"]: # current earliest entering vehicle entered later than this vehicle
+                        earliest_entering_vehicle = (agent, self.agents_dict[agent]["init_time"])
+        if earliest_entering_vehicle is not None:
+            vehicles_to_add.append(earliest_entering_vehicle[0])
 
-                # change task profile to park in nn spot if the vehicle is entering from the entrance
-                if not self.params.use_existing_entrances and "init_coords" in self.agents_dict[agent] and self.agents_dict[agent]["init_coords"][1] > 70:
-                    last_unpark = -1 # index of the most recent unparking
-                    already_parked = None # None if the vehicle has not parked yet, else it's the spot index we've assigned
-                    new_tp = self.agents_dict[agent]["task_profile"] # task profile we will change
-                    
-                    # look for a parking task so we can change it
-                    for i, task in enumerate(new_tp):
-                        # if see an unpark
-                        if task["name"] == "UNPARK":
-                            # if haven't already determined new parking spot, set this as the most recent unpark
-                            if already_parked is None:
-                                last_unpark = i
-                            else: # if already determined new parking spot, this is an unpark after a park, so set the spot we are unparking from to our new spot
-                                new_tp[i]["target_spot_index"] = already_parked
-                        elif task["name"] == "PARK" and i > 0:
+        for agent in vehicles_to_add:
+            # DJI 25
+            # if agent == 181:
+            #     continue
+            # change task profile to park in nn spot if the vehicle is entering from the entrance
+            if not self.params.use_existing_entrances and self.vehicle_entering(agent):
+                last_unpark = -1 # index of the most recent unparking
+                already_parked = None # None if the vehicle has not parked yet, else it's the spot index we've assigned
+                new_tp = self.agents_dict[agent]["task_profile"] # task profile we will change
+                
+                # look for a parking task so we can change it
+                for i, task in enumerate(new_tp):
+                    # if see an unpark
+                    if task["name"] == "UNPARK":
+                        # if haven't already determined new parking spot, set this as the most recent unpark
+                        if already_parked is None:
+                            last_unpark = i
+                        else: # if already determined new parking spot, this is an unpark after a park, so set the spot we are unparking from to our new spot
+                            new_tp[i]["target_spot_index"] = already_parked
+                    elif task["name"] == "PARK" and i > 0:
 
-                            # collect arguments to choose spot
-                            active_vehicles = []
-                            for vehicle in self.vehicles:
-                                if not vehicle.is_all_done():
-                                    active_vehicles.append(vehicle)
-                            empty_spots = [i for i in range(len(self.occupied)) if not self.occupied[i] and (i not in self.unparking_times or self.unparking_times[i] < self.time)]
+                        # collect arguments to choose spot
+                        active_vehicles = []
+                        for vehicle in self.vehicles:
+                            if not vehicle.is_all_done():
+                                active_vehicles.append(vehicle)
+                        empty_spots = [i for i in range(len(self.occupied)) if not self.occupied[i] and (i not in self.unparking_times or self.unparking_times[i] < self.time)]
 
-                            # choose new spot
-                            new_spot_index = self.params.choose_spot(self, empty_spots, active_vehicles)
+                        # choose new spot
+                        new_spot_index = self.params.choose_spot(self, empty_spots, active_vehicles)
 
-                            # create tasks and insert into task profile
-                            cruise_speed = max([t["v_cruise"] for t in new_tp[last_unpark + 1:i] if t["name"] == "CRUISE"])
-                            cruise_task = {"name": "CRUISE", "v_cruise": cruise_speed, "target_spot_index": new_spot_index}
-                            park_task = {"name": "PARK", "target_spot_index": new_spot_index}
-                            new_tp = new_tp[:last_unpark + 1] + new_tp[i + 1:]
-                            new_tp.insert(last_unpark + 1, cruise_task)
-                            new_tp.insert(last_unpark + 2, park_task)
+                        # create tasks and insert into task profile
+                        cruise_speed = max([t["v_cruise"] for t in new_tp[last_unpark + 1:i] if t["name"] == "CRUISE"])
+                        cruise_task = {"name": "CRUISE", "v_cruise": cruise_speed, "target_spot_index": new_spot_index}
+                        park_task = {"name": "PARK", "target_spot_index": new_spot_index}
+                        new_tp = new_tp[:last_unpark + 1] + new_tp[i + 1:]
+                        new_tp.insert(last_unpark + 1, cruise_task)
+                        new_tp.insert(last_unpark + 2, park_task)
 
-                            # state management
-                            already_parked = new_spot_index
-                            self.occupied[new_spot_index] = True
-                    self.agents_dict[agent]["task_profile"] = new_tp
+                        # state management
+                        already_parked = new_spot_index
+                        self.occupied[new_spot_index] = True
+                self.agents_dict[agent]["task_profile"] = new_tp
 
-                self.add_vehicle(vehicle_id=agent)
-                added_vehicles.append(agent)
+            self.add_vehicle(vehicle_id=agent)
 
-        for added in added_vehicles:
+        for added in vehicles_to_add:
             del self.agents_dict[added]
+
+    def vehicle_entering(self, vehicle_id):
+        return "init_coords" in self.agents_dict[vehicle_id] and self.agents_dict[vehicle_id]["init_coords"][1] > self.y_bound_to_resume_spawning
 
     def run(self):
         # uncomment this to regenerate data used to generate features (3/3)
@@ -418,16 +444,14 @@ class RuleBasedSimulator(object):
                 # clear visualizer
                 self.vis.clear_frame()
 
-            # If vehicle left entrance area, start spawning another one
-            if self.last_enter_state.x.y < self.y_bound_to_resume_spawning:
-                self.keep_spawn_entering = True
-
             if self.sim_is_running:
                 if not self.use_existing_agents:
+                    self.queue_length = sum([self.time > t for t in self.spawn_entering_time_cumsum])
                     if self.keep_spawn_entering:
                         self.try_spawn_entering()
                     self.try_spawn_exiting()
                 else:
+                    self.queue_length = sum([self.agents_dict[v]["init_time"] < self.time and self.vehicle_entering(v) for v in self.agents_dict])
                     self.try_spawn_existing()
 
             active_vehicles: Dict[int, RuleBasedStanleyVehicle] = {}
@@ -440,6 +464,12 @@ class RuleBasedSimulator(object):
                 break
             elif self.use_existing_agents and self.time > last_existing_init_time and not active_vehicles:
                 break
+
+            # If vehicle left entrance area, start spawning another one
+            if self.last_enter_state.x.y < self.y_bound_to_resume_spawning or self.last_enter_id and self.last_enter_id not in active_vehicles:
+                self.keep_spawn_entering = True
+                if not self.last_entering_vehicle_left_entrance:
+                    self.last_entering_vehicle_left_entrance = True
 
             # ========== For real-time prediction only
             # add vehicle states to history
@@ -540,7 +570,7 @@ class RuleBasedSimulatorParams():
         self.seed = 0
 
         self.num_simulations = 1 # number of simulations run (e.g. times started from scratch)
-        self.use_existing_agents = True # replay video data
+        self.use_existing_agents = False # replay video data
 
         # use existing agents
         self.use_existing_entrances = False # have vehicles park in spots that they parked in real life
@@ -548,15 +578,15 @@ class RuleBasedSimulatorParams():
         # don't use existing agents
         self.spawn_entering_fn = lambda: 30 
         self.spawn_exiting_fn = lambda: 0
-        self.spawn_interval_mean_fn = lambda: 8 # (s)
+        self.spawn_interval_mean_fn = lambda: 2 # (s)
 
-        self.use_existing_obstacles = False # able to park in "occupied" spots from dataset? False if yes, True if no
+        self.use_existing_obstacles = self.use_existing_agents # able to park in "occupied" spots from dataset? False if yes, True if no
 
         self.load_existing_net = True # generate a new net form scratch (and overwrite model.pickle) or use the one stored at self.spot_model_path
         self.use_nn = False # pick spots using NN or not (irrelevant if self.use_existing_entrances is True)
         self.train_nn = False # train NN or not
         self.should_visualize = True # display simulator or not
-        self.spot_model_path = '/Parksim/python/parksim/spot_nn/trained_models/selfish_model.pickle' # this model is trained with loss [sum([(net_discount ** i) * simulator.vehicle_non_idle_times[v + i] for i in range(5)]
+        self.spot_model_path = '/Parksim/python/parksim/spot_nn/model.pickle' # this model is trained with loss [sum([(net_discount ** i) * simulator.vehicle_non_idle_times[v + i] for i in range(5)]
         self.losses_csv_path = '/parksim/python/parksim/spot_nn/losses.csv' # where losses are stored
 
         # load net
@@ -587,7 +617,6 @@ class RuleBasedSimulatorParams():
             average_times.append(sum([simulator.vehicle_non_idle_times[i] for i in simulator.vehicle_ids_entered]) / len(simulator.vehicle_ids_entered))
             print('Results: ' + (str(losses[-1]) if total_loss is not None else 'N/A') + ' average loss, ' + str(average_times[-1]) + ' average entering time')
 
-            self.save_net()
         
         with open(str(Path.home()) + self.losses_csv_path, 'w', newline='') as file:
             writer = csv.writer(file)
@@ -604,9 +633,9 @@ class RuleBasedSimulatorParams():
             # else:
             #     chosen_spot = min([spot for spot in empty_spots], key=lambda spot: self.vanilla_net(SpotFeatureGenerator.generate_features(self.add_vehicle(spot_index=spot, for_nn=True), active_vehicles, self.spawn_interval_mean)))
         else:
-            return np.random.choice(empty_spots)
+            # return np.random.choice(empty_spots)
             # return np.random.choice([i for i in empty_spots if (i >= 46 and i <= 66) or (i >= 70 and i <= 91) or (i >= 137 and i <= 158) or (i >= 162 and i <= 183)])
-            # return min([spot for spot in empty_spots], key=lambda spot: np.linalg.norm([simulator.entrance_coords[0] - simulator.parking_spaces[spot][0], simulator.entrance_coords[1] - simulator.parking_spaces[spot][1]]))
+            return min([spot for spot in empty_spots], key=lambda spot: np.linalg.norm([simulator.entrance_coords[0] - simulator.parking_spaces[spot][0], simulator.entrance_coords[1] - simulator.parking_spaces[spot][1]]))
 
     # target function for neural net
     def target(self, simulator: RuleBasedSimulator, vehicle_id: int, vehicles_included: List[int]):
@@ -616,7 +645,7 @@ class RuleBasedSimulatorParams():
 
     # update network and return loss
     def update_net(self, simulator: RuleBasedSimulator):
-        num_vehicles_included = 1
+        num_vehicles_included = 3
         if self.train_nn:
             total_loss = 0
             # for v in simulator.vehicle_ids_entered: # IDs
@@ -624,6 +653,7 @@ class RuleBasedSimulatorParams():
             for i, v in enumerate(simulator.vehicle_ids_entered[:-num_vehicles_included]):
                 loss = self.net.update(simulator.vehicle_features[v], self.target(simulator, v, simulator.vehicle_ids_entered[i:i+num_vehicles_included]))
                 total_loss += loss.detach().numpy()
+            self.save_net()
             return total_loss
         return None
 
