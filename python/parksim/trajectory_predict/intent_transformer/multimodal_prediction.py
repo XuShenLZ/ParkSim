@@ -10,15 +10,13 @@ from typing import Tuple
 from dlp.dataset import Dataset
 from dlp.visualizer import SemanticVisualizer
 
-from parksim.trajectory_predict.intent_transformer.networks.common_blocks import  BaseTransformerLightningModule
+from parksim.trajectory_predict.intent_transformer.models.common_blocks import  BaseTransformerLightningModule
 from parksim.trajectory_predict.data_processing.utils import TransformerDataProcessor
-from parksim.trajectory_predict.intent_transformer.dataset import IntentTransformerDataset
 from parksim.trajectory_predict.intent_transformer.model_utils import generate_square_subsequent_mask
 
-from parksim.intent_predict.cnnV2.network import SmallRegularizedCNN
-from parksim.intent_predict.cnnV2.utils import CNNDataset
-from parksim.intent_predict.cnnV2.data_processing.utils import CNNDataProcessor
-from parksim.intent_predict.cnnV2.predictor import PredictionResponse, Predictor
+from parksim.intent_predict.cnn.models.small_regularized_cnn import SmallRegularizedCNN
+from parksim.intent_predict.cnn.data_processing.utils import CNNDataProcessor
+from parksim.intent_predict.cnn.predictor import PredictionResponse, Predictor
 
 from parksim.route_planner.graph import Vertex, WaypointsGraph
 import heapq
