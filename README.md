@@ -27,14 +27,7 @@ Authors: Xu Shen, Matthew Lacayo, Nidhir Guggilla, Francesco Borrelli
 <img height="300" src="docs/multimodal_3.gif"/>  <img height="300" src="docs/multimodal_4.gif"/>
 </div>
 
-### Intent Prediction
-1. `python/parksim/intent_predict/cnnV2` contains code for building, training, and evaluating the model.
-2. A pre-trained model can be [downloaded here](https://drive.google.com/file/d/1LVQJRQmjGfGchxhMRchiZRCjrlFDVch-/view?usp=sharing).
-3. Use `python/parksim/intent_predict/cnnV2/data_processing/create_dataset.py` to generate training data from DLP dataset.
-
-### Trajectory Prediction
-1. `python/parksim/trajectory_predict/intent_transformer` contains code for building, training, and evaluating the model.
-2. `python/parksim/trajectory_predict/intent_transformer/networks/TrajectoryPredictorWithDecoderIntentCrossAttention.py` is the trajectory prediction model presented in the paper.
-3. `python/parksim/trajectory_predict/intent_transformer/testing_multimodal.ipynb` demonstrates the multimodal preidction.
-4. A pre-trained model can be [downloaded here](https://drive.google.com/file/d/1c9KQXwFMRIYPJo1sXJKepoBcrEme_HxU/view?usp=sharing).
-5. For training the network, use `python/parksim/trajectory_predict/data_processing/create_dataset.py` to generate features and labels based on DLP dataset. Then use `python/parksim/trajectory_predict/data_processing/prepare_single_file_data.py` to further process the generated files. Then you can use `python/parksim/trajectory_predict/intent_transformer/train.py` to train the network.
+### Usage
+See [this document](https://github.com/XuShenLZ/ParkSim/tree/main/python/parksim/trajectory_predict) for instruction.
+1. A pre-trained intent prediction model can be [downloaded here](https://drive.google.com/file/d/1LVQJRQmjGfGchxhMRchiZRCjrlFDVch-/view?usp=sharing).
+2. A pre-trained trajectory prediction model can be [downloaded here](https://drive.google.com/file/d/1c9KQXwFMRIYPJo1sXJKepoBcrEme_HxU/view?usp=sharing).
