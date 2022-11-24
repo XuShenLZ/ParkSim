@@ -137,3 +137,4 @@ class VehicleTask(PythonMsg):
     target_spot_index: int = field(default=None)
     target_coords: np.ndarray = field(default=None)
     duration: float = field(default=None)
+    end_time: float = field(default=None)

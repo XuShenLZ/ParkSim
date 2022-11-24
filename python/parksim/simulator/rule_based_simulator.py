@@ -112,7 +112,7 @@ class RuleBasedSimulator(object):
         self.num_vehicles = 0
         self.vehicles: List[RuleBasedStanleyVehicle] = []
 
-        self.max_simulation_time = 1200
+        self.max_simulation_time = 2000
 
         self.time = 0.0
         self.loops = 0   
@@ -232,7 +232,10 @@ class RuleBasedSimulator(object):
             raw_tp = agent_dict["task_profile"]
             for task in raw_tp:
                 if task["name"] == "IDLE":
-                    task_profile.append(VehicleTask(name="IDLE", duration=task["duration"]))
+                    if "end_time" in task:
+                        task_profile.append(VehicleTask(name="IDLE", end_time=task["end_time"]))
+                    else:
+                        task_profile.append(VehicleTask(name="IDLE", duration=task["duration"]))
                 elif task["name"] == "PARK":
                     task_profile.append(VehicleTask(name="PARK", target_spot_index=task["target_spot_index"]))
                     self.occupied[task["target_spot_index"]] = True
@@ -374,7 +377,9 @@ class RuleBasedSimulator(object):
                             last_unpark = i
                         else: # if already determined new parking spot, this is an unpark after a park, so set the spot we are unparking from to our new spot
                             new_tp[i]["target_spot_index"] = already_parked
-                    elif task["name"] == "PARK" and i > 0:
+                            last_unpark = i
+                    elif ("ev_charging" not in self.agents_dict[agent] and task["name"] == "PARK" and i > 0) \
+                        or ("ev_charging" in self.agents_dict[agent] and self.agents_dict[agent]["ev_charging"] and task["name"] == "PARK" and i > 0 and "target_spot_index" not in task):
 
                         # collect arguments to choose spot
                         active_vehicles = []
@@ -420,8 +425,6 @@ class RuleBasedSimulator(object):
         #     pickle.dump(dat, file)
         #     print("done")
         #     file.close()
-
-        # a = 3/0
 
         if self.write_log:
             # write logs
@@ -570,7 +573,7 @@ class RuleBasedSimulatorParams():
         self.seed = 0
 
         self.num_simulations = 1 # number of simulations run (e.g. times started from scratch)
-        self.use_existing_agents = False # replay video data
+        self.use_existing_agents = True # replay video data
 
         # use existing agents
         self.use_existing_entrances = False # have vehicles park in spots that they parked in real life
@@ -580,10 +583,10 @@ class RuleBasedSimulatorParams():
         self.spawn_exiting_fn = lambda: 0
         self.spawn_interval_mean_fn = lambda: 2 # (s)
 
-        self.use_existing_obstacles = self.use_existing_agents # able to park in "occupied" spots from dataset? False if yes, True if no
+        self.use_existing_obstacles = False # able to park in "occupied" spots from dataset? False if yes, True if no
 
         self.load_existing_net = True # generate a new net form scratch (and overwrite model.pickle) or use the one stored at self.spot_model_path
-        self.use_nn = False # pick spots using NN or not (irrelevant if self.use_existing_entrances is True)
+        self.use_nn = True # pick spots using NN or not (irrelevant if self.use_existing_entrances is True)
         self.train_nn = False # train NN or not
         self.should_visualize = True # display simulator or not
         self.spot_model_path = '/Parksim/python/parksim/spot_nn/model.pickle' # this model is trained with loss [sum([(net_discount ** i) * simulator.vehicle_non_idle_times[v + i] for i in range(5)]

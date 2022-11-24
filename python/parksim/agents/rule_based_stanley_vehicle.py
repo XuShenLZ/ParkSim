@@ -41,6 +41,7 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         self.current_task: str = None
 
         self.idle_duration = None
+        self.idle_end_time = None
         self.idle_start_time = None
 
         # Dimensions
@@ -318,7 +319,10 @@ class RuleBasedStanleyVehicle(AbstractAgent):
                     raise ValueError("UNPARK task should be followed with a CRUISE task.")
 
             elif task.name == "IDLE":
-                self.idle_duration = task.duration
+                if self.idle_duration is not None:
+                    self.idle_duration = task.duration
+                else:
+                    self.idle_end_time = task.end_time
             else:
                 raise ValueError(f'Undefined task name. {task.name} is received.')
 
@@ -706,9 +710,11 @@ class RuleBasedStanleyVehicle(AbstractAgent):
             if self.idle_start_time is None:
                 self.idle_start_time = time
             
-            if time - self.idle_start_time >= self.idle_duration:
+            if self.idle_duration is not None and time - self.idle_start_time >= self.idle_duration \
+                or self.idle_end_time is not None and time >= self.idle_end_time:
                 self.idle_start_time = None
                 self.idle_duration = None
+                self.idle_end_time = None
                 self.execute_next_task()
         elif not self.reached_target():
             # normal driving (haven't reached pre-parking point)
@@ -779,6 +785,7 @@ class RuleBasedStanleyVehicle(AbstractAgent):
                         if (self.waiting_for not in self.nearby_vehicles  
                             or ((not self.other_is_braking[self.waiting_for] and self.other_task[self.waiting_for] != "IDLE")
                             and self.has_passed(this_id=self.waiting_for))
+                            or self.other_task[self.waiting_for] == "IDLE"
                             or (self.dist_from(self.waiting_for) > self.vehicle_config.braking_distance) and self.dist_from(self.waiting_for) > self.last_braking_distance):
                             should_unbrake = True
                         elif self.other_waiting_for[self.waiting_for] == self.vehicle_id: # if the vehicle you're waiting for is waiting for you
@@ -809,6 +816,7 @@ class RuleBasedStanleyVehicle(AbstractAgent):
                     (self.other_task[id] not in ["UNPARK", "PARK"] and self.has_passed(other_id=id)) 
                     or (self.other_task[id] == "UNPARK" and self.other_parking_progress[id] == "")
                     or (self.other_task[id] == "PARK" and (self.other_parking_start_time[id] > self.parking_start_time or (self.should_overshoot and self.has_passed(other_id=id))))
+                    or self.other_task[id] == "IDLE"
                     or self.dist_from(id) >= 2*self.vehicle_config.parking_radius for id in self.nearby_vehicles
                     ])
 
@@ -825,6 +833,7 @@ class RuleBasedStanleyVehicle(AbstractAgent):
             should_go = (self.unparking_maneuver is not None and self.unparking_step < len(self.unparking_maneuver.x) - 1) \
                 or (all([
                     (self.other_task[id] not in ["PARK", "UNPARK"] and self.has_passed(this_id=id, parking_dist_away=7)) 
+                    or self.other_task[id] == "IDLE"
                     or (self.other_task[id] == "UNPARK" and self.other_parking_start_time[id] > self.parking_start_time)
                     for id in unparking_nearby_vehicles
                     ]))
