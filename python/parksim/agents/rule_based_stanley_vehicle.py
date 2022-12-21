@@ -21,7 +21,7 @@ from parksim.vehicle_types import VehicleBody, VehicleConfig, VehicleInfo, Vehic
 
 
 class RuleBasedStanleyVehicle(AbstractAgent):
-    def __init__(self, vehicle_id: int, vehicle_body: VehicleBody, vehicle_config: VehicleConfig, controller: StanleyController = StanleyController(), motion_predictor: StanleyController = StanleyController(), inst_centric_generator = None, intent_predictor = None):
+    def __init__(self, vehicle_id: int, vehicle_body: VehicleBody, vehicle_config: VehicleConfig, controller: StanleyController = StanleyController(), motion_predictor: StanleyController = StanleyController(), inst_centric_generator = None, intent_predictor = None, electric_vehicle=False):
         self.vehicle_id = vehicle_id
 
         # State and Reference Waypoints
@@ -93,6 +93,11 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         self.waiting_for: int = 0 # vehicle waiting for before we go. We start indexing vehicles from 1, so 0 means no vehicle
         self.waiting_for_unparker = False # need special handling for waiting for unparker
 
+        # ev charging
+        self.charging_spots = [39, 40, 41] # TODO: put this in a yaml
+        self.ev = electric_vehicle
+        self.ev_charging_state = None # none = not ev, 0 = waiting to charge, 1 = charging, 2 = done charging TODO: make enum
+
         self.logger = deque(maxlen=100)
 
         # ============= Information of other vehicles ===========
@@ -144,6 +149,14 @@ class RuleBasedStanleyVehicle(AbstractAgent):
 
     def set_task_profile(self, task_profile):
         self.task_profile = task_profile
+
+        # ev charging
+        if self.ev:
+            for task in task_profile:
+                if task.name == 'PARK' and task.target_spot_index in self.charging_spots: # will park in charging spot
+                    self.ev_charging_state = 0
+            if self.ev_charging_state is None: # already done
+                self.ev_charging_state = 2
 
     def load_parking_spaces(self, spots_data_path: str):
         home_path = str(Path.home())
@@ -305,7 +318,7 @@ class RuleBasedStanleyVehicle(AbstractAgent):
                 else:
                     self.unparking_x_ref = None
                     self.unparking_y_ref = None
-                    self.unparking_yaw_ref = None # TODO: make sure this works on weird task profiles
+                    self.unparking_yaw_ref = None 
             elif task.name == "PARK":
                 self.spot_index = task.target_spot_index
             elif task.name == "UNPARK":
@@ -318,16 +331,21 @@ class RuleBasedStanleyVehicle(AbstractAgent):
                 else:
                     raise ValueError("UNPARK task should be followed with a CRUISE task.")
 
+                if self.ev and task.target_spot_index in self.charging_spots:
+                    self.ev_charging_state = 2
+
             elif task.name == "IDLE":
-                if self.idle_duration is not None:
+                if task.duration is not None:
                     self.idle_duration = task.duration
                 else:
                     self.idle_end_time = task.end_time
+
+                # ev charging
+                # if charging, set variable
+                if self.ev and len(self.task_profile) > 0 and self.task_profile[0].name == 'UNPARK' and self.task_profile[0].target_spot_index in self.charging_spots:
+                    self.ev_charging_state = 1
             else:
                 raise ValueError(f'Undefined task name. {task.name} is received.')
-
-            # State will always be assigned if given todo: commented this out
-            # self.state = task.state if task.state is not None else self.state
 
             self.task_history.append(task)
         else:
@@ -785,7 +803,7 @@ class RuleBasedStanleyVehicle(AbstractAgent):
                         if (self.waiting_for not in self.nearby_vehicles  
                             or ((not self.other_is_braking[self.waiting_for] and self.other_task[self.waiting_for] != "IDLE")
                             and self.has_passed(this_id=self.waiting_for))
-                            or self.other_task[self.waiting_for] == "IDLE"
+                            or (self.ev and self.other_task[self.waiting_for] == "IDLE") # TODO: hacky, need better law for waiting for idle (ie if idle vehicle parked, dont wait)
                             or (self.dist_from(self.waiting_for) > self.vehicle_config.braking_distance) and self.dist_from(self.waiting_for) > self.last_braking_distance):
                             should_unbrake = True
                         elif self.other_waiting_for[self.waiting_for] == self.vehicle_id: # if the vehicle you're waiting for is waiting for you

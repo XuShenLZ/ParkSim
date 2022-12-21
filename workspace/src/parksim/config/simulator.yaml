@@ -6,6 +6,7 @@
     spots_data_path: '/ParkSim/data/spots_data.pickle'
 
     blocked_spots: [42, 43, 44, 45, 64, 65, 66, 67, 68, 69, 92, 93, 94, 110, 111, 112, 113, 114, 115, 134, 135, 136, 156, 157, 158, 159, 160, 161, 184, 185, 186, 202, 203, 204, 205, 206, 207, 226, 227, 228, 248, 249, 250, 251, 252, 253, 276, 277, 278, 294, 295, 256, 297, 298, 299, 318, 319, 320, 340, 341, 342, 343, 344, 345] # Spots to be blocked in advance: 3 left and 3 right spaces of each row, except right spaces of right row, since doesn't unpark into an aisle
+    ev_charging_spots: [39, 40, 41]
 
     # ======== Spawn
     spawn_entering: 30

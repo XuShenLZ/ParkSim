@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 
 PARKED_DEADBAND = 2 # distance to spot where a stopped car would be considered in that spot
 MOVING_DEADBAND = 0.0001 # was 0.0001
-START_DEADBAND = 0.04 # TODO: a lot of cars have very small numbers here, how to interpret them? e.g. 106
+START_DEADBAND = 0.04 
 IDLE_MIN_TIME = 15 # number of seconds car must be at 0 velocity before it's considered idle
 
 dji_number = "0022"

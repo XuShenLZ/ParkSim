@@ -15,17 +15,20 @@ class SpotFeatureGenerator():
             data = pickle.load(f)
             self.parking_spaces = data['parking_spaces']
 
-    def generate_features(self, spot_index: int, active_vehicles: List[RuleBasedStanleyVehicle], spawn_mean: int):
+    def generate_features(self, spot_index: int, active_vehicles: List[RuleBasedStanleyVehicle], spawn_mean: int, queue: int):
         heatmap = self.generate_vehicle_heatmap(active_vehicles)
         # subtract one because you're in your own path always
         vehicles_along_path = sum([heatmap[sq] for sq in self.create_features_data['trajectory_squares'][spot_index]]) - 1
         # subtract one because you're parking near yourself
         vehicles_parking_nearby = sum([np.linalg.norm([v.controller.x_ref[-1] - self.create_features_data['last_waypoint'][spot_index][0], v.controller.y_ref[-1] - self.create_features_data['last_waypoint'][spot_index][1]]) < 10 for v in active_vehicles if len(v.controller.x_ref) > 0]) - 1
 
-        return torch.FloatTensor([self.create_features_data['trajectory_length'][spot_index], self.parking_spaces[spot_index][0], self.parking_spaces[spot_index][1], vehicles_along_path, vehicles_parking_nearby, spawn_mean])
+        feat = torch.FloatTensor([self.create_features_data['trajectory_length'][spot_index], self.parking_spaces[spot_index][0], self.parking_spaces[spot_index][1], vehicles_along_path, vehicles_parking_nearby, spawn_mean, queue])
+        assert len(feat) == self.number_of_features
+        return feat
 
+    @property
     def number_of_features(self):
-        return 6
+        return 7
 
     def generate_vehicle_heatmap(self, vehicles: List[RuleBasedStanleyVehicle]) -> List[int]:
         heatmap = [0] * self.number_of_heatmap_squares()
