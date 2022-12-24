@@ -1,4 +1,5 @@
 from typing import Dict, List
+import PIL
 
 from dlp.dataset import Dataset
 from dlp.visualizer import Visualizer as DlpVisualizer
@@ -17,7 +18,7 @@ from scipy.io import savemat
 from parksim.pytypes import VehicleState
 
 from parksim.vehicle_types import VehicleBody, VehicleConfig, VehicleTask
-from parksim.route_planner.graph import WaypointsGraph
+from parksim.route_planner.graph import WaypointsGraph, Vertex
 from parksim.visualizer.realtime_visualizer import RealtimeVisualizer
 
 from parksim.agents.rule_based_stanley_vehicle import RuleBasedStanleyVehicle
@@ -26,6 +27,24 @@ from parksim.controller.stanley_controller import StanleyController
 from parksim.controller_types import StanleyParams
 from parksim.spot_nn.spot_nn import SpotNet
 from parksim.spot_nn.feature_generator import SpotFeatureGenerator
+
+from parksim.intent_predict.cnn.data_processing.utils import CNNDataProcessor
+from parksim.trajectory_predict.data_processing.utils import TransformerDataProcessor
+
+from parksim.intent_predict.cnn.models.small_regularized_cnn import SmallRegularizedCNN
+from parksim.trajectory_predict.intent_transformer.models.trajectory_predictor_vision_transformer import TrajectoryPredictorVisionTransformer
+from parksim.trajectory_predict.intent_transformer.models.trajectory_predictor_with_decoder_intent_cross_attention import TrajectoryPredictorWithDecoderIntentCrossAttention
+
+from dlp.visualizer import SemanticVisualizer
+from parksim.intent_predict.cnn.predictor import PredictionResponse, Predictor
+import heapq
+
+from parksim.spot_detector.detector import LocalDetector
+from parksim.trajectory_predict.intent_transformer.model_utils import generate_square_subsequent_mask
+
+from typing import Tuple
+from torch import Tensor
+from torchvision import transforms
 
 # These parameters should all become ROS param for simulator and vehicle
 spots_data_path = '/ParkSim/data/spots_data.pickle'
@@ -118,8 +137,10 @@ class RuleBasedSimulator(object):
         self.loops = 0   
 
         self.vehicle_features = {}
-        self.feature_generator = SpotFeatureGenerator()
         self.vehicle_ids_entered = []
+
+        if params.use_nn or params.train_nn:
+            self.feature_generator = params.feature_generator
 
         self.queue_length = 0
 
@@ -131,6 +152,25 @@ class RuleBasedSimulator(object):
         # ev charging
         self.ev_simulation = params.ev_simulation
         self.charging_spots = [39, 40, 41] # TODO: put this in a yaml
+
+        # prediction controller
+
+        self.history = []
+
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+
+        MODEL_PATH = r'checkpoints/TrajectoryPredictorWithDecoderIntentCrossAttention/lightning_logs/version_1/checkpoints/epoch=52-val_total_loss=0.0458.ckpt'
+        self.traj_model = TrajectoryPredictorWithDecoderIntentCrossAttention.load_from_checkpoint(MODEL_PATH)
+        self.traj_model.eval().to(self.device)
+        self.mode='v1'
+
+        self.intent_extractor = CNNDataProcessor(ds=dataset)
+        self.traj_extractor = TransformerDataProcessor(ds=dataset)
+
+        self.spot_detector = LocalDetector(spot_color_rgb=(0, 255, 0))
+
+        self.intent_circles = []
+        self.traj_pred_circles = []
 
     def _gen_occupancy(self):
 
@@ -200,14 +240,13 @@ class RuleBasedSimulator(object):
             vehicle_config=dataclasses.replace(vehicle_config), 
             controller=controller,
             motion_predictor=motion_predictor,
-            inst_centric_generator=None, 
-            intent_predictor=None,
             electric_vehicle=self.ev_simulation
             )
 
         vehicle.load_parking_spaces(spots_data_path=spots_data_path)
         vehicle.load_graph(waypoints_graph_path=waypoints_graph_path)
         vehicle.load_maneuver(offline_maneuver_path=offline_maneuver_path)
+        vehicle.load_intent_model(model_path=intent_model_path)
 
         task_profile = []
 
@@ -485,16 +524,14 @@ class RuleBasedSimulator(object):
                 if not self.last_entering_vehicle_left_entrance:
                     self.last_entering_vehicle_left_entrance = True
 
-            # ========== For real-time prediction only
             # add vehicle states to history
-            # current_frame_states = []
-            # for vehicle in self.vehicles:
-            #     current_state_dict = vehicle.get_state_dict()
-            #     current_frame_states.append(current_state_dict)
-            # self.history.append(current_frame_states)
+            current_frame_states = {}
+            for vehicle in self.vehicles:
+                current_state_dict = vehicle.get_state_dict()
+                current_frame_states[vehicle.vehicle_id] = current_state_dict
+            self.history.append(current_frame_states)
                 
             # intent_pred_results = []
-            # ===========
 
             # obtain states for all vehicles first, then solve for all vehicles (mimics ROS)
             for vehicle_id in active_vehicles:
@@ -522,7 +559,7 @@ class RuleBasedSimulator(object):
                 if vehicle.current_task != "IDLE":
                     self.vehicle_non_idle_times[vehicle_id] += self.timer_period
 
-                if vehicle_id in self.vehicle_ids_entered and vehicle_id not in self.vehicle_features:
+                if (self.params.use_nn or self.params.train_nn) and vehicle_id in self.vehicle_ids_entered and vehicle_id not in self.vehicle_features:
                     self.vehicle_features[vehicle_id] = self.feature_generator.generate_features(vehicle.spot_index, [active_vehicles[id] for id in active_vehicles], self.spawn_interval_mean, self.queue_length)
 
                 if self.sim_is_running:
@@ -541,7 +578,78 @@ class RuleBasedSimulator(object):
                 # result = vehicle.predict_intent()
                 # intent_pred_results.append(result)
                 # ===========
-            
+
+                if self.loops > 50:
+
+                    intents = vehicle.predict_intent(vehicle_id, self.history)
+                    graph = WaypointsGraph()
+                    graph.setup_with_vis(self.intent_extractor.vis)
+                    best_lanes = self.find_n_best_lanes(
+                        [vehicle.state.x.x, vehicle.state.x.y], vehicle.state.e.psi, graph=graph, vis=self.intent_extractor.vis, predictor=vehicle.intent_predictor)
+
+                    distributions, coordinates = self.expand_distribution(intents, best_lanes)
+
+                    top_n = list(zip(distributions, coordinates))
+                    top_n.sort(reverse=True)
+                    top_n = top_n[:3]
+
+                    output_sequence_length = 9
+                    predicted_trajectories = []
+                    nth = 0
+                    self.intent_circles = []
+                    self.traj_pred_circles = []
+                    for probability, global_intent_pose in top_n:
+                        img, X, intent = self.get_data_for_instance(vehicle, self.traj_extractor, global_intent_pose)
+
+                        with torch.no_grad():
+                            if self.mode=='v2':
+                                img = img.to(self.device).float()[:, -1]
+                            else:
+                                img = img.to(self.device).float()
+                            X = X.to(self.device).float()
+                            intent = intent.to(self.device).float()
+
+                            START_TOKEN = X[:, -1][:, None, :]
+
+                            delta_state = -1 * X[:, -2][:, None, :]
+                            y_input = torch.cat([START_TOKEN, delta_state], dim=1).to(self.device)
+
+                            for i in range(output_sequence_length):
+                                # Get source mask
+                                tgt_mask = generate_square_subsequent_mask(
+                                    y_input.size(1)).to(self.device).float()
+                                pred = self.traj_model(img, X,
+                                                intent, y_input, tgt_mask)
+                                next_item = pred[:, -1][:, None, :]
+                                # Concatenate previous input with predicted best word
+                                y_input = torch.cat((y_input, next_item), dim=1)
+                        
+                        predicted_trajectories.append(
+                            [y_input[:, 1:], intent, probability])
+                        
+                        if nth == 0:
+                            col = (255, 0, 0, 255)
+                        elif nth == 1:
+                            col = (255, 0, 255, 255)
+                        else:
+                            col = (9, 121, 105, 255)
+
+                        head = vehicle.state.e.psi
+                        inv_rot = np.array([[np.cos(head), -np.sin(head)], [np.sin(head), np.cos(head)]])
+
+                        predicted_intent = intent[0][0].detach().cpu().numpy()
+                        local_intent_coords = np.add([vehicle.state.x.x, vehicle.state.x.y], np.dot(inv_rot, predicted_intent))
+
+                        self.intent_circles.append((local_intent_coords, col))
+
+                        preds = []
+                        for pt in predicted_trajectories[-1][0][0].detach().cpu().numpy():
+                            local_pred_coords = np.add([vehicle.state.x.x, vehicle.state.x.y], np.dot(inv_rot, pt[0:2]))
+                            preds.append(local_pred_coords)
+                        self.traj_pred_circles.append((preds, col))
+
+                        nth += 1
+        
             self.loops += 1
             self.time += self.timer_period
 
@@ -575,7 +683,14 @@ class RuleBasedSimulator(object):
                             fill = (0, 255, 0, 255)
 
                     self.vis.draw_vehicle(state=vehicle.state, fill=fill)
-                    # self.vis.draw_line(points=np.array([vehicle.x_ref, vehicle.y_ref]).T, color=(39,228,245, 193))
+                    
+                    if self.intent_circles is not None:
+                        for circle, col in self.intent_circles:
+                            self.vis.draw_circle(circle, 15, col)
+                        for preds, col in self.traj_pred_circles:
+                            for pred in preds:
+                                self.vis.draw_circle(pred, 3, col)
+
                     on_vehicle_text =  str(vehicle.vehicle_id)
                     self.vis.draw_text([vehicle.state.x.x - 2, vehicle.state.x.y + 2], on_vehicle_text, size=25)
                     
@@ -591,6 +706,146 @@ class RuleBasedSimulator(object):
                 # ===========
         
                 self.vis.render()
+
+    def find_n_best_lanes(self, start_coords, global_heading, graph: WaypointsGraph, vis: SemanticVisualizer, predictor: Predictor, n = 3):
+        current_state = np.array(start_coords + [global_heading])
+        idx = graph.search(current_state)
+
+        all_lanes = set()
+        visited = set()
+
+        fringe: List[Vertex] = [graph.vertices[idx]]
+        while len(fringe) > 0:
+            v = fringe.pop()
+            visited.add(v)
+
+            children, _ = v.get_children()
+            if not vis._is_visible(current_state=current_state, target_state=v.coords):
+                for child in children:
+                    if vis._is_visible(current_state=current_state, target_state=child.coords):
+                        all_lanes.add(child)
+                continue
+
+            for child in children:
+                if child not in visited:
+                    fringe.append(child)
+
+        lanes = []
+        for lane in all_lanes:
+            astar_dist, astar_dir = predictor.compute_Astar_dist_dir(
+                current_state, lane.coords, global_heading)
+            heapq.heappush(lanes, (-astar_dir, astar_dist, lane.coords))
+
+        return lanes
+
+    def expand_distribution(self, intents: PredictionResponse, lanes: List, n=3):
+        p_minus = intents.distribution[-1]
+        n = min(n, len(lanes))
+
+        coordinates = intents.all_spot_centers
+        distributions = list(intents.distribution)
+        distributions.pop()
+
+        scales = np.linspace(0.9, 0.1, n)
+        scales /= sum(scales)
+        for i in range(n):
+            _, _, coords = heapq.heappop(lanes)
+            coordinates.append(coords)
+            distributions.append(p_minus * scales[i])
+
+        return distributions, coordinates
+
+    # stride was 10 on dlp example (with 25 FPS, so sampling every 0.4 seconds)
+    def get_data_for_instance(self, vehicle: RuleBasedStanleyVehicle, extractor: TransformerDataProcessor, global_intent_pose: np.array, stride: int=4, history: int=10, future: int=10, img_size: int=100) -> Tuple[np.array, np.array, np.array]:
+        """
+        returns image, trajectory_history, and trajectory future for given instance
+        """
+        img_transform=transforms.ToTensor()
+        image_feature = vehicle.inst_centric_generator.inst_centric(vehicle.vehicle_id, self.history)
+
+        image_feature = self.label_target_spot(vehicle, image_feature)
+
+        curr_pose = np.array([vehicle.state.x.x,
+                            vehicle.state.x.y, vehicle.state.e.psi])
+        rot = np.array([[np.cos(-curr_pose[2]), -np.sin(-curr_pose[2])], [np.sin(-curr_pose[2]), np.cos(-curr_pose[2])]])
+        
+        local_intent_coords = np.dot(rot, global_intent_pose[:2]-curr_pose[:2])
+        local_intent_pose = np.expand_dims(local_intent_coords, axis=0)
+
+        # determine start index to gather history from
+        start_idx = -1
+        while start_idx - stride > -stride * history and start_idx - stride >= -len(vehicle.state_hist):
+            start_idx -= stride
+
+        image_history = []
+        trajectory_history = []
+        for i in range(start_idx, 0, stride):
+            state = vehicle.state_hist[i]
+            pos = np.array([state.x.x, state.x.y])
+            translated_pos = np.dot(rot, pos-curr_pose[:2])
+            trajectory_history.append(Tensor(
+                [translated_pos[0], translated_pos[1], state.e.psi - curr_pose[2]]))
+
+            image_feature = vehicle.inst_centric_generator.inst_centric(vehicle.vehicle_id, self.history)
+            image_feature = self.label_target_spot(vehicle, image_feature, curr_pose)
+            
+            image_tensor = img_transform(image_feature.resize((img_size, img_size)))
+            image_history.append(image_tensor)
+        
+        return torch.stack(image_history)[None], torch.stack(trajectory_history)[None], torch.from_numpy(local_intent_pose)[None]
+
+    def label_target_spot(self, vehicle: RuleBasedStanleyVehicle, inst_centric_view: np.array, center_pose: np.ndarray=None, r=1.25) -> np.array:
+        """
+        Returns image frame with target spot labeled
+        center_pose: If None, the inst_centric_view is assumed to be around the current instance. If a numpy array (x, y, heading) is given, it is the specified center.
+        """
+        all_spots = self.spot_detector.detect(inst_centric_view)
+
+        if center_pose is None:
+            current_state = np.array([vehicle.state.x.x, vehicle.state.x.y, vehicle.state.e.psi])
+        else:
+            current_state = center_pose
+
+        for spot in all_spots:
+            spot_center_pixel = np.array(spot[0])
+            spot_center = self.local_pixel_to_global_ground(current_state, spot_center_pixel)
+            # dist = np.linalg.norm(traj[:, 0:2] - spot_center, axis=1)
+            dist = np.linalg.norm(current_state[0:2] - spot_center)
+            # if np.amin(dist) < r:
+            if dist < r:
+                inst_centric_view_copy = inst_centric_view.copy()
+                corners = self._get_corners(spot)
+                img_draw = PIL.ImageDraw.Draw(inst_centric_view_copy)  
+                img_draw.polygon(corners, fill ="purple", outline ="purple")
+                return inst_centric_view_copy
+        
+        return inst_centric_view
+
+    def local_pixel_to_global_ground(self, current_state: np.ndarray, target_coords: np.ndarray) -> np.ndarray:
+        """
+        transform the target coordinate from pixel coordinate in the local inst-centric crop to global ground coordinates
+        Note: Accuracy depends on the resolution (self.res)
+        `current_state`: numpy array (x, y, theta, ...) in global coordinates
+        `target_coords`: numpy array (x, y) in int pixel coordinates
+        """
+        sensing_limit = 20
+        res = 0.1
+
+        scaled_local = target_coords * res
+        translation = sensing_limit * np.ones(2)
+
+        translated_local = scaled_local - translation
+
+        current_theta = current_state[2]
+        R = np.array([[np.cos(current_theta), -np.sin(current_theta)], 
+                      [np.sin(current_theta),  np.cos(current_theta)]])
+
+        rotated_local = R @ translated_local
+
+        translated_global = rotated_local + current_state[:2]
+
+        return translated_global
+
 """
 Change these parameters to run tests using the neural network
 """
@@ -600,42 +855,48 @@ class RuleBasedSimulatorParams():
 
         self.num_simulations = 1 # number of simulations run (e.g. times started from scratch)
 
-        self.ev_simulation = True # electric vehicle (Soomin's data) sim?
+        self.ev_simulation = False # electric vehicle (Soomin's data) sim?
 
-        self.use_existing_agents = True # replay video data
-        self.agents_data_path = '/ParkSim/data/agents_data_ev.pickle'
+        self.use_existing_agents = False # replay video data
+        self.agents_data_path = '/ParkSim/data/agents_data_0012.pickle'
 
         # should we replace where the agents park?
-        self.use_existing_entrances = False # have vehicles park in spots that they parked in real life
+        self.use_existing_entrances = True # have vehicles park in spots that they parked in real life
 
         # don't use existing agents
-        self.spawn_entering_fn = lambda: np.random.randint(15, 30) 
+        self.spawn_entering_fn = lambda: 1 
         self.spawn_exiting_fn = lambda: 0
-        self.spawn_interval_mean_fn = lambda: np.random.randint(2, 5) # (s)
+        self.spawn_interval_mean_fn = lambda: 5 # (s)
 
-        self.use_existing_obstacles = True# able to park in "occupied" spots from dataset? False if yes, True if no
+        self.use_existing_obstacles = True # able to park in "occupied" spots from dataset? False if yes, True if no
 
-        self.load_existing_net = True # generate a new net form scratch (and overwrite model.pickle) or use the one stored at self.spot_model_path
-        self.use_nn = True # pick spots using NN or not (irrelevant if self.use_existing_entrances is True)
+        self.load_existing_net = False # generate a new net form scratch (and overwrite model.pickle) or use the one stored at self.spot_model_path
+        self.use_nn = False # pick spots using NN or not (irrelevant if self.use_existing_entrances is True)
         self.train_nn = False # train NN or not
         self.should_visualize = self.num_simulations == 1 # display simulator or not
-        # before changing model, don't forget to set: spot selection, loss function
-        self.spot_model_path = '/Parksim/python/parksim/spot_nn/selfish_model.pickle'
-        self.losses_csv_path = '/parksim/python/parksim/spot_nn/losses.csv' # where losses are stored
 
-        # load net
-        if self.load_existing_net:
-            self.net = torch.load(str(Path.home()) + self.spot_model_path)
-        else:
-            self.net = SpotNet()
+        if self.use_nn or self.train_nn:
 
-        self.feature_generator = SpotFeatureGenerator()
+            # before changing model, don't forget to set: spot selection, loss function
+            self.spot_model_path = '/Parksim/python/parksim/spot_nn/selfish_model.pickle'
+            self.losses_csv_path = '/parksim/python/parksim/spot_nn/losses.csv' # where losses are stored
+
+            # load net
+            if self.load_existing_net:
+                self.net = torch.load(str(Path.home()) + self.spot_model_path)
+            else:
+                self.net = SpotNet()
+
+            self.feature_generator = SpotFeatureGenerator()
 
     # run simulations, including training the net (if necessary) and saving/printing any results
     def run_simulations(self, ds, vis):
-        if os.path.isfile(str(Path.home()) + self.spot_model_path) and not self.load_existing_net:
-            print("error: would be overwriting exisitng net. please rename existing net or set self.load_existing_net to True.")
-            quit()
+
+        if self.use_nn or self.train_nn:
+
+            if os.path.isfile(str(Path.home()) + self.spot_model_path) and not self.load_existing_net:
+                print("error: would be overwriting exisitng net. please rename existing net or set self.load_existing_net to True.")
+                quit()
 
         losses = []
         average_times = []
@@ -650,17 +911,21 @@ class RuleBasedSimulatorParams():
             simulator.run()
             if self.use_existing_agents:
                 print('Experiment ' + str(i) + ': ' + str(len(simulator.vehicle_ids_entered)) + ' entering, ' + str(simulator.total_vehicle_count) + ' total, ' + str(simulator.spawn_interval_mean) + ' spawn interval mean')
-            total_loss = self.update_net(simulator)
-            losses.append(total_loss / len(simulator.vehicle_ids_entered) if total_loss is not None else 0)
-            average_times.append(sum([simulator.vehicle_non_idle_times[i] for i in simulator.vehicle_ids_entered]) / len(simulator.vehicle_ids_entered))
-            print('Results: ' + (str(losses[-1]) if total_loss is not None else 'N/A') + ' average loss, ' + str(average_times[-1]) + ' average entering time')
 
+            if self.use_nn or self.train_nn:
+
+                total_loss = self.update_net(simulator)
+                losses.append(total_loss / len(simulator.vehicle_ids_entered) if total_loss is not None else 0)
+                average_times.append(sum([simulator.vehicle_non_idle_times[i] for i in simulator.vehicle_ids_entered]) / len(simulator.vehicle_ids_entered))
+                print('Results: ' + (str(losses[-1]) if total_loss is not None else 'N/A') + ' average loss, ' + str(average_times[-1]) + ' average entering time')
+
+        if self.use_nn or self.train_nn:
         
-        with open(str(Path.home()) + self.losses_csv_path, 'w', newline='') as file:
-            writer = csv.writer(file)
-            writer.writerow(["Simulation", "Loss", "Average Entering Time"])
-            for i in range(len(losses)):
-                writer.writerow([i, losses[i], average_times[i]])
+            with open(str(Path.home()) + self.losses_csv_path, 'w', newline='') as file:
+                writer = csv.writer(file)
+                writer.writerow(["Simulation", "Loss", "Average Entering Time"])
+                for i in range(len(losses)):
+                    writer.writerow([i, losses[i], average_times[i]])
 
     # spot selection algorithm
     def choose_spot(self, simulator: RuleBasedSimulator, empty_spots: List[int], active_vehicles: List[RuleBasedStanleyVehicle]):
@@ -674,6 +939,8 @@ class RuleBasedSimulatorParams():
             # else:
             #     chosen_spot = min([spot for spot in empty_spots], key=lambda spot: self.vanilla_net(SpotFeatureGenerator.generate_features(self.add_vehicle(spot_index=spot, for_nn=True), active_vehicles, self.spawn_interval_mean, simulator.queue_length)))
         else:
+            return 54
+            """
             r = 0
             if r < 0.4:
                 return np.random.choice(empty_spots)
@@ -681,6 +948,7 @@ class RuleBasedSimulatorParams():
                 return np.random.choice([i for i in empty_spots if (i >= 46 and i <= 66) or (i >= 70 and i <= 91) or (i >= 137 and i <= 158) or (i >= 162 and i <= 183)])
             else:
                 return min([spot for spot in empty_spots], key=lambda spot: np.linalg.norm([simulator.entrance_coords[0] - simulator.parking_spaces[spot][0], simulator.entrance_coords[1] - simulator.parking_spaces[spot][1]]))
+            """
 
     # target function for neural net
     def target(self, simulator: RuleBasedSimulator, vehicle_id: int, vehicles_included: List[int]):
@@ -712,7 +980,7 @@ def main():
 
     home_path = str(Path.home())
     print('Loading dataset...')
-    ds.load(home_path + '/dlp-dataset/data/DJI_0022')
+    ds.load(home_path + '/dlp-dataset/data/DJI_0012')
     print("Dataset loaded.")
 
     vis = RealtimeVisualizer(ds, VehicleBody())

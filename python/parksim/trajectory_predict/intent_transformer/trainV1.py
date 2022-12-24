@@ -1,40 +1,38 @@
 import torch
 import os
-from parksim.trajectory_predict.intent_transformer.dataset import IntentTransformerV2DataModule
-from parksim.trajectory_predict.intent_transformer.models.trajectory_predictor_vision_transformer import TrajectoryPredictorVisionTransformer
+from parksim.trajectory_predict.intent_transformer.dataset import IntentTransformerDataModule
+from parksim.trajectory_predict.intent_transformer.models.trajectory_predictor_with_decoder_intent_cross_attention import TrajectoryPredictorWithDecoderIntentCrossAttention
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
 os.environ["PL_TORCH_DISTRIBUTED_BACKEND"] = "gloo"
 
-MODEL_LABEL = 'VisionTransformer'
-DEFAULT_CONFIG = {}
+MODEL_LABEL = 'TrajectoryPredictorWithDecoderIntentCrossAttention'
 if __name__ == '__main__':
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(device)
+    
     """
     SPECIFY CONFIG HERE:
     """
     config={
-            'dim_model' : 512,
-            'num_heads' : 16,
-            'dropout' : 0.10,
-            'num_encoder_layers' : 2,
-            'num_decoder_layers' : 4,
-            'd_hidden' : 256,
-            'patch_size' : 20,
-            'loss' : 'L1'
+        'dim_model': 64, 
+        'num_heads': 16, 
+        'dropout': 0.22064449902863661, 
+        'num_encoder_layers': 2, 
+        'num_decoder_layers': 4, 
+        'd_hidden': 128, 
+        'detach_cnn': False
     }
 
     """
     SPECIFY MODEL HERE:
     """
-    model = TrajectoryPredictorVisionTransformer(config)
-    #model = TrajectoryPredictorVisionTransformer(DEFAULT_CONFIG)
+    model = TrajectoryPredictorWithDecoderIntentCrossAttention(config)
 
 
-    datamodule = IntentTransformerV2DataModule()
-    patience = 10
+    datamodule = IntentTransformerDataModule()
+    patience = 25
     earlystopping = EarlyStopping(monitor="val_total_loss", mode="min", patience=patience)
     checkpoint_callback = ModelCheckpoint(
         monitor="val_total_loss",
@@ -47,4 +45,3 @@ if __name__ == '__main__':
     callbacks=[earlystopping, checkpoint_callback]
     trainer = pl.Trainer(accelerator="gpu", devices=1, default_root_dir=f"checkpoints/{MODEL_LABEL}/", callbacks=callbacks, track_grad_norm=2)
     trainer.fit(model=model, datamodule=datamodule)
-

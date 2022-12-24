@@ -18,10 +18,11 @@ from parksim.route_planner.graph import Vertex, WaypointsGraph
 from parksim.utils.get_corners import get_vehicle_corners
 from parksim.utils.interpolation import interpolate_states_inputs
 from parksim.vehicle_types import VehicleBody, VehicleConfig, VehicleInfo, VehicleTask
-
+from parksim.intent_predict.cnn.predictor import Predictor, PredictionResponse
+from parksim.intent_predict.cnn.visualizer.instance_centric_generator import InstanceCentricGenerator
 
 class RuleBasedStanleyVehicle(AbstractAgent):
-    def __init__(self, vehicle_id: int, vehicle_body: VehicleBody, vehicle_config: VehicleConfig, controller: StanleyController = StanleyController(), motion_predictor: StanleyController = StanleyController(), inst_centric_generator = None, intent_predictor = None, electric_vehicle=False):
+    def __init__(self, vehicle_id: int, vehicle_body: VehicleBody, vehicle_config: VehicleConfig, controller: StanleyController = StanleyController(), motion_predictor: StanleyController = StanleyController(), inst_centric_generator = InstanceCentricGenerator(), intent_predictor = Predictor(), electric_vehicle=False):
         self.vehicle_id = vehicle_id
 
         # State and Reference Waypoints
