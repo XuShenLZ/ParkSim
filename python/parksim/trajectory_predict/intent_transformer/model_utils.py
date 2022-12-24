@@ -9,6 +9,7 @@ import pandas as pd
 from tqdm import tqdm
 from torch.utils.tensorboard import SummaryWriter
 from parksim.intent_predict.cnn.pytorchtools import EarlyStopping
+from torch.utils.data import DataLoader
 
 
 EARLY_STOPPING_PATH = 'models/checkpoint.pt'

@@ -1,4 +1,4 @@
-from parksim.intent_predict.cnn.network import SmallRegularizedCNN
+from parksim.intent_predict.cnn.models.small_regularized_cnn import SmallRegularizedCNN
 from parksim.spot_detector.detector import LocalDetector
 import torch
 from torchvision import transforms

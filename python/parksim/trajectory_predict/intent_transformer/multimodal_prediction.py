@@ -107,7 +107,6 @@ def predict_multimodal(ds, traj_model: BaseTransformerLightningModule, intent_mo
     for probability, global_intent_pose in top_n:
         #TODO: do something with probability?
         img, X, y_label, intent = get_data_for_instance(inst_token, inst_idx, instance['frame_token'], traj_extractor, ds, global_intent_pose)
-        
         with torch.no_grad():
             if mode=='v2':
                 img = img.to(DEVICE).float()[:, -1]
@@ -117,22 +116,30 @@ def predict_multimodal(ds, traj_model: BaseTransformerLightningModule, intent_mo
             intent = intent.to(DEVICE).float()
             y_label = y_label.to(DEVICE).float()
 
+            # X is trajectory history, relative to current state
+            # START_TOKEN is most recent item in history (e.g. usually [0, 0, 0])
+            # delta_state is change in state from second-most recent to most recent
             START_TOKEN = X[:, -1][:, None, :]
 
             delta_state = -1 * X[:, -2][:, None, :]
+            # initially, y_input is if you applied the same most recent change in state again
             y_input = torch.cat([START_TOKEN, delta_state], dim=1).to(DEVICE)
             # y_input = START_TOKEN
 
+            # predict next best output_sequence_length steps in MPC-style fashion
             for i in range(output_sequence_length):
                 # Get source mask
                 tgt_mask = generate_square_subsequent_mask(
                     y_input.size(1)).to(DEVICE).float()
                 pred = traj_model(img, X,
                                   intent, y_input, tgt_mask)
+                # next_item is predicted next best action
                 next_item = pred[:, -1][:, None, :]
                 # Concatenate previous input with predicted best word
                 y_input = torch.cat((y_input, next_item), dim=1)
                 # y_input[:, i+1, :] = pred[:, i, :]
+
+            # now y_input has a bunch of predicted next states
                 
             # return y_input[:, 1:]
 
@@ -144,6 +151,7 @@ def predict_multimodal(ds, traj_model: BaseTransformerLightningModule, intent_mo
             # y_in = y_label.to(DEVICE).float()
             # tgt_mask = traj_model.transformer.generate_square_subsequent_mask(y_in.shape[1]).to(DEVICE).float()
         # pred = traj_model(img, X, intent, y_in, tgt_mask)
+        # y_input comprehension is so we don't include current state in prediction
         predicted_trajectories.append(
             [y_label, y_input[:, 1:], intent, probability])
         # predicted_trajectories.append(
