@@ -486,6 +486,8 @@ class RuleBasedSimulator(object):
         if self.use_existing_agents:
             last_existing_init_time = max([self.agents_dict[agent]["init_time"] for agent in self.agents_dict])
 
+        single_vehicle_data = []
+
         # while not run out of time and we have not reached the last waypoint yet
         while self.max_simulation_time >= self.time:
 
@@ -579,7 +581,10 @@ class RuleBasedSimulator(object):
                 # intent_pred_results.append(result)
                 # ===========
 
-                if self.loops > 50:
+                # logging state
+                single_vehicle_current = {"coords": [vehicle.state.x.x, vehicle.state.x.y], "heading": vehicle.state.e.psi, "corners": vehicle.vehicle_body.V}
+
+                if self.loops > 4:
 
                     intents = vehicle.predict_intent(vehicle_id, self.history)
                     graph = WaypointsGraph()
@@ -593,7 +598,7 @@ class RuleBasedSimulator(object):
                     top_n.sort(reverse=True)
                     top_n = top_n[:3]
 
-                    output_sequence_length = 9
+                    output_sequence_length = 9 # produces predictions of length 10
                     predicted_trajectories = []
                     nth = 0
                     self.intent_circles = []
@@ -649,7 +654,11 @@ class RuleBasedSimulator(object):
                         self.traj_pred_circles.append((preds, col))
 
                         nth += 1
+
+                    single_vehicle_current["predicted_trajectories"] = [[tr[0].detach().cpu().numpy(), tr[1].detach().cpu().numpy(), tr[2]] for tr in predicted_trajectories]
         
+                single_vehicle_data.append(single_vehicle_current)
+
             self.loops += 1
             self.time += self.timer_period
 
@@ -706,6 +715,9 @@ class RuleBasedSimulator(object):
                 # ===========
         
                 self.vis.render()
+        
+        with open('single_vehicle_data_spot190_stride4_history10_outputseqlen9.pickle', 'wb') as f:
+            pickle.dump(single_vehicle_data, f)
 
     def find_n_best_lanes(self, start_coords, global_heading, graph: WaypointsGraph, vis: SemanticVisualizer, predictor: Predictor, n = 3):
         current_state = np.array(start_coords + [global_heading])
@@ -866,7 +878,7 @@ class RuleBasedSimulatorParams():
         # don't use existing agents
         self.spawn_entering_fn = lambda: 1 
         self.spawn_exiting_fn = lambda: 0
-        self.spawn_interval_mean_fn = lambda: 5 # (s)
+        self.spawn_interval_mean_fn = lambda: 0 # (s)
 
         self.use_existing_obstacles = True # able to park in "occupied" spots from dataset? False if yes, True if no
 
@@ -939,7 +951,7 @@ class RuleBasedSimulatorParams():
             # else:
             #     chosen_spot = min([spot for spot in empty_spots], key=lambda spot: self.vanilla_net(SpotFeatureGenerator.generate_features(self.add_vehicle(spot_index=spot, for_nn=True), active_vehicles, self.spawn_interval_mean, simulator.queue_length)))
         else:
-            return 54
+            return 190
             """
             r = 0
             if r < 0.4:
