@@ -23,7 +23,7 @@ from parksim.visualizer.realtime_visualizer import RealtimeVisualizer
 
 from parksim.agents.rule_based_stanley_vehicle import RuleBasedStanleyVehicle
 
-from parksim.controller.stanley_controller import StanleyController
+from parksim.controller.stanley_controller import StanleyController, normalize_angle
 from parksim.controller_types import StanleyParams
 from parksim.spot_nn.spot_nn import SpotNet
 from parksim.spot_nn.feature_generator import SpotFeatureGenerator
@@ -45,6 +45,9 @@ from parksim.trajectory_predict.intent_transformer.model_utils import generate_s
 from typing import Tuple
 from torch import Tensor
 from torchvision import transforms
+
+from parksim.utils.spline import calc_spline_course
+import pyomo.environ as pyo
 
 # These parameters should all become ROS param for simulator and vehicle
 spots_data_path = '/ParkSim/data/spots_data.pickle'
@@ -171,6 +174,9 @@ class RuleBasedSimulator(object):
 
         self.intent_circles = []
         self.traj_pred_circles = []
+
+        self.model = None
+        self.solver = pyo.SolverFactory('ipopt')
 
     def _gen_occupancy(self):
 
@@ -482,6 +488,9 @@ class RuleBasedSimulator(object):
             if not os.path.exists(log_dir_path):
                 os.mkdir(log_dir_path)
 
+        # TODO: params
+        # self.set_up_model()
+
         # determine when to end sim for use_existing_agents
         if self.use_existing_agents:
             last_existing_init_time = max([self.agents_dict[agent]["init_time"] for agent in self.agents_dict])
@@ -579,7 +588,7 @@ class RuleBasedSimulator(object):
                 # intent_pred_results.append(result)
                 # ===========
 
-                if self.loops > 50:
+                if self.loops > 4:
 
                     intents = vehicle.predict_intent(vehicle_id, self.history)
                     graph = WaypointsGraph()
@@ -637,16 +646,43 @@ class RuleBasedSimulator(object):
                         head = vehicle.state.e.psi
                         inv_rot = np.array([[np.cos(head), -np.sin(head)], [np.sin(head), np.cos(head)]])
 
-                        predicted_intent = intent[0][0].detach().cpu().numpy()
+                        predicted_intent = intent[0][0]
                         local_intent_coords = np.add([vehicle.state.x.x, vehicle.state.x.y], np.dot(inv_rot, predicted_intent))
 
                         self.intent_circles.append((local_intent_coords, col))
 
                         preds = []
-                        for pt in predicted_trajectories[-1][0][0].detach().cpu().numpy():
+                        for pt in predicted_trajectories[0][0]:
                             local_pred_coords = np.add([vehicle.state.x.x, vehicle.state.x.y], np.dot(inv_rot, pt[0:2]))
                             preds.append(local_pred_coords)
                         self.traj_pred_circles.append((preds, col))
+
+                        preds = np.array(preds)
+                        # spline
+                        cxs, cys, cyaws, _, _ = calc_spline_course(preds[:, 0], preds[:, 1], ds=self.timer_period)
+                        xref = np.array(list(zip(cxs[:10], cys[:10], np.zeros(10), np.zeros(10))))
+
+                        # TODO: use params
+                        """
+                        _, feas, x2, u2, _ = self.solve_model(N=xref.shape[0], x0=np.array([vehicle.state.x.x, vehicle.state.x.y, vehicle.state.v.v, vehicle.state.e.psi]), xref=xref)
+                        """
+
+                        # TODO: problem is that NN predicts too slow, so mpc wants to curve trajectory all the time (even when driving straight) so that we slow down
+                        # solve optimal control problem
+                        _, feas, xOpt, uOpt, _ = self.solve_cftoc(P=np.diag([1, 1, 0, 0]), Q=np.diag([1, 1, 0, 0]), R=np.zeros((2, 2)), N=xref.shape[0], x0=np.array([vehicle.state.x.x, vehicle.state.x.y, vehicle.state.v.v, vehicle.state.e.psi]), uL=np.array([vehicle.vehicle_config.a_min, vehicle.vehicle_config.delta_min]), uU=np.array([vehicle.vehicle_config.a_max, vehicle.vehicle_config.delta_max]), xref=xref, vehicle=vehicle)
+
+                        # get control (is control 0 problematic because the first xref is usually just continuing at the same speed in the same direction? not sure)
+                        control = uOpt[:, 0]
+
+                        # display predictions from optimal control problem
+                        mpc_preds = xOpt[[0, 1]].T
+                        # self.traj_pred_circles.append((mpc_preds, col))
+
+                        # display "steering wheel"
+                        control_mag = control[0] * 3
+                        control_dir = vehicle.state.e.psi + control[1]
+                        control_dot = [vehicle.state.x.x + (control_mag * np.cos(control_dir)), vehicle.state.x.y + (control_mag * np.sin(control_dir))]
+                        self.intent_circles.append((control_dot, col))
 
                         nth += 1
         
@@ -846,6 +882,156 @@ class RuleBasedSimulator(object):
 
         return translated_global
 
+    """
+
+    def set_up_model(self, vehicle_body: VehicleBody=VehicleBody(), vehicle_config: VehicleConfig=VehicleConfig()):
+        self.model = pyo.ConcreteModel()
+        self.model.N = pyo.Param(mutable=True, initialize=10)
+        self.model.nx = 4 # x, y, v, psi
+        self.model.nu = 2 # acceleration, delta (steering)
+        
+        # length of finite optimization problem:
+        self.model.tIDX = pyo.Set( initialize= range(self.model.N.value+1), ordered=True )  
+        self.model.xIDX = pyo.Set( initialize= range(self.model.nx), ordered=True )
+        self.model.uIDX = pyo.Set( initialize= range(self.model.nu), ordered=True )
+        
+        # these are 2d arrays:
+        self.model.P = np.diag([1, 1, 0, 0])
+        self.model.Q = np.diag([1, 1, 0, 0])
+        self.model.R = np.zeros((self.model.nu, self.model.nu))
+        self.model.x0 = pyo.Param(mutable=True, initialize=np.array([0, 0, 0, 0]))
+        self.model.xref = pyo.Param(mutable=True, initialize=np.zeros((4, 11)))
+        
+        # Create state and input variables trajectory:
+        self.model.x = pyo.Var(self.model.xIDX, self.model.tIDX)
+        self.model.u = pyo.Var(self.model.uIDX, self.model.tIDX)
+
+        self.model.uL = np.array([vehicle_config.a_min, vehicle_config.delta_min])
+        self.model.uU = np.array([vehicle_config.a_max, vehicle_config.delta_max])
+    
+        #Objective:
+        def objective_rule(model):
+            costX = 0.0
+            costU = 0.0
+            costTerminal = 0.0
+            for t in model.tIDX:
+                for i in model.xIDX:
+                    for j in model.xIDX:
+                        if t < model.N.value:
+                            costX += (model.x[i, t] - model.xref.value[i, t]) * model.Q[i, j] * (model.x[j, t] - model.xref.value[j, t]) 
+            for t in model.tIDX:
+                for i in model.uIDX:
+                    for j in model.uIDX:
+                        if t < model.N.value:
+                            costU += model.u[i, t] * model.R[i, j] * model.u[j, t]
+            for i in model.xIDX:
+                for j in model.xIDX:               
+                    costTerminal += (model.x[i, model.N.value] - model.xref.value[i, model.N.value]) * model.P[i, j] * (model.x[j, model.N.value] - model.xref.value[j, model.N.value])
+            return costX + costU + costTerminal
+        
+        self.model.cost = pyo.Objective(rule = objective_rule, sense = pyo.minimize)
+        
+        # Constraints:
+        self.model.init_const = pyo.Constraint(self.model.xIDX, rule=lambda model, i: self.model.x[i, 0] == self.model.x0.value[i])
+        
+        self.model.bike_const_x = pyo.Constraint(self.model.tIDX, rule=lambda model, t: self.model.x[0, t+1] == self.model.x[0, t] + self.timer_period * (self.model.x[2, t] * pyo.cos(self.model.x[3, t])) if t < self.model.N.value else pyo.Constraint.Skip)
+        self.model.bike_const_y = pyo.Constraint(self.model.tIDX, rule=lambda model, t: self.model.x[1, t+1] == self.model.x[1, t] + self.timer_period * (self.model.x[2, t] * pyo.sin(self.model.x[3, t])) if t < self.model.N.value else pyo.Constraint.Skip)
+        self.model.bike_const_v = pyo.Constraint(self.model.tIDX, rule=lambda model, t: self.model.x[2, t+1] == self.model.x[2, t] + self.timer_period * (self.model.u[0, t]) if t < self.model.N.value else pyo.Constraint.Skip)
+        self.model.bike_const_psi = pyo.Constraint(self.model.tIDX, rule=lambda model, t: self.model.x[3, t+1] == self.model.x[3, t] + self.timer_period * (self.model.x[2, t] * pyo.tan(self.model.u[1, t]) / vehicle_body.wb) if t < self.model.N.value else pyo.Constraint.Skip)
+
+        self.model.input_const_l = pyo.Constraint(self.model.uIDX, self.model.tIDX, rule=lambda model, i, t: self.model.u[i, t] <= self.model.uU[i] if t < self.model.N.value else pyo.Constraint.Skip)
+        self.model.input_const_u = pyo.Constraint(self.model.uIDX, self.model.tIDX, rule=lambda model, i, t: self.model.u[i, t] >= self.model.uL[i] if t < self.model.N.value else pyo.Constraint.Skip)
+
+    def solve_model(self, N, x0, xref):
+        self.model.N = N
+        self.model.x0 = x0
+        self.model.xref = np.vstack((x0, xref)).T
+
+        results = self.solver.solve(self.model)
+        
+        if str(results.solver.termination_condition) == "optimal":
+            feas = True
+        else:
+            feas = False
+                
+        xOpt = np.asarray([[self.model.x[i,t]() for i in self.model.xIDX] for t in self.model.tIDX]).T
+        uOpt = np.asarray([self.model.u[:,t]() for t in self.model.tIDX]).T
+        
+        JOpt = self.model.cost()
+        
+        return [self.model, feas, xOpt, uOpt, JOpt]
+
+    """
+
+    def solve_cftoc(self, P, Q, R, N, x0, uL, uU, xref, vehicle: RuleBasedStanleyVehicle):
+        model = pyo.ConcreteModel()
+        model.N = N
+        model.nx = 4 # x, y, v, psi
+        model.nu = 2 # acceleration, delta (steering)
+        
+        # length of finite optimization problem:
+        model.tIDX = pyo.Set( initialize= range(model.N+1), ordered=True )  
+        model.xIDX = pyo.Set( initialize= range(model.nx), ordered=True )
+        model.uIDX = pyo.Set( initialize= range(model.nu), ordered=True )
+        
+        # these are 2d arrays:
+        model.P = P
+        model.Q = Q
+        model.R = R
+        model.xref = np.vstack((x0, xref)).T
+        
+        # Create state and input variables trajectory:
+        model.x = pyo.Var(model.xIDX, model.tIDX)
+        model.u = pyo.Var(model.uIDX, model.tIDX)
+    
+        #Objective:
+        def objective_rule(model):
+            costX = 0.0
+            costU = 0.0
+            costTerminal = 0.0
+            for t in model.tIDX:
+                for i in model.xIDX:
+                    for j in model.xIDX:
+                        if t < model.N:
+                            costX += (model.x[i, t] - model.xref[i, t]) * model.Q[i, j] * (model.x[j, t] - model.xref[j, t]) 
+            for t in model.tIDX:
+                for i in model.uIDX:
+                    for j in model.uIDX:
+                        if t < model.N:
+                            costU += model.u[i, t] * model.R[i, j] * model.u[j, t]
+            for i in model.xIDX:
+                for j in model.xIDX:               
+                    costTerminal += (model.x[i, model.N] - model.xref[i, model.N]) * model.P[i, j] * (model.x[j, model.N] - model.xref[j, model.N])
+            return costX + costU + costTerminal
+        
+        model.cost = pyo.Objective(rule = objective_rule, sense = pyo.minimize)
+        
+        # Constraints:
+        model.init_const = pyo.Constraint(model.xIDX, rule=lambda model, i: model.x[i, 0] == x0[i])
+        
+        model.bike_const_x = pyo.Constraint(model.tIDX, rule=lambda model, t: model.x[0, t+1] == model.x[0, t] + self.timer_period * (model.x[2, t] * pyo.cos(model.x[3, t])) if t < N else pyo.Constraint.Skip)
+        model.bike_const_y = pyo.Constraint(model.tIDX, rule=lambda model, t: model.x[1, t+1] == model.x[1, t] + self.timer_period * (model.x[2, t] * pyo.sin(model.x[3, t])) if t < N else pyo.Constraint.Skip)
+        model.bike_const_v = pyo.Constraint(model.tIDX, rule=lambda model, t: model.x[2, t+1] == model.x[2, t] + self.timer_period * (model.u[0, t]) if t < N else pyo.Constraint.Skip)
+        model.bike_const_psi = pyo.Constraint(model.tIDX, rule=lambda model, t: model.x[3, t+1] == model.x[3, t] + self.timer_period * (model.x[2, t] * pyo.tan(model.u[1, t]) / vehicle.vehicle_body.wb) if t < N else pyo.Constraint.Skip)
+
+        model.input_const_l = pyo.Constraint(model.uIDX, model.tIDX, rule=lambda model, i, t: model.u[i, t] <= uU[i] if t < N else pyo.Constraint.Skip)
+        model.input_const_u = pyo.Constraint(model.uIDX, model.tIDX, rule=lambda model, i, t: model.u[i, t] >= uL[i] if t < N else pyo.Constraint.Skip)
+
+        solver = pyo.SolverFactory('ipopt')
+        results = solver.solve(model)
+        
+        if str(results.solver.termination_condition) == "optimal":
+            feas = True
+        else:
+            feas = False
+                
+        xOpt = np.asarray([[model.x[i,t]() for i in model.xIDX] for t in model.tIDX]).T
+        uOpt = np.asarray([model.u[:,t]() for t in model.tIDX]).T
+        
+        JOpt = model.cost()
+        
+        return [model, feas, xOpt, uOpt, JOpt]
+
 """
 Change these parameters to run tests using the neural network
 """
@@ -866,7 +1052,7 @@ class RuleBasedSimulatorParams():
         # don't use existing agents
         self.spawn_entering_fn = lambda: 1 
         self.spawn_exiting_fn = lambda: 0
-        self.spawn_interval_mean_fn = lambda: 5 # (s)
+        self.spawn_interval_mean_fn = lambda: 0 # (s)
 
         self.use_existing_obstacles = True # able to park in "occupied" spots from dataset? False if yes, True if no
 
@@ -939,7 +1125,7 @@ class RuleBasedSimulatorParams():
             # else:
             #     chosen_spot = min([spot for spot in empty_spots], key=lambda spot: self.vanilla_net(SpotFeatureGenerator.generate_features(self.add_vehicle(spot_index=spot, for_nn=True), active_vehicles, self.spawn_interval_mean, simulator.queue_length)))
         else:
-            return 54
+            return 190
             """
             r = 0
             if r < 0.4:
