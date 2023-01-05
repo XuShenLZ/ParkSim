@@ -41,6 +41,7 @@ import heapq
 
 from parksim.spot_detector.detector import LocalDetector
 from parksim.trajectory_predict.intent_transformer.model_utils import generate_square_subsequent_mask
+from parksim.utils.get_corners import get_vehicle_corners, get_vehicle_corners_from_dict
 
 from typing import Tuple
 from torch import Tensor
@@ -163,7 +164,7 @@ class RuleBasedSimulator(object):
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
 
         MODEL_PATH = r'checkpoints/TrajectoryPredictorWithDecoderIntentCrossAttention/lightning_logs/version_1/checkpoints/epoch=52-val_total_loss=0.0458.ckpt'
-        self.traj_model = TrajectoryPredictorWithDecoderIntentCrossAttention.load_from_checkpoint(MODEL_PATH)
+        self.traj_model = TrajectoryPredictorWithDecoderIntentCrossAttention.load_from_checkpoint(MODEL_PATH, torch.device("cpu"))
         self.traj_model.eval().to(self.device)
         self.mode='v1'
 
@@ -171,6 +172,11 @@ class RuleBasedSimulator(object):
         self.traj_extractor = TransformerDataProcessor(ds=dataset)
 
         self.spot_detector = LocalDetector(spot_color_rgb=(0, 255, 0))
+
+        self.loops_before_predict = 5
+        self.loops_between_predict = 5
+        self.intent = None
+        self.probability = None
 
         self.intent_circles = []
         self.traj_pred_circles = []
@@ -199,6 +205,16 @@ class RuleBasedSimulator(object):
 
         # figure out which parking spaces are occupied
         car_coords = [self.dlpvis.dataset.get('obstacle', o)['coords'] for o in scene['obstacles']] if self.use_existing_obstacles else []
+        self.car_corners = {}
+        for obstacle in [self.dlpvis.dataset.get('obstacle', o) for o in scene['obstacles']]:
+            coords = tuple(obstacle['coords'])
+            size = obstacle['size']
+            state_dict = {}
+            state_dict['center-x'] = coords[0]
+            state_dict['center-y'] = coords[1]
+            state_dict['heading'] = obstacle['heading']
+            state_dict['corners'] = np.array([[size[0] / 2, size[1] / 2], [-size[0] / 2, size[1] / 2], [-size[0] / 2, -size[1] / 2], [size[0] / 2, -size[1] / 2]])
+            self.car_corners[coords] = get_vehicle_corners_from_dict(state_dict)
         # 1D array of booleans — are the centers of any of the cars contained within this spot's boundaries?
         occupied = np.array([any([c[0] > arr[i][2] and c[0] < arr[i][4] and c[1] < arr[i][3] and c[1] > arr[i][9] for c in car_coords]) for i in range(len(arr))])
 
@@ -481,6 +497,8 @@ class RuleBasedSimulator(object):
         #     pickle.dump(dat, file)
         #     print("done")
         #     file.close()
+        with open("single_vehicle_data_spot190_stride4_history10_outputseqlen9.pickle", "rb") as f:
+            single_vehicle_data = pickle.load(f)
 
         if self.write_log:
             # write logs
@@ -572,7 +590,17 @@ class RuleBasedSimulator(object):
                     self.vehicle_features[vehicle_id] = self.feature_generator.generate_features(vehicle.spot_index, [active_vehicles[id] for id in active_vehicles], self.spawn_interval_mean, self.queue_length)
 
                 if self.sim_is_running:
-                    vehicle.solve(time=self.time)
+                    if self.loops <= self.loops_before_predict: 
+                        vehicle.solve(time=self.time)
+
+                    """
+                    # for demonstration
+                    vehicle.state.x.x = single_vehicle_data[self.loops]["coords"][0]
+                    vehicle.state.x.y = single_vehicle_data[self.loops]["coords"][1]
+                    vehicle.state.e.psi = single_vehicle_data[self.loops]["heading"]
+                    if self.loops > 0:
+                        vehicle.state.v.v = np.linalg.norm([single_vehicle_data[self.loops]["coords"][1] - single_vehicle_data[self.loops - 1]["coords"][1], single_vehicle_data[self.loops]["coords"][0] - single_vehicle_data[self.loops - 1]["coords"][0]]) / self.timer_period
+                    """
                 elif self.write_log and len(vehicle.logger) > 0:
                     # write logs
                     log_dir_path = str(Path.home()) + self.log_path
@@ -588,27 +616,38 @@ class RuleBasedSimulator(object):
                 # intent_pred_results.append(result)
                 # ===========
 
-                if self.loops > 4:
+                if self.loops > self.loops_before_predict:
 
-                    intents = vehicle.predict_intent(vehicle_id, self.history)
-                    graph = WaypointsGraph()
-                    graph.setup_with_vis(self.intent_extractor.vis)
-                    best_lanes = self.find_n_best_lanes(
-                        [vehicle.state.x.x, vehicle.state.x.y], vehicle.state.e.psi, graph=graph, vis=self.intent_extractor.vis, predictor=vehicle.intent_predictor)
+                    if self.loops % self.loops_between_predict == (self.loops_before_predict + 1) % self.loops_between_predict:
+                        intents = vehicle.predict_intent(vehicle_id, self.history)
+                        graph = WaypointsGraph()
+                        graph.setup_with_vis(self.intent_extractor.vis)
+                        best_lanes = self.find_n_best_lanes(
+                            [vehicle.state.x.x, vehicle.state.x.y], vehicle.state.e.psi, graph=graph, vis=self.intent_extractor.vis, predictor=vehicle.intent_predictor)
 
-                    distributions, coordinates = self.expand_distribution(intents, best_lanes)
+                        distributions, coordinates = self.expand_distribution(intents, best_lanes)
 
-                    top_n = list(zip(distributions, coordinates))
-                    top_n.sort(reverse=True)
-                    top_n = top_n[:3]
+                        top_n = list(zip(distributions, coordinates))
+                        top_n.sort(reverse=True)
+                        self.probability, self.intent = top_n[0]
 
                     output_sequence_length = 9
                     predicted_trajectories = []
+
+                    """
+                    cached_predicted_trajectories = single_vehicle_data[self.loops]["predicted_trajectories"]
+                    top_n = []
+                    for top_i in range(1):
+                        top_n.append((cached_predicted_trajectories[top_i][2], cached_predicted_trajectories[top_i][1]))
+                    """
+
                     nth = 0
                     self.intent_circles = []
                     self.traj_pred_circles = []
-                    for probability, global_intent_pose in top_n:
-                        img, X, intent = self.get_data_for_instance(vehicle, self.traj_extractor, global_intent_pose)
+                    #for probability, global_intent_pose in top_n:
+                    for _ in range(1):
+                        #img, X, intent = self.get_data_for_instance(vehicle, self.traj_extractor, global_intent_pose)
+                        img, X, intent = self.get_data_for_instance(vehicle, self.traj_extractor, self.intent)
 
                         with torch.no_grad():
                             if self.mode=='v2':
@@ -633,8 +672,13 @@ class RuleBasedSimulator(object):
                                 # Concatenate previous input with predicted best word
                                 y_input = torch.cat((y_input, next_item), dim=1)
                         
-                        predicted_trajectories.append(
-                            [y_input[:, 1:], intent, probability])
+                        #predicted_trajectories.append([y_input[:, 1:], intent, probability])
+                        predicted_trajectories.append([y_input[:, 1:], intent, self.probability])
+
+                        """
+                        predicted_trajectories = cached_predicted_trajectories[nth]
+                        intent = predicted_trajectories[1]
+                        """
                         
                         if nth == 0:
                             col = (255, 0, 0, 255)
@@ -650,39 +694,54 @@ class RuleBasedSimulator(object):
                         local_intent_coords = np.add([vehicle.state.x.x, vehicle.state.x.y], np.dot(inv_rot, predicted_intent))
 
                         self.intent_circles.append((local_intent_coords, col))
+                        self.intent_circles.append((self.intent, col))
 
                         preds = []
-                        for pt in predicted_trajectories[0][0]:
+                        for pt in predicted_trajectories[-1][0][0]:
                             local_pred_coords = np.add([vehicle.state.x.x, vehicle.state.x.y], np.dot(inv_rot, pt[0:2]))
                             preds.append(local_pred_coords)
                         self.traj_pred_circles.append((preds, col))
 
+                        # preds = []
+                        # for pt in predicted_trajectories[0][0]:
+                        #     local_pred_coords = np.add([vehicle.state.x.x, vehicle.state.x.y], np.dot(inv_rot, pt[0:2]))
+                        #     preds.append(local_pred_coords)
+                        # self.traj_pred_circles.append((preds, col))
+
                         preds = np.array(preds)
                         # spline
                         cxs, cys, cyaws, _, _ = calc_spline_course(preds[:, 0], preds[:, 1], ds=self.timer_period)
-                        xref = np.array(list(zip(cxs[:10], cys[:10], np.zeros(10), np.zeros(10))))
+                        xref = np.array(list(zip(cxs[5:15], cys[5:15], np.zeros(10), np.zeros(10))))
 
-                        # TODO: use params
-                        """
-                        _, feas, x2, u2, _ = self.solve_model(N=xref.shape[0], x0=np.array([vehicle.state.x.x, vehicle.state.x.y, vehicle.state.v.v, vehicle.state.e.psi]), xref=xref)
-                        """
+                        # # TODO: use params
+                        # """
+                        # _, feas, x2, u2, _ = self.solve_model(N=xref.shape[0], x0=np.array([vehicle.state.x.x, vehicle.state.x.y, vehicle.state.v.v, vehicle.state.e.psi]), xref=xref)
+                        # """
 
-                        # TODO: problem is that NN predicts too slow, so mpc wants to curve trajectory all the time (even when driving straight) so that we slow down
+                        # xref = []
+                        # for i in range(10):
+                        #     xref.append([vehicle.state.x.x + ((self.intent[0] - vehicle.state.x.x) * i / 10), vehicle.state.x.y + ((self.intent[1] - vehicle.state.x.y) * i / 10), 0, 0])
+                        # xref = np.array(xref)
+
+                        # TODO: if choose a parking spot, have to stick with it
                         # solve optimal control problem
                         _, feas, xOpt, uOpt, _ = self.solve_cftoc(P=np.diag([1, 1, 0, 0]), Q=np.diag([1, 1, 0, 0]), R=np.zeros((2, 2)), N=xref.shape[0], x0=np.array([vehicle.state.x.x, vehicle.state.x.y, vehicle.state.v.v, vehicle.state.e.psi]), uL=np.array([vehicle.vehicle_config.a_min, vehicle.vehicle_config.delta_min]), uU=np.array([vehicle.vehicle_config.a_max, vehicle.vehicle_config.delta_max]), xref=xref, vehicle=vehicle)
 
                         # get control (is control 0 problematic because the first xref is usually just continuing at the same speed in the same direction? not sure)
                         control = uOpt[:, 0]
+                        vehicle.state.t = self.time
+                        vehicle.state_hist.append(vehicle.state.copy())
+                        vehicle.controller.step(vehicle.state, control[0], control[1])
 
                         # display predictions from optimal control problem
                         mpc_preds = xOpt[[0, 1]].T
-                        # self.traj_pred_circles.append((mpc_preds, col))
+                        self.traj_pred_circles.append((mpc_preds, (0, 0, 255, 255)))
 
                         # display "steering wheel"
-                        control_mag = control[0] * 3
-                        control_dir = vehicle.state.e.psi + control[1]
-                        control_dot = [vehicle.state.x.x + (control_mag * np.cos(control_dir)), vehicle.state.x.y + (control_mag * np.sin(control_dir))]
-                        self.intent_circles.append((control_dot, col))
+                        # control_mag = control[0] * 3
+                        # control_dir = vehicle.state.e.psi + control[1]
+                        # control_dot = [vehicle.state.x.x + (control_mag * np.cos(control_dir)), vehicle.state.x.y + (control_mag * np.sin(control_dir))]
+                        # self.intent_circles.append((control_dot, col))
 
                         nth += 1
         
@@ -1016,6 +1075,17 @@ class RuleBasedSimulator(object):
 
         model.input_const_l = pyo.Constraint(model.uIDX, model.tIDX, rule=lambda model, i, t: model.u[i, t] <= uU[i] if t < N else pyo.Constraint.Skip)
         model.input_const_u = pyo.Constraint(model.uIDX, model.tIDX, rule=lambda model, i, t: model.u[i, t] >= uL[i] if t < N else pyo.Constraint.Skip)
+        """
+        # obstacle constraints
+        model.obstacleIDX = pyo.Set( initialize= range(len(self.car_corners.keys())), ordered=True )  
+        b1 = pyo.variable(model.obstacleIDX, domain=pyo.Binary)
+        b2 = pyo.variable(model.obstacleIDX, domain=pyo.Binary)
+        corners = get_vehicle_corners(vehicle.state, vehicle.vehicle_body)
+        # [top right, ]
+        model.obs_const_1 = 
+
+        TODO: make convex hull of vehicles in lane to make boundary, use dual problem formulation for constraints
+        """
 
         solver = pyo.SolverFactory('ipopt')
         results = solver.solve(model)
@@ -1031,6 +1101,10 @@ class RuleBasedSimulator(object):
         JOpt = model.cost()
         
         return [model, feas, xOpt, uOpt, JOpt]
+
+    # def rectangle_intersect(self, rect1, rect2):
+    #     rect1 = 
+    #     return not (self.top_right.x < other.bottom_left.x or self.bottom_left.x > other.top_right.x or self.top_right.y < other.bottom_left.y or self.bottom_left.y > other.top_right.y)
 
 """
 Change these parameters to run tests using the neural network
