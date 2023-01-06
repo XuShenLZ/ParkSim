@@ -220,6 +220,13 @@ class RuleBasedSimulator(object):
 
         return parking_spaces, occupied
 
+    def _coordinates_in_spot(self, coords):
+        """
+        Return if the coordinates are located within the boundaries of any spot
+        """
+        arr = self.dlpvis.parking_spaces.to_numpy()
+        return any([coords[0] > spot[2] and coords[0] < spot[4] and coords[1] < spot[3] and coords[1] > spot[9] for spot in arr])
+
     def _gen_agents(self):
         home_path = str(Path.home())
         with open(home_path + self.agents_data_path, 'rb') as f:
@@ -283,6 +290,9 @@ class RuleBasedSimulator(object):
                 state.x.x = self.entrance_coords[0] - vehicle_config.offset
                 state.x.y = self.entrance_coords[1]
                 state.e.psi = - np.pi/2
+                # state.x.x = 3
+                # state.x.y = 55
+                # state.e.psi = -np.pi/2
 
                 vehicle.set_vehicle_state(state=state)
                 
@@ -618,7 +628,7 @@ class RuleBasedSimulator(object):
 
                 if self.loops > self.loops_before_predict:
 
-                    if self.loops % self.loops_between_predict == (self.loops_before_predict + 1) % self.loops_between_predict:
+                    if self.loops % self.loops_between_predict == (self.loops_before_predict + 1) % self.loops_between_predict and (self.intent is None or not self._coordinates_in_spot(self.intent)):
                         intents = vehicle.predict_intent(vehicle_id, self.history)
                         graph = WaypointsGraph()
                         graph.setup_with_vis(self.intent_extractor.vis)
@@ -646,39 +656,11 @@ class RuleBasedSimulator(object):
                     self.traj_pred_circles = []
                     #for probability, global_intent_pose in top_n:
                     for _ in range(1):
-                        #img, X, intent = self.get_data_for_instance(vehicle, self.traj_extractor, global_intent_pose)
-                        img, X, intent = self.get_data_for_instance(vehicle, self.traj_extractor, self.intent)
 
-                        with torch.no_grad():
-                            if self.mode=='v2':
-                                img = img.to(self.device).float()[:, -1]
-                            else:
-                                img = img.to(self.device).float()
-                            X = X.to(self.device).float()
-                            intent = intent.to(self.device).float()
-
-                            START_TOKEN = X[:, -1][:, None, :]
-
-                            delta_state = -1 * X[:, -2][:, None, :]
-                            y_input = torch.cat([START_TOKEN, delta_state], dim=1).to(self.device)
-
-                            for i in range(output_sequence_length):
-                                # Get source mask
-                                tgt_mask = generate_square_subsequent_mask(
-                                    y_input.size(1)).to(self.device).float()
-                                pred = self.traj_model(img, X,
-                                                intent, y_input, tgt_mask)
-                                next_item = pred[:, -1][:, None, :]
-                                # Concatenate previous input with predicted best word
-                                y_input = torch.cat((y_input, next_item), dim=1)
-                        
-                        #predicted_trajectories.append([y_input[:, 1:], intent, probability])
-                        predicted_trajectories.append([y_input[:, 1:], intent, self.probability])
-
-                        """
-                        predicted_trajectories = cached_predicted_trajectories[nth]
-                        intent = predicted_trajectories[1]
-                        """
+                        # """
+                        # predicted_trajectories = cached_predicted_trajectories[nth]
+                        # intent = predicted_trajectories[1]
+                        # """
                         
                         if nth == 0:
                             col = (255, 0, 0, 255)
@@ -687,43 +669,18 @@ class RuleBasedSimulator(object):
                         else:
                             col = (9, 121, 105, 255)
 
-                        head = vehicle.state.e.psi
-                        inv_rot = np.array([[np.cos(head), -np.sin(head)], [np.sin(head), np.cos(head)]])
-
-                        predicted_intent = intent[0][0]
-                        local_intent_coords = np.add([vehicle.state.x.x, vehicle.state.x.y], np.dot(inv_rot, predicted_intent))
-
-                        self.intent_circles.append((local_intent_coords, col))
                         self.intent_circles.append((self.intent, col))
-
-                        preds = []
-                        for pt in predicted_trajectories[-1][0][0]:
-                            local_pred_coords = np.add([vehicle.state.x.x, vehicle.state.x.y], np.dot(inv_rot, pt[0:2]))
-                            preds.append(local_pred_coords)
-                        self.traj_pred_circles.append((preds, col))
-
-                        # preds = []
-                        # for pt in predicted_trajectories[0][0]:
-                        #     local_pred_coords = np.add([vehicle.state.x.x, vehicle.state.x.y], np.dot(inv_rot, pt[0:2]))
-                        #     preds.append(local_pred_coords)
-                        # self.traj_pred_circles.append((preds, col))
-
-                        preds = np.array(preds)
-                        # spline
-                        cxs, cys, cyaws, _, _ = calc_spline_course(preds[:, 0], preds[:, 1], ds=self.timer_period)
-                        xref = np.array(list(zip(cxs[5:15], cys[5:15], np.zeros(10), np.zeros(10))))
 
                         # # TODO: use params
                         # """
                         # _, feas, x2, u2, _ = self.solve_model(N=xref.shape[0], x0=np.array([vehicle.state.x.x, vehicle.state.x.y, vehicle.state.v.v, vehicle.state.e.psi]), xref=xref)
                         # """
 
-                        # xref = []
-                        # for i in range(10):
-                        #     xref.append([vehicle.state.x.x + ((self.intent[0] - vehicle.state.x.x) * i / 10), vehicle.state.x.y + ((self.intent[1] - vehicle.state.x.y) * i / 10), 0, 0])
-                        # xref = np.array(xref)
+                        xref = []
+                        for i in range(10):
+                            xref.append([vehicle.state.x.x + ((self.intent[0] - vehicle.state.x.x) * i / 10), vehicle.state.x.y + ((self.intent[1] - vehicle.state.x.y) * i / 10), 0, 0])
+                        xref = np.array(xref)
 
-                        # TODO: if choose a parking spot, have to stick with it
                         # solve optimal control problem
                         _, feas, xOpt, uOpt, _ = self.solve_cftoc(P=np.diag([1, 1, 0, 0]), Q=np.diag([1, 1, 0, 0]), R=np.zeros((2, 2)), N=xref.shape[0], x0=np.array([vehicle.state.x.x, vehicle.state.x.y, vehicle.state.v.v, vehicle.state.e.psi]), uL=np.array([vehicle.vehicle_config.a_min, vehicle.vehicle_config.delta_min]), uU=np.array([vehicle.vehicle_config.a_max, vehicle.vehicle_config.delta_max]), xref=xref, vehicle=vehicle)
 
@@ -736,12 +693,6 @@ class RuleBasedSimulator(object):
                         # display predictions from optimal control problem
                         mpc_preds = xOpt[[0, 1]].T
                         self.traj_pred_circles.append((mpc_preds, (0, 0, 255, 255)))
-
-                        # display "steering wheel"
-                        # control_mag = control[0] * 3
-                        # control_dir = vehicle.state.e.psi + control[1]
-                        # control_dot = [vehicle.state.x.x + (control_mag * np.cos(control_dir)), vehicle.state.x.y + (control_mag * np.sin(control_dir))]
-                        # self.intent_circles.append((control_dot, col))
 
                         nth += 1
         
@@ -1075,17 +1026,65 @@ class RuleBasedSimulator(object):
 
         model.input_const_l = pyo.Constraint(model.uIDX, model.tIDX, rule=lambda model, i, t: model.u[i, t] <= uU[i] if t < N else pyo.Constraint.Skip)
         model.input_const_u = pyo.Constraint(model.uIDX, model.tIDX, rule=lambda model, i, t: model.u[i, t] >= uL[i] if t < N else pyo.Constraint.Skip)
+        
         """
-        # obstacle constraints
-        model.obstacleIDX = pyo.Set( initialize= range(len(self.car_corners.keys())), ordered=True )  
-        b1 = pyo.variable(model.obstacleIDX, domain=pyo.Binary)
-        b2 = pyo.variable(model.obstacleIDX, domain=pyo.Binary)
-        corners = get_vehicle_corners(vehicle.state, vehicle.vehicle_body)
-        # [top right, ]
-        model.obs_const_1 = 
-
         TODO: make convex hull of vehicles in lane to make boundary, use dual problem formulation for constraints
         """
+        # [front left, back left, back right, front right]
+        G = vehicle.vehicle_body.A
+        g = vehicle.vehicle_body.b
+
+        other_As = []
+        other_bs = []
+
+        nearby_radius = 5 
+        for _, v in self.car_corners.items():
+            if any([np.linalg.norm([vehicle.state.x.x - v[i][0], vehicle.state.x.y - v[i][1]]) < nearby_radius for i in range(4)]):
+                A, b = self.rectangle_to_polytope(v)
+                other_As.append(A)
+                other_bs.append(b)
+
+        # other_As = []
+        # other_As.append([[1, 0], [-1, 0], [0, 1], [0, -1]])
+        # other_bs.append([138.42, -28.53, 73.73, -68.51])
+        # other_As.append([[1, 0], [-1, 0], [0, 1], [0, -1]])
+        # other_bs.append([76.54, -7.71, 61.4, -50.4])
+        
+        other_As = np.array(other_As)
+        other_bs = np.array(other_bs)
+
+        if other_As.shape[0] > 0:
+
+            model.num_others = other_As.shape[0]
+            model.lam_dim, model.s_dim = other_As[0].shape # since each polytope is represented by 4 constraints, 2 variables
+
+            model.othervIDX = pyo.Set( initialize= range(model.num_others), ordered=True )
+            model.lamIDX = pyo.Set( initialize= range(model.lam_dim), ordered=True )
+            model.sIDX = pyo.Set( initialize= range(model.s_dim), ordered=True )
+
+            model.lam = pyo.Var(model.othervIDX, model.lamIDX, model.tIDX)
+            model.rev_lam = pyo.Var(model.othervIDX, model.lamIDX, model.tIDX)
+            model.s = pyo.Var(model.othervIDX, model.sIDX, model.tIDX)
+
+            model.collision_b_const = pyo.Constraint(model.othervIDX, model.tIDX, rule=lambda model, j, t: \
+                -sum( \
+                    (G[l, 0] * (model.x[0, t] * pyo.cos(model.x[2, t]) + model.x[1, t] * pyo.sin(model.x[2, t])) + \
+                        G[l, 1] * (-model.x[0, t] * pyo.sin(model.x[2, t]) + model.x[1, t] * pyo.cos(model.x[2, t])) + \
+                            g[l] ) \
+                             * model.lam[j, l, t] for l in model.lamIDX) \
+                                 - sum(other_bs[j, l] * model.rev_lam[j, l, t] for l in model.lamIDX) >= 0.1)
+            model.collision_Ai1_const = pyo.Constraint(model.othervIDX, model.tIDX, rule=lambda model, j, t: \
+                sum( \
+                    (pyo.cos(model.x[2, t]) * G[l, 0] - pyo.sin(model.x[2, t]) * G[l, 1]) \
+                        * model.lam[j, l, t] for l in model.lamIDX) + model.s[j, 0, t] == 0)
+            model.collision_Ai2_const = pyo.Constraint(model.othervIDX, model.tIDX, rule=lambda model, j, t: \
+                sum( \
+                    (pyo.sin(model.x[2, t]) * G[l, 0] + pyo.cos(model.x[2, t]) * G[l, 1]) \
+                        * model.lam[j, l, t] for l in model.lamIDX) + model.s[j, 1, t] == 0)
+            model.collision_Aj_const = pyo.Constraint(model.sIDX, model.othervIDX, model.tIDX, rule=lambda model, s, j, t: sum(other_As[j, l, s] * model.rev_lam[j, l, t] for l in model.lamIDX) - model.s[j, s, t] == 0)
+            model.collision_lam1_const = pyo.Constraint(model.othervIDX, model.lamIDX, model.tIDX, rule=lambda model, j, l, t: model.lam[j, l, t] >= 0)
+            model.collision_lam2_const = pyo.Constraint(model.othervIDX, model.lamIDX, model.tIDX, rule=lambda model, j, l, t: model.rev_lam[j, l, t] >= 0)
+            model.collision_s_const = pyo.Constraint(model.othervIDX, model.tIDX, rule=lambda model, j, t: sum(model.s[j, s, t] ** 2 for s in model.sIDX) <= 1)
 
         solver = pyo.SolverFactory('ipopt')
         results = solver.solve(model)
@@ -1102,9 +1101,39 @@ class RuleBasedSimulator(object):
         
         return [model, feas, xOpt, uOpt, JOpt]
 
-    # def rectangle_intersect(self, rect1, rect2):
-    #     rect1 = 
-    #     return not (self.top_right.x < other.bottom_left.x or self.bottom_left.x > other.top_right.x or self.top_right.y < other.bottom_left.y or self.bottom_left.y > other.top_right.y)
+    def rectangle_to_polytope(self, corners):
+        A = []
+        b = []
+        if corners[0][0] == corners[1][0]: # facing up/down
+            if corners[0][1] < corners[1][1]: # facing down
+                A = [[1, 0], [-1, 0], [0, 1], [0, -1]]
+                b = [corners[0][0], -corners[2][0], corners[1][1], -corners[3][1]]
+            else: # facing up
+                A = [[1, 0], [-1, 0], [0, 1], [0, -1]]
+                b = [corners[3][0], -corners[0][0], corners[0][1], -corners[1][1]]
+        elif corners[0][1] == corners[1][1]: # facing left/right
+            if corners[0][0] < corners[1][0]: # facing left
+                A = [[1, 0], [-1, 0], [0, 1], [0, -1]]
+                b = [corners[1][0], -corners[0][0], corners[2][1], -corners[0][1]]
+            else: # facing right
+                A = [[1, 0], [-1, 0], [0, 1], [0, -1]]
+                b = [corners[0][0], -corners[1][0], corners[0][1], -corners[2][1]]
+        else: # rotated
+            coefs = [np.polynomial.polynomial.Polynomial.fit([corners[i][0], corners[(i + 1) % 4][0]], [corners[i][1], corners[(i + 1) % 4][1]], 1).convert().coef for i in range(4)]
+            if corners[0][0] < corners[1][0]: # left edge on bottom
+                A.extend([[coefs[0][1], -1], [-coefs[2][1], 1]])
+                b.extend([-coefs[0][0], coefs[2][0]])
+            else:
+                A.extend([[-coefs[0][1], 1], [coefs[2][1], -1]])
+                b.extend([coefs[0][0], -coefs[2][0]])
+            if corners[1][0] < corners[2][0]: # bottom edge on bottom
+                A.extend([[coefs[1][1], -1], [-coefs[3][1], 1]])
+                b.extend([-coefs[1][0], coefs[3][0]])
+            else:
+                A.extend([[-coefs[1][1], 1], [coefs[3][1], -1]])
+                b.extend([coefs[1][0], -coefs[3][0]])
+
+        return np.array(A), np.array(b)
 
 """
 Change these parameters to run tests using the neural network
