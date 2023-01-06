@@ -6,6 +6,7 @@ import pickle
 import time
 import array
 from collections import deque
+import torch
 
 from parksim.path_planner.offline_maneuver import OfflineManeuver
 
@@ -15,14 +16,35 @@ from parksim.controller.stanley_controller import StanleyController
 from parksim.pytypes import VehiclePrediction, VehicleState
 from parksim.route_planner.a_star import AStarGraph, AStarPlanner
 from parksim.route_planner.graph import Vertex, WaypointsGraph
-from parksim.utils.get_corners import get_vehicle_corners
+from parksim.utils.get_corners import get_vehicle_corners, get_vehicle_corners_from_dict, rectangle_to_polytope
 from parksim.utils.interpolation import interpolate_states_inputs
 from parksim.vehicle_types import VehicleBody, VehicleConfig, VehicleInfo, VehicleTask
 from parksim.intent_predict.cnn.predictor import Predictor, PredictionResponse
 from parksim.intent_predict.cnn.visualizer.instance_centric_generator import InstanceCentricGenerator
 
+from parksim.intent_predict.cnn.data_processing.utils import CNNDataProcessor
+from parksim.trajectory_predict.data_processing.utils import TransformerDataProcessor
+
+from parksim.intent_predict.cnn.models.small_regularized_cnn import SmallRegularizedCNN
+from parksim.trajectory_predict.intent_transformer.models.trajectory_predictor_vision_transformer import TrajectoryPredictorVisionTransformer
+from parksim.trajectory_predict.intent_transformer.models.trajectory_predictor_with_decoder_intent_cross_attention import TrajectoryPredictorWithDecoderIntentCrossAttention
+
+from dlp.visualizer import SemanticVisualizer
+from parksim.intent_predict.cnn.predictor import PredictionResponse, Predictor
+import heapq
+
+from parksim.spot_detector.detector import LocalDetector
+from parksim.trajectory_predict.intent_transformer.model_utils import generate_square_subsequent_mask
+
+from typing import Tuple
+from torch import Tensor
+from torchvision import transforms
+
+from parksim.utils.spline import calc_spline_course
+import pyomo.environ as pyo
+
 class RuleBasedStanleyVehicle(AbstractAgent):
-    def __init__(self, vehicle_id: int, vehicle_body: VehicleBody, vehicle_config: VehicleConfig, controller: StanleyController = StanleyController(), motion_predictor: StanleyController = StanleyController(), inst_centric_generator = InstanceCentricGenerator(), intent_predictor = Predictor(), electric_vehicle=False):
+    def __init__(self, vehicle_id: int, vehicle_body: VehicleBody, vehicle_config: VehicleConfig, controller: StanleyController = StanleyController(), motion_predictor: StanleyController = StanleyController(), inst_centric_generator = InstanceCentricGenerator(), intent_predictor = Predictor(), traj_model = None, intent_extractor: CNNDataProcessor = None, traj_extractor: TransformerDataProcessor = None, spot_detector: LocalDetector = None, electric_vehicle: bool = False):
         self.vehicle_id = vehicle_id
 
         # State and Reference Waypoints
@@ -98,6 +120,18 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         self.charging_spots = [39, 40, 41] # TODO: put this in a yaml
         self.ev = electric_vehicle
         self.ev_charging_state = None # none = not ev, 0 = waiting to charge, 1 = charging, 2 = done charging TODO: make enum
+
+        # intent predict
+        self.intent = None
+
+        self.traj_model = traj_model
+        self.mode='v1'
+
+        self.intent_extractor = intent_extractor 
+        self.traj_extractor = traj_extractor
+
+        self.spot_detector = spot_detector
+        self.solver = pyo.SolverFactory('ipopt')
 
         self.logger = deque(maxlen=100)
 
@@ -886,3 +920,297 @@ class RuleBasedStanleyVehicle(AbstractAgent):
     def get_other_vehicles(self):
         other_states = {i : self.other_state[i] for i in self.other_state}
         return other_states
+
+    ##### INTENT PREDICTION #####
+
+    def predict_best_intent(self, history):
+        intents = self.predict_intent(self.vehicle_id, history)
+        graph = WaypointsGraph()
+        graph.setup_with_vis(self.intent_extractor.vis)
+        best_lanes = self.find_n_best_lanes(
+            [self.state.x.x, self.state.x.y], self.state.e.psi, graph=graph, vis=self.intent_extractor.vis, predictor=self.intent_predictor)
+
+        distributions, coordinates = self.expand_distribution(intents, best_lanes)
+
+        top_n = list(zip(distributions, coordinates))
+        top_n.sort(reverse=True)
+        _, self.intent = top_n[0]
+        return top_n[0]
+
+    def solve_intent_control(self, time, timer_period, obstacle_corners: Dict[Tuple, np.ndarray]):
+        xref = []
+        for i in range(10):
+            xref.append([self.state.x.x + ((self.intent[0] - self.state.x.x) * i / 10), self.state.x.y + ((self.intent[1] - self.state.x.y) * i / 10), 0, 0])
+        xref = np.array(xref)
+
+        # solve optimal control problem
+        _, feas, xOpt, uOpt, _ = self.solve_cftoc(P=np.diag([1, 1, 0, 0]), Q=np.diag([1, 1, 0, 0]), R=np.zeros((2, 2)), N=xref.shape[0], x0=np.array([self.state.x.x, self.state.x.y, self.state.v.v, self.state.e.psi]), uL=np.array([self.vehicle_config.a_min, self.vehicle_config.delta_min]), uU=np.array([self.vehicle_config.a_max, self.vehicle_config.delta_max]), xref=xref, obstacle_corners=obstacle_corners, timer_period=timer_period)
+
+        # get control (is control 0 problematic because the first xref is usually just continuing at the same speed in the same direction? not sure)
+        control = uOpt[:, 0]
+        self.state.t = time
+        self.state_hist.append(self.state.copy())
+        self.controller.step(self.state, control[0], control[1])
+
+        # display predictions from optimal control problem
+        mpc_preds = xOpt[[0, 1]].T
+
+        return control, feas, mpc_preds
+
+    def solve_cftoc(self, P, Q, R, N, x0, uL, uU, xref, obstacle_corners: Dict[Tuple, np.ndarray], timer_period):
+        model = pyo.ConcreteModel()
+        model.N = N
+        model.nx = 4 # x, y, v, psi
+        model.nu = 2 # acceleration, delta (steering)
+        
+        # length of finite optimization problem:
+        model.tIDX = pyo.Set( initialize= range(model.N+1), ordered=True )  
+        model.xIDX = pyo.Set( initialize= range(model.nx), ordered=True )
+        model.uIDX = pyo.Set( initialize= range(model.nu), ordered=True )
+        
+        # these are 2d arrays:
+        model.P = P
+        model.Q = Q
+        model.R = R
+        model.xref = np.vstack((x0, xref)).T
+        
+        # Create state and input variables trajectory:
+        model.x = pyo.Var(model.xIDX, model.tIDX)
+        model.u = pyo.Var(model.uIDX, model.tIDX)
+    
+        #Objective:
+        def objective_rule(model):
+            costX = 0.0
+            costU = 0.0
+            costTerminal = 0.0
+            for t in model.tIDX:
+                for i in model.xIDX:
+                    for j in model.xIDX:
+                        if t < model.N:
+                            costX += (model.x[i, t] - model.xref[i, t]) * model.Q[i, j] * (model.x[j, t] - model.xref[j, t]) 
+            for t in model.tIDX:
+                for i in model.uIDX:
+                    for j in model.uIDX:
+                        if t < model.N:
+                            costU += model.u[i, t] * model.R[i, j] * model.u[j, t]
+            for i in model.xIDX:
+                for j in model.xIDX:               
+                    costTerminal += (model.x[i, model.N] - model.xref[i, model.N]) * model.P[i, j] * (model.x[j, model.N] - model.xref[j, model.N])
+            return costX + costU + costTerminal
+        
+        model.cost = pyo.Objective(rule = objective_rule, sense = pyo.minimize)
+        
+        # Constraints:
+        model.init_const = pyo.Constraint(model.xIDX, rule=lambda model, i: model.x[i, 0] == x0[i])
+        
+        model.bike_const_x = pyo.Constraint(model.tIDX, rule=lambda model, t: model.x[0, t+1] == model.x[0, t] + timer_period * (model.x[2, t] * pyo.cos(model.x[3, t])) if t < N else pyo.Constraint.Skip)
+        model.bike_const_y = pyo.Constraint(model.tIDX, rule=lambda model, t: model.x[1, t+1] == model.x[1, t] + timer_period * (model.x[2, t] * pyo.sin(model.x[3, t])) if t < N else pyo.Constraint.Skip)
+        model.bike_const_v = pyo.Constraint(model.tIDX, rule=lambda model, t: model.x[2, t+1] == model.x[2, t] + timer_period * (model.u[0, t]) if t < N else pyo.Constraint.Skip)
+        model.bike_const_psi = pyo.Constraint(model.tIDX, rule=lambda model, t: model.x[3, t+1] == model.x[3, t] + timer_period * (model.x[2, t] * pyo.tan(model.u[1, t]) / self.vehicle_body.wb) if t < N else pyo.Constraint.Skip)
+
+        model.input_const_l = pyo.Constraint(model.uIDX, model.tIDX, rule=lambda model, i, t: model.u[i, t] <= uU[i] if t < N else pyo.Constraint.Skip)
+        model.input_const_u = pyo.Constraint(model.uIDX, model.tIDX, rule=lambda model, i, t: model.u[i, t] >= uL[i] if t < N else pyo.Constraint.Skip)
+        
+        G = self.vehicle_body.A
+        g = self.vehicle_body.b
+
+        other_As = []
+        other_bs = []
+
+        nearby_radius = 5 
+        for _, v in obstacle_corners.items():
+            if any([np.linalg.norm([self.state.x.x - v[i][0], self.state.x.y - v[i][1]]) < nearby_radius for i in range(4)]):
+                A, b = rectangle_to_polytope(v)
+                other_As.append(A)
+                other_bs.append(b)
+
+        other_As = np.array(other_As)
+        other_bs = np.array(other_bs)
+
+        if other_As.shape[0] > 0:
+
+            model.num_others = other_As.shape[0]
+            model.lam_dim, model.s_dim = other_As[0].shape # since each polytope is represented by 4 constraints, 2 variables
+
+            model.othervIDX = pyo.Set( initialize= range(model.num_others), ordered=True )
+            model.lamIDX = pyo.Set( initialize= range(model.lam_dim), ordered=True )
+            model.sIDX = pyo.Set( initialize= range(model.s_dim), ordered=True )
+
+            model.lam = pyo.Var(model.othervIDX, model.lamIDX, model.tIDX)
+            model.rev_lam = pyo.Var(model.othervIDX, model.lamIDX, model.tIDX)
+            model.s = pyo.Var(model.othervIDX, model.sIDX, model.tIDX)
+
+            model.collision_b_const = pyo.Constraint(model.othervIDX, model.tIDX, rule=lambda model, j, t: \
+                -sum( \
+                    (G[l, 0] * (model.x[0, t] * pyo.cos(model.x[2, t]) + model.x[1, t] * pyo.sin(model.x[2, t])) + \
+                        G[l, 1] * (-model.x[0, t] * pyo.sin(model.x[2, t]) + model.x[1, t] * pyo.cos(model.x[2, t])) + \
+                            g[l] ) \
+                             * model.lam[j, l, t] for l in model.lamIDX) \
+                                 - sum(other_bs[j, l] * model.rev_lam[j, l, t] for l in model.lamIDX) >= 0.1)
+            model.collision_Ai1_const = pyo.Constraint(model.othervIDX, model.tIDX, rule=lambda model, j, t: \
+                sum( \
+                    (pyo.cos(model.x[2, t]) * G[l, 0] - pyo.sin(model.x[2, t]) * G[l, 1]) \
+                        * model.lam[j, l, t] for l in model.lamIDX) + model.s[j, 0, t] == 0)
+            model.collision_Ai2_const = pyo.Constraint(model.othervIDX, model.tIDX, rule=lambda model, j, t: \
+                sum( \
+                    (pyo.sin(model.x[2, t]) * G[l, 0] + pyo.cos(model.x[2, t]) * G[l, 1]) \
+                        * model.lam[j, l, t] for l in model.lamIDX) + model.s[j, 1, t] == 0)
+            model.collision_Aj_const = pyo.Constraint(model.sIDX, model.othervIDX, model.tIDX, rule=lambda model, s, j, t: sum(other_As[j, l, s] * model.rev_lam[j, l, t] for l in model.lamIDX) - model.s[j, s, t] == 0)
+            model.collision_lam1_const = pyo.Constraint(model.othervIDX, model.lamIDX, model.tIDX, rule=lambda model, j, l, t: model.lam[j, l, t] >= 0)
+            model.collision_lam2_const = pyo.Constraint(model.othervIDX, model.lamIDX, model.tIDX, rule=lambda model, j, l, t: model.rev_lam[j, l, t] >= 0)
+            model.collision_s_const = pyo.Constraint(model.othervIDX, model.tIDX, rule=lambda model, j, t: sum(model.s[j, s, t] ** 2 for s in model.sIDX) <= 1)
+
+        results = self.solver.solve(model)
+        
+        if str(results.solver.termination_condition) == "optimal":
+            feas = True
+        else:
+            feas = False
+                
+        xOpt = np.asarray([[model.x[i,t]() for i in model.xIDX] for t in model.tIDX]).T
+        uOpt = np.asarray([model.u[:,t]() for t in model.tIDX]).T
+        
+        JOpt = model.cost()
+        
+        return [model, feas, xOpt, uOpt, JOpt]
+
+    
+    def find_n_best_lanes(self, start_coords, global_heading, graph: WaypointsGraph, vis: SemanticVisualizer, predictor: Predictor, n = 3):
+        current_state = np.array(start_coords + [global_heading])
+        idx = graph.search(current_state)
+
+        all_lanes = set()
+        visited = set()
+
+        fringe: List[Vertex] = [graph.vertices[idx]]
+        while len(fringe) > 0:
+            v = fringe.pop()
+            visited.add(v)
+
+            children, _ = v.get_children()
+            if not vis._is_visible(current_state=current_state, target_state=v.coords):
+                for child in children:
+                    if vis._is_visible(current_state=current_state, target_state=child.coords):
+                        all_lanes.add(child)
+                continue
+
+            for child in children:
+                if child not in visited:
+                    fringe.append(child)
+
+        lanes = []
+        for lane in all_lanes:
+            astar_dist, astar_dir = predictor.compute_Astar_dist_dir(
+                current_state, lane.coords, global_heading)
+            heapq.heappush(lanes, (-astar_dir, astar_dist, lane.coords))
+
+        return lanes
+
+    def expand_distribution(self, intents: PredictionResponse, lanes: List, n=3):
+        p_minus = intents.distribution[-1]
+        n = min(n, len(lanes))
+
+        coordinates = intents.all_spot_centers
+        distributions = list(intents.distribution)
+        distributions.pop()
+
+        scales = np.linspace(0.9, 0.1, n)
+        scales /= sum(scales)
+        for i in range(n):
+            _, _, coords = heapq.heappop(lanes)
+            coordinates.append(coords)
+            distributions.append(p_minus * scales[i])
+
+        return distributions, coordinates
+
+    # stride was 10 on dlp example (with 25 FPS, so sampling every 0.4 seconds)
+    def get_data_for_instance(self, extractor: TransformerDataProcessor, global_intent_pose: np.array, history: np.ndarray, stride: int=4, time_history: int=10, future: int=10, img_size: int=100) -> Tuple[np.array, np.array, np.array]:
+        """
+        returns image, trajectory_history, and trajectory future for given instance
+        """
+        img_transform=transforms.ToTensor()
+        image_feature = self.inst_centric_generator.inst_centric(self.vehicle_id, history)
+
+        image_feature = self.label_target_spot(self, image_feature)
+
+        curr_pose = np.array([self.state.x.x,
+                            self.state.x.y, self.state.e.psi])
+        rot = np.array([[np.cos(-curr_pose[2]), -np.sin(-curr_pose[2])], [np.sin(-curr_pose[2]), np.cos(-curr_pose[2])]])
+        
+        local_intent_coords = np.dot(rot, global_intent_pose[:2]-curr_pose[:2])
+        local_intent_pose = np.expand_dims(local_intent_coords, axis=0)
+
+        # determine start index to gather history from
+        start_idx = -1
+        while start_idx - stride > -stride * time_history and start_idx - stride >= -len(self.state_hist):
+            start_idx -= stride
+
+        image_history = []
+        trajectory_history = []
+        for i in range(start_idx, 0, stride):
+            state = self.state_hist[i]
+            pos = np.array([state.x.x, state.x.y])
+            translated_pos = np.dot(rot, pos-curr_pose[:2])
+            trajectory_history.append(Tensor(
+                [translated_pos[0], translated_pos[1], state.e.psi - curr_pose[2]]))
+
+            image_feature = self.inst_centric_generator.inst_centric(self.vehicle_id, history)
+            image_feature = self.label_target_spot(self, image_feature, curr_pose)
+            
+            image_tensor = img_transform(image_feature.resize((img_size, img_size)))
+            image_history.append(image_tensor)
+        
+        return torch.stack(image_history)[None], torch.stack(trajectory_history)[None], torch.from_numpy(local_intent_pose)[None]
+
+    def label_target_spot(self, inst_centric_view: np.array, center_pose: np.ndarray=None, r=1.25) -> np.array:
+        """
+        Returns image frame with target spot labeled
+        center_pose: If None, the inst_centric_view is assumed to be around the current instance. If a numpy array (x, y, heading) is given, it is the specified center.
+        """
+        all_spots = self.spot_detector.detect(inst_centric_view)
+
+        if center_pose is None:
+            current_state = np.array([self.state.x.x, self.state.x.y, self.state.e.psi])
+        else:
+            current_state = center_pose
+
+        for spot in all_spots:
+            spot_center_pixel = np.array(spot[0])
+            spot_center = self.local_pixel_to_global_ground(current_state, spot_center_pixel)
+            # dist = np.linalg.norm(traj[:, 0:2] - spot_center, axis=1)
+            dist = np.linalg.norm(current_state[0:2] - spot_center)
+            # if np.amin(dist) < r:
+            if dist < r:
+                inst_centric_view_copy = inst_centric_view.copy()
+                corners = self._get_corners(spot)
+                img_draw = PIL.ImageDraw.Draw(inst_centric_view_copy)  
+                img_draw.polygon(corners, fill ="purple", outline ="purple")
+                return inst_centric_view_copy
+        
+        return inst_centric_view
+
+
+    def local_pixel_to_global_ground(self, current_state: np.ndarray, target_coords: np.ndarray) -> np.ndarray:
+        """
+        transform the target coordinate from pixel coordinate in the local inst-centric crop to global ground coordinates
+        Note: Accuracy depends on the resolution (self.res)
+        `current_state`: numpy array (x, y, theta, ...) in global coordinates
+        `target_coords`: numpy array (x, y) in int pixel coordinates
+        """
+        sensing_limit = 20
+        res = 0.1
+
+        scaled_local = target_coords * res
+        translation = sensing_limit * np.ones(2)
+
+        translated_local = scaled_local - translation
+
+        current_theta = current_state[2]
+        R = np.array([[np.cos(current_theta), -np.sin(current_theta)], 
+                      [np.sin(current_theta),  np.cos(current_theta)]])
+
+        rotated_local = R @ translated_local
+
+        translated_global = rotated_local + current_state[:2]
+
+        return translated_global

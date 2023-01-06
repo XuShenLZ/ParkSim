@@ -1,5 +1,4 @@
 from typing import Dict, List
-import PIL
 
 from dlp.dataset import Dataset
 from dlp.visualizer import Visualizer as DlpVisualizer
@@ -41,7 +40,7 @@ import heapq
 
 from parksim.spot_detector.detector import LocalDetector
 from parksim.trajectory_predict.intent_transformer.model_utils import generate_square_subsequent_mask
-from parksim.utils.get_corners import get_vehicle_corners, get_vehicle_corners_from_dict
+from parksim.utils.get_corners import get_vehicle_corners, get_vehicle_corners_from_dict, rectangle_to_polytope
 
 from typing import Tuple
 from torch import Tensor
@@ -162,27 +161,18 @@ class RuleBasedSimulator(object):
         self.history = []
 
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
-
         MODEL_PATH = r'checkpoints/TrajectoryPredictorWithDecoderIntentCrossAttention/lightning_logs/version_1/checkpoints/epoch=52-val_total_loss=0.0458.ckpt'
         self.traj_model = TrajectoryPredictorWithDecoderIntentCrossAttention.load_from_checkpoint(MODEL_PATH, torch.device("cpu"))
         self.traj_model.eval().to(self.device)
-        self.mode='v1'
 
         self.intent_extractor = CNNDataProcessor(ds=dataset)
         self.traj_extractor = TransformerDataProcessor(ds=dataset)
 
-        self.spot_detector = LocalDetector(spot_color_rgb=(0, 255, 0))
-
         self.loops_before_predict = 5
         self.loops_between_predict = 5
-        self.intent = None
-        self.probability = None
 
         self.intent_circles = []
         self.traj_pred_circles = []
-
-        self.model = None
-        self.solver = pyo.SolverFactory('ipopt')
 
     def _gen_occupancy(self):
 
@@ -213,6 +203,7 @@ class RuleBasedSimulator(object):
             state_dict['center-x'] = coords[0]
             state_dict['center-y'] = coords[1]
             state_dict['heading'] = obstacle['heading']
+            # [front left, back left, back right, front right]
             state_dict['corners'] = np.array([[size[0] / 2, size[1] / 2], [-size[0] / 2, size[1] / 2], [-size[0] / 2, -size[1] / 2], [size[0] / 2, -size[1] / 2]])
             self.car_corners[coords] = get_vehicle_corners_from_dict(state_dict)
         # 1D array of booleans — are the centers of any of the cars contained within this spot's boundaries?
@@ -262,6 +253,7 @@ class RuleBasedSimulator(object):
         controller_params = StanleyParams(dt=self.timer_period)
         controller = StanleyController(control_params=controller_params, vehicle_body=vehicle_body, vehicle_config=vehicle_config)
         motion_predictor = StanleyController(control_params=controller_params, vehicle_body=vehicle_body, vehicle_config=vehicle_config)
+        spot_detector = LocalDetector(spot_color_rgb=(0, 255, 0))
 
         vehicle = RuleBasedStanleyVehicle(
             vehicle_id=vehicle_id, 
@@ -269,6 +261,10 @@ class RuleBasedSimulator(object):
             vehicle_config=dataclasses.replace(vehicle_config), 
             controller=controller,
             motion_predictor=motion_predictor,
+            traj_model=self.traj_model,
+            intent_extractor=self.intent_extractor,
+            traj_extractor=self.traj_extractor,
+            spot_detector=spot_detector,
             electric_vehicle=self.ev_simulation
             )
 
@@ -287,12 +283,12 @@ class RuleBasedSimulator(object):
                 task_profile = [cruise_task, park_task]
 
                 state = VehicleState()
-                state.x.x = self.entrance_coords[0] - vehicle_config.offset
-                state.x.y = self.entrance_coords[1]
-                state.e.psi = - np.pi/2
-                # state.x.x = 3
-                # state.x.y = 55
-                # state.e.psi = -np.pi/2
+                # state.x.x = self.entrance_coords[0] - vehicle_config.offset
+                # state.x.y = self.entrance_coords[1]
+                # state.e.psi = - np.pi/2
+                state.x.x = 3
+                state.x.y = 55
+                state.e.psi = -np.pi/2
 
                 vehicle.set_vehicle_state(state=state)
                 
@@ -507,17 +503,12 @@ class RuleBasedSimulator(object):
         #     pickle.dump(dat, file)
         #     print("done")
         #     file.close()
-        with open("single_vehicle_data_spot190_stride4_history10_outputseqlen9.pickle", "rb") as f:
-            single_vehicle_data = pickle.load(f)
 
         if self.write_log:
             # write logs
             log_dir_path = str(Path.home()) + self.log_path
             if not os.path.exists(log_dir_path):
                 os.mkdir(log_dir_path)
-
-        # TODO: params
-        # self.set_up_model()
 
         # determine when to end sim for use_existing_agents
         if self.use_existing_agents:
@@ -568,8 +559,6 @@ class RuleBasedSimulator(object):
                 current_frame_states[vehicle.vehicle_id] = current_state_dict
             self.history.append(current_frame_states)
                 
-            # intent_pred_results = []
-
             # obtain states for all vehicles first, then solve for all vehicles (mimics ROS)
             for vehicle_id in active_vehicles:
                 vehicle = active_vehicles[vehicle_id]
@@ -602,15 +591,6 @@ class RuleBasedSimulator(object):
                 if self.sim_is_running:
                     if self.loops <= self.loops_before_predict: 
                         vehicle.solve(time=self.time)
-
-                    """
-                    # for demonstration
-                    vehicle.state.x.x = single_vehicle_data[self.loops]["coords"][0]
-                    vehicle.state.x.y = single_vehicle_data[self.loops]["coords"][1]
-                    vehicle.state.e.psi = single_vehicle_data[self.loops]["heading"]
-                    if self.loops > 0:
-                        vehicle.state.v.v = np.linalg.norm([single_vehicle_data[self.loops]["coords"][1] - single_vehicle_data[self.loops - 1]["coords"][1], single_vehicle_data[self.loops]["coords"][0] - single_vehicle_data[self.loops - 1]["coords"][0]]) / self.timer_period
-                    """
                 elif self.write_log and len(vehicle.logger) > 0:
                     # write logs
                     log_dir_path = str(Path.home()) + self.log_path
@@ -621,80 +601,21 @@ class RuleBasedSimulator(object):
                         f.writelines('\n'.join(vehicle.logger))
                         vehicle.logger.clear()
 
-                # ========== For real-time prediction only
-                # result = vehicle.predict_intent()
-                # intent_pred_results.append(result)
-                # ===========
-
                 if self.loops > self.loops_before_predict:
 
-                    if self.loops % self.loops_between_predict == (self.loops_before_predict + 1) % self.loops_between_predict and (self.intent is None or not self._coordinates_in_spot(self.intent)):
-                        intents = vehicle.predict_intent(vehicle_id, self.history)
-                        graph = WaypointsGraph()
-                        graph.setup_with_vis(self.intent_extractor.vis)
-                        best_lanes = self.find_n_best_lanes(
-                            [vehicle.state.x.x, vehicle.state.x.y], vehicle.state.e.psi, graph=graph, vis=self.intent_extractor.vis, predictor=vehicle.intent_predictor)
+                    if self.loops % self.loops_between_predict == (self.loops_before_predict + 1) % self.loops_between_predict and (vehicle.intent is None or not self._coordinates_in_spot(vehicle.intent)):
+                        vehicle.predict_best_intent(self.history) 
 
-                        distributions, coordinates = self.expand_distribution(intents, best_lanes)
-
-                        top_n = list(zip(distributions, coordinates))
-                        top_n.sort(reverse=True)
-                        self.probability, self.intent = top_n[0]
-
-                    output_sequence_length = 9
-                    predicted_trajectories = []
-
-                    """
-                    cached_predicted_trajectories = single_vehicle_data[self.loops]["predicted_trajectories"]
-                    top_n = []
-                    for top_i in range(1):
-                        top_n.append((cached_predicted_trajectories[top_i][2], cached_predicted_trajectories[top_i][1]))
-                    """
-
-                    nth = 0
                     self.intent_circles = []
                     self.traj_pred_circles = []
-                    #for probability, global_intent_pose in top_n:
-                    for _ in range(1):
 
-                        # """
-                        # predicted_trajectories = cached_predicted_trajectories[nth]
-                        # intent = predicted_trajectories[1]
-                        # """
-                        
-                        if nth == 0:
-                            col = (255, 0, 0, 255)
-                        elif nth == 1:
-                            col = (255, 0, 255, 255)
-                        else:
-                            col = (9, 121, 105, 255)
+                    col = (255, 0, 0, 255)
 
-                        self.intent_circles.append((self.intent, col))
+                    self.intent_circles.append((vehicle.intent, col))
 
-                        # # TODO: use params
-                        # """
-                        # _, feas, x2, u2, _ = self.solve_model(N=xref.shape[0], x0=np.array([vehicle.state.x.x, vehicle.state.x.y, vehicle.state.v.v, vehicle.state.e.psi]), xref=xref)
-                        # """
+                    _, feas, mpc_preds = vehicle.solve_intent_control(self.time, self.timer_period, self.car_corners)
 
-                        xref = []
-                        for i in range(10):
-                            xref.append([vehicle.state.x.x + ((self.intent[0] - vehicle.state.x.x) * i / 10), vehicle.state.x.y + ((self.intent[1] - vehicle.state.x.y) * i / 10), 0, 0])
-                        xref = np.array(xref)
-
-                        # solve optimal control problem
-                        _, feas, xOpt, uOpt, _ = self.solve_cftoc(P=np.diag([1, 1, 0, 0]), Q=np.diag([1, 1, 0, 0]), R=np.zeros((2, 2)), N=xref.shape[0], x0=np.array([vehicle.state.x.x, vehicle.state.x.y, vehicle.state.v.v, vehicle.state.e.psi]), uL=np.array([vehicle.vehicle_config.a_min, vehicle.vehicle_config.delta_min]), uU=np.array([vehicle.vehicle_config.a_max, vehicle.vehicle_config.delta_max]), xref=xref, vehicle=vehicle)
-
-                        # get control (is control 0 problematic because the first xref is usually just continuing at the same speed in the same direction? not sure)
-                        control = uOpt[:, 0]
-                        vehicle.state.t = self.time
-                        vehicle.state_hist.append(vehicle.state.copy())
-                        vehicle.controller.step(vehicle.state, control[0], control[1])
-
-                        # display predictions from optimal control problem
-                        mpc_preds = xOpt[[0, 1]].T
-                        self.traj_pred_circles.append((mpc_preds, (0, 0, 255, 255)))
-
-                        nth += 1
+                    self.traj_pred_circles.append((mpc_preds, (0, 0, 255, 255)))
         
             self.loops += 1
             self.time += self.timer_period
@@ -739,401 +660,8 @@ class RuleBasedSimulator(object):
 
                     on_vehicle_text =  str(vehicle.vehicle_id)
                     self.vis.draw_text([vehicle.state.x.x - 2, vehicle.state.x.y + 2], on_vehicle_text, size=25)
-                    
-                # ========== For real-time prediction only
-                # likelihood_radius = 15
-                # for result in intent_pred_results:
-                #     distribution = result.distribution
-                #     for i in range(len(distribution) - 1):
-                #         coords = result.all_spot_centers[i]
-                #         prob = format(distribution[i], '.2f')
-                #         self.vis.draw_circle(center=coords, radius=likelihood_radius*distribution[i], color=(255,65,255,255))
-                #         self.vis.draw_text([coords[0]-2, coords[1]], prob, 15)
-                # ===========
         
                 self.vis.render()
-
-    def find_n_best_lanes(self, start_coords, global_heading, graph: WaypointsGraph, vis: SemanticVisualizer, predictor: Predictor, n = 3):
-        current_state = np.array(start_coords + [global_heading])
-        idx = graph.search(current_state)
-
-        all_lanes = set()
-        visited = set()
-
-        fringe: List[Vertex] = [graph.vertices[idx]]
-        while len(fringe) > 0:
-            v = fringe.pop()
-            visited.add(v)
-
-            children, _ = v.get_children()
-            if not vis._is_visible(current_state=current_state, target_state=v.coords):
-                for child in children:
-                    if vis._is_visible(current_state=current_state, target_state=child.coords):
-                        all_lanes.add(child)
-                continue
-
-            for child in children:
-                if child not in visited:
-                    fringe.append(child)
-
-        lanes = []
-        for lane in all_lanes:
-            astar_dist, astar_dir = predictor.compute_Astar_dist_dir(
-                current_state, lane.coords, global_heading)
-            heapq.heappush(lanes, (-astar_dir, astar_dist, lane.coords))
-
-        return lanes
-
-    def expand_distribution(self, intents: PredictionResponse, lanes: List, n=3):
-        p_minus = intents.distribution[-1]
-        n = min(n, len(lanes))
-
-        coordinates = intents.all_spot_centers
-        distributions = list(intents.distribution)
-        distributions.pop()
-
-        scales = np.linspace(0.9, 0.1, n)
-        scales /= sum(scales)
-        for i in range(n):
-            _, _, coords = heapq.heappop(lanes)
-            coordinates.append(coords)
-            distributions.append(p_minus * scales[i])
-
-        return distributions, coordinates
-
-    # stride was 10 on dlp example (with 25 FPS, so sampling every 0.4 seconds)
-    def get_data_for_instance(self, vehicle: RuleBasedStanleyVehicle, extractor: TransformerDataProcessor, global_intent_pose: np.array, stride: int=4, history: int=10, future: int=10, img_size: int=100) -> Tuple[np.array, np.array, np.array]:
-        """
-        returns image, trajectory_history, and trajectory future for given instance
-        """
-        img_transform=transforms.ToTensor()
-        image_feature = vehicle.inst_centric_generator.inst_centric(vehicle.vehicle_id, self.history)
-
-        image_feature = self.label_target_spot(vehicle, image_feature)
-
-        curr_pose = np.array([vehicle.state.x.x,
-                            vehicle.state.x.y, vehicle.state.e.psi])
-        rot = np.array([[np.cos(-curr_pose[2]), -np.sin(-curr_pose[2])], [np.sin(-curr_pose[2]), np.cos(-curr_pose[2])]])
-        
-        local_intent_coords = np.dot(rot, global_intent_pose[:2]-curr_pose[:2])
-        local_intent_pose = np.expand_dims(local_intent_coords, axis=0)
-
-        # determine start index to gather history from
-        start_idx = -1
-        while start_idx - stride > -stride * history and start_idx - stride >= -len(vehicle.state_hist):
-            start_idx -= stride
-
-        image_history = []
-        trajectory_history = []
-        for i in range(start_idx, 0, stride):
-            state = vehicle.state_hist[i]
-            pos = np.array([state.x.x, state.x.y])
-            translated_pos = np.dot(rot, pos-curr_pose[:2])
-            trajectory_history.append(Tensor(
-                [translated_pos[0], translated_pos[1], state.e.psi - curr_pose[2]]))
-
-            image_feature = vehicle.inst_centric_generator.inst_centric(vehicle.vehicle_id, self.history)
-            image_feature = self.label_target_spot(vehicle, image_feature, curr_pose)
-            
-            image_tensor = img_transform(image_feature.resize((img_size, img_size)))
-            image_history.append(image_tensor)
-        
-        return torch.stack(image_history)[None], torch.stack(trajectory_history)[None], torch.from_numpy(local_intent_pose)[None]
-
-    def label_target_spot(self, vehicle: RuleBasedStanleyVehicle, inst_centric_view: np.array, center_pose: np.ndarray=None, r=1.25) -> np.array:
-        """
-        Returns image frame with target spot labeled
-        center_pose: If None, the inst_centric_view is assumed to be around the current instance. If a numpy array (x, y, heading) is given, it is the specified center.
-        """
-        all_spots = self.spot_detector.detect(inst_centric_view)
-
-        if center_pose is None:
-            current_state = np.array([vehicle.state.x.x, vehicle.state.x.y, vehicle.state.e.psi])
-        else:
-            current_state = center_pose
-
-        for spot in all_spots:
-            spot_center_pixel = np.array(spot[0])
-            spot_center = self.local_pixel_to_global_ground(current_state, spot_center_pixel)
-            # dist = np.linalg.norm(traj[:, 0:2] - spot_center, axis=1)
-            dist = np.linalg.norm(current_state[0:2] - spot_center)
-            # if np.amin(dist) < r:
-            if dist < r:
-                inst_centric_view_copy = inst_centric_view.copy()
-                corners = self._get_corners(spot)
-                img_draw = PIL.ImageDraw.Draw(inst_centric_view_copy)  
-                img_draw.polygon(corners, fill ="purple", outline ="purple")
-                return inst_centric_view_copy
-        
-        return inst_centric_view
-
-    def local_pixel_to_global_ground(self, current_state: np.ndarray, target_coords: np.ndarray) -> np.ndarray:
-        """
-        transform the target coordinate from pixel coordinate in the local inst-centric crop to global ground coordinates
-        Note: Accuracy depends on the resolution (self.res)
-        `current_state`: numpy array (x, y, theta, ...) in global coordinates
-        `target_coords`: numpy array (x, y) in int pixel coordinates
-        """
-        sensing_limit = 20
-        res = 0.1
-
-        scaled_local = target_coords * res
-        translation = sensing_limit * np.ones(2)
-
-        translated_local = scaled_local - translation
-
-        current_theta = current_state[2]
-        R = np.array([[np.cos(current_theta), -np.sin(current_theta)], 
-                      [np.sin(current_theta),  np.cos(current_theta)]])
-
-        rotated_local = R @ translated_local
-
-        translated_global = rotated_local + current_state[:2]
-
-        return translated_global
-
-    """
-
-    def set_up_model(self, vehicle_body: VehicleBody=VehicleBody(), vehicle_config: VehicleConfig=VehicleConfig()):
-        self.model = pyo.ConcreteModel()
-        self.model.N = pyo.Param(mutable=True, initialize=10)
-        self.model.nx = 4 # x, y, v, psi
-        self.model.nu = 2 # acceleration, delta (steering)
-        
-        # length of finite optimization problem:
-        self.model.tIDX = pyo.Set( initialize= range(self.model.N.value+1), ordered=True )  
-        self.model.xIDX = pyo.Set( initialize= range(self.model.nx), ordered=True )
-        self.model.uIDX = pyo.Set( initialize= range(self.model.nu), ordered=True )
-        
-        # these are 2d arrays:
-        self.model.P = np.diag([1, 1, 0, 0])
-        self.model.Q = np.diag([1, 1, 0, 0])
-        self.model.R = np.zeros((self.model.nu, self.model.nu))
-        self.model.x0 = pyo.Param(mutable=True, initialize=np.array([0, 0, 0, 0]))
-        self.model.xref = pyo.Param(mutable=True, initialize=np.zeros((4, 11)))
-        
-        # Create state and input variables trajectory:
-        self.model.x = pyo.Var(self.model.xIDX, self.model.tIDX)
-        self.model.u = pyo.Var(self.model.uIDX, self.model.tIDX)
-
-        self.model.uL = np.array([vehicle_config.a_min, vehicle_config.delta_min])
-        self.model.uU = np.array([vehicle_config.a_max, vehicle_config.delta_max])
-    
-        #Objective:
-        def objective_rule(model):
-            costX = 0.0
-            costU = 0.0
-            costTerminal = 0.0
-            for t in model.tIDX:
-                for i in model.xIDX:
-                    for j in model.xIDX:
-                        if t < model.N.value:
-                            costX += (model.x[i, t] - model.xref.value[i, t]) * model.Q[i, j] * (model.x[j, t] - model.xref.value[j, t]) 
-            for t in model.tIDX:
-                for i in model.uIDX:
-                    for j in model.uIDX:
-                        if t < model.N.value:
-                            costU += model.u[i, t] * model.R[i, j] * model.u[j, t]
-            for i in model.xIDX:
-                for j in model.xIDX:               
-                    costTerminal += (model.x[i, model.N.value] - model.xref.value[i, model.N.value]) * model.P[i, j] * (model.x[j, model.N.value] - model.xref.value[j, model.N.value])
-            return costX + costU + costTerminal
-        
-        self.model.cost = pyo.Objective(rule = objective_rule, sense = pyo.minimize)
-        
-        # Constraints:
-        self.model.init_const = pyo.Constraint(self.model.xIDX, rule=lambda model, i: self.model.x[i, 0] == self.model.x0.value[i])
-        
-        self.model.bike_const_x = pyo.Constraint(self.model.tIDX, rule=lambda model, t: self.model.x[0, t+1] == self.model.x[0, t] + self.timer_period * (self.model.x[2, t] * pyo.cos(self.model.x[3, t])) if t < self.model.N.value else pyo.Constraint.Skip)
-        self.model.bike_const_y = pyo.Constraint(self.model.tIDX, rule=lambda model, t: self.model.x[1, t+1] == self.model.x[1, t] + self.timer_period * (self.model.x[2, t] * pyo.sin(self.model.x[3, t])) if t < self.model.N.value else pyo.Constraint.Skip)
-        self.model.bike_const_v = pyo.Constraint(self.model.tIDX, rule=lambda model, t: self.model.x[2, t+1] == self.model.x[2, t] + self.timer_period * (self.model.u[0, t]) if t < self.model.N.value else pyo.Constraint.Skip)
-        self.model.bike_const_psi = pyo.Constraint(self.model.tIDX, rule=lambda model, t: self.model.x[3, t+1] == self.model.x[3, t] + self.timer_period * (self.model.x[2, t] * pyo.tan(self.model.u[1, t]) / vehicle_body.wb) if t < self.model.N.value else pyo.Constraint.Skip)
-
-        self.model.input_const_l = pyo.Constraint(self.model.uIDX, self.model.tIDX, rule=lambda model, i, t: self.model.u[i, t] <= self.model.uU[i] if t < self.model.N.value else pyo.Constraint.Skip)
-        self.model.input_const_u = pyo.Constraint(self.model.uIDX, self.model.tIDX, rule=lambda model, i, t: self.model.u[i, t] >= self.model.uL[i] if t < self.model.N.value else pyo.Constraint.Skip)
-
-    def solve_model(self, N, x0, xref):
-        self.model.N = N
-        self.model.x0 = x0
-        self.model.xref = np.vstack((x0, xref)).T
-
-        results = self.solver.solve(self.model)
-        
-        if str(results.solver.termination_condition) == "optimal":
-            feas = True
-        else:
-            feas = False
-                
-        xOpt = np.asarray([[self.model.x[i,t]() for i in self.model.xIDX] for t in self.model.tIDX]).T
-        uOpt = np.asarray([self.model.u[:,t]() for t in self.model.tIDX]).T
-        
-        JOpt = self.model.cost()
-        
-        return [self.model, feas, xOpt, uOpt, JOpt]
-
-    """
-
-    def solve_cftoc(self, P, Q, R, N, x0, uL, uU, xref, vehicle: RuleBasedStanleyVehicle):
-        model = pyo.ConcreteModel()
-        model.N = N
-        model.nx = 4 # x, y, v, psi
-        model.nu = 2 # acceleration, delta (steering)
-        
-        # length of finite optimization problem:
-        model.tIDX = pyo.Set( initialize= range(model.N+1), ordered=True )  
-        model.xIDX = pyo.Set( initialize= range(model.nx), ordered=True )
-        model.uIDX = pyo.Set( initialize= range(model.nu), ordered=True )
-        
-        # these are 2d arrays:
-        model.P = P
-        model.Q = Q
-        model.R = R
-        model.xref = np.vstack((x0, xref)).T
-        
-        # Create state and input variables trajectory:
-        model.x = pyo.Var(model.xIDX, model.tIDX)
-        model.u = pyo.Var(model.uIDX, model.tIDX)
-    
-        #Objective:
-        def objective_rule(model):
-            costX = 0.0
-            costU = 0.0
-            costTerminal = 0.0
-            for t in model.tIDX:
-                for i in model.xIDX:
-                    for j in model.xIDX:
-                        if t < model.N:
-                            costX += (model.x[i, t] - model.xref[i, t]) * model.Q[i, j] * (model.x[j, t] - model.xref[j, t]) 
-            for t in model.tIDX:
-                for i in model.uIDX:
-                    for j in model.uIDX:
-                        if t < model.N:
-                            costU += model.u[i, t] * model.R[i, j] * model.u[j, t]
-            for i in model.xIDX:
-                for j in model.xIDX:               
-                    costTerminal += (model.x[i, model.N] - model.xref[i, model.N]) * model.P[i, j] * (model.x[j, model.N] - model.xref[j, model.N])
-            return costX + costU + costTerminal
-        
-        model.cost = pyo.Objective(rule = objective_rule, sense = pyo.minimize)
-        
-        # Constraints:
-        model.init_const = pyo.Constraint(model.xIDX, rule=lambda model, i: model.x[i, 0] == x0[i])
-        
-        model.bike_const_x = pyo.Constraint(model.tIDX, rule=lambda model, t: model.x[0, t+1] == model.x[0, t] + self.timer_period * (model.x[2, t] * pyo.cos(model.x[3, t])) if t < N else pyo.Constraint.Skip)
-        model.bike_const_y = pyo.Constraint(model.tIDX, rule=lambda model, t: model.x[1, t+1] == model.x[1, t] + self.timer_period * (model.x[2, t] * pyo.sin(model.x[3, t])) if t < N else pyo.Constraint.Skip)
-        model.bike_const_v = pyo.Constraint(model.tIDX, rule=lambda model, t: model.x[2, t+1] == model.x[2, t] + self.timer_period * (model.u[0, t]) if t < N else pyo.Constraint.Skip)
-        model.bike_const_psi = pyo.Constraint(model.tIDX, rule=lambda model, t: model.x[3, t+1] == model.x[3, t] + self.timer_period * (model.x[2, t] * pyo.tan(model.u[1, t]) / vehicle.vehicle_body.wb) if t < N else pyo.Constraint.Skip)
-
-        model.input_const_l = pyo.Constraint(model.uIDX, model.tIDX, rule=lambda model, i, t: model.u[i, t] <= uU[i] if t < N else pyo.Constraint.Skip)
-        model.input_const_u = pyo.Constraint(model.uIDX, model.tIDX, rule=lambda model, i, t: model.u[i, t] >= uL[i] if t < N else pyo.Constraint.Skip)
-        
-        """
-        TODO: make convex hull of vehicles in lane to make boundary, use dual problem formulation for constraints
-        """
-        # [front left, back left, back right, front right]
-        G = vehicle.vehicle_body.A
-        g = vehicle.vehicle_body.b
-
-        other_As = []
-        other_bs = []
-
-        nearby_radius = 5 
-        for _, v in self.car_corners.items():
-            if any([np.linalg.norm([vehicle.state.x.x - v[i][0], vehicle.state.x.y - v[i][1]]) < nearby_radius for i in range(4)]):
-                A, b = self.rectangle_to_polytope(v)
-                other_As.append(A)
-                other_bs.append(b)
-
-        # other_As = []
-        # other_As.append([[1, 0], [-1, 0], [0, 1], [0, -1]])
-        # other_bs.append([138.42, -28.53, 73.73, -68.51])
-        # other_As.append([[1, 0], [-1, 0], [0, 1], [0, -1]])
-        # other_bs.append([76.54, -7.71, 61.4, -50.4])
-        
-        other_As = np.array(other_As)
-        other_bs = np.array(other_bs)
-
-        if other_As.shape[0] > 0:
-
-            model.num_others = other_As.shape[0]
-            model.lam_dim, model.s_dim = other_As[0].shape # since each polytope is represented by 4 constraints, 2 variables
-
-            model.othervIDX = pyo.Set( initialize= range(model.num_others), ordered=True )
-            model.lamIDX = pyo.Set( initialize= range(model.lam_dim), ordered=True )
-            model.sIDX = pyo.Set( initialize= range(model.s_dim), ordered=True )
-
-            model.lam = pyo.Var(model.othervIDX, model.lamIDX, model.tIDX)
-            model.rev_lam = pyo.Var(model.othervIDX, model.lamIDX, model.tIDX)
-            model.s = pyo.Var(model.othervIDX, model.sIDX, model.tIDX)
-
-            model.collision_b_const = pyo.Constraint(model.othervIDX, model.tIDX, rule=lambda model, j, t: \
-                -sum( \
-                    (G[l, 0] * (model.x[0, t] * pyo.cos(model.x[2, t]) + model.x[1, t] * pyo.sin(model.x[2, t])) + \
-                        G[l, 1] * (-model.x[0, t] * pyo.sin(model.x[2, t]) + model.x[1, t] * pyo.cos(model.x[2, t])) + \
-                            g[l] ) \
-                             * model.lam[j, l, t] for l in model.lamIDX) \
-                                 - sum(other_bs[j, l] * model.rev_lam[j, l, t] for l in model.lamIDX) >= 0.1)
-            model.collision_Ai1_const = pyo.Constraint(model.othervIDX, model.tIDX, rule=lambda model, j, t: \
-                sum( \
-                    (pyo.cos(model.x[2, t]) * G[l, 0] - pyo.sin(model.x[2, t]) * G[l, 1]) \
-                        * model.lam[j, l, t] for l in model.lamIDX) + model.s[j, 0, t] == 0)
-            model.collision_Ai2_const = pyo.Constraint(model.othervIDX, model.tIDX, rule=lambda model, j, t: \
-                sum( \
-                    (pyo.sin(model.x[2, t]) * G[l, 0] + pyo.cos(model.x[2, t]) * G[l, 1]) \
-                        * model.lam[j, l, t] for l in model.lamIDX) + model.s[j, 1, t] == 0)
-            model.collision_Aj_const = pyo.Constraint(model.sIDX, model.othervIDX, model.tIDX, rule=lambda model, s, j, t: sum(other_As[j, l, s] * model.rev_lam[j, l, t] for l in model.lamIDX) - model.s[j, s, t] == 0)
-            model.collision_lam1_const = pyo.Constraint(model.othervIDX, model.lamIDX, model.tIDX, rule=lambda model, j, l, t: model.lam[j, l, t] >= 0)
-            model.collision_lam2_const = pyo.Constraint(model.othervIDX, model.lamIDX, model.tIDX, rule=lambda model, j, l, t: model.rev_lam[j, l, t] >= 0)
-            model.collision_s_const = pyo.Constraint(model.othervIDX, model.tIDX, rule=lambda model, j, t: sum(model.s[j, s, t] ** 2 for s in model.sIDX) <= 1)
-
-        solver = pyo.SolverFactory('ipopt')
-        results = solver.solve(model)
-        
-        if str(results.solver.termination_condition) == "optimal":
-            feas = True
-        else:
-            feas = False
-                
-        xOpt = np.asarray([[model.x[i,t]() for i in model.xIDX] for t in model.tIDX]).T
-        uOpt = np.asarray([model.u[:,t]() for t in model.tIDX]).T
-        
-        JOpt = model.cost()
-        
-        return [model, feas, xOpt, uOpt, JOpt]
-
-    def rectangle_to_polytope(self, corners):
-        A = []
-        b = []
-        if corners[0][0] == corners[1][0]: # facing up/down
-            if corners[0][1] < corners[1][1]: # facing down
-                A = [[1, 0], [-1, 0], [0, 1], [0, -1]]
-                b = [corners[0][0], -corners[2][0], corners[1][1], -corners[3][1]]
-            else: # facing up
-                A = [[1, 0], [-1, 0], [0, 1], [0, -1]]
-                b = [corners[3][0], -corners[0][0], corners[0][1], -corners[1][1]]
-        elif corners[0][1] == corners[1][1]: # facing left/right
-            if corners[0][0] < corners[1][0]: # facing left
-                A = [[1, 0], [-1, 0], [0, 1], [0, -1]]
-                b = [corners[1][0], -corners[0][0], corners[2][1], -corners[0][1]]
-            else: # facing right
-                A = [[1, 0], [-1, 0], [0, 1], [0, -1]]
-                b = [corners[0][0], -corners[1][0], corners[0][1], -corners[2][1]]
-        else: # rotated
-            coefs = [np.polynomial.polynomial.Polynomial.fit([corners[i][0], corners[(i + 1) % 4][0]], [corners[i][1], corners[(i + 1) % 4][1]], 1).convert().coef for i in range(4)]
-            if corners[0][0] < corners[1][0]: # left edge on bottom
-                A.extend([[coefs[0][1], -1], [-coefs[2][1], 1]])
-                b.extend([-coefs[0][0], coefs[2][0]])
-            else:
-                A.extend([[-coefs[0][1], 1], [coefs[2][1], -1]])
-                b.extend([coefs[0][0], -coefs[2][0]])
-            if corners[1][0] < corners[2][0]: # bottom edge on bottom
-                A.extend([[coefs[1][1], -1], [-coefs[3][1], 1]])
-                b.extend([-coefs[1][0], coefs[3][0]])
-            else:
-                A.extend([[-coefs[1][1], 1], [coefs[3][1], -1]])
-                b.extend([coefs[1][0], -coefs[3][0]])
-
-        return np.array(A), np.array(b)
 
 """
 Change these parameters to run tests using the neural network
