@@ -42,12 +42,17 @@ from parksim.spot_detector.detector import LocalDetector
 from parksim.trajectory_predict.intent_transformer.model_utils import generate_square_subsequent_mask
 from parksim.utils.get_corners import get_vehicle_corners, get_vehicle_corners_from_dict, rectangle_to_polytope
 
+from scipy.spatial import ConvexHull
+
 from typing import Tuple
 from torch import Tensor
 from torchvision import transforms
 
 from parksim.utils.spline import calc_spline_course
 import pyomo.environ as pyo
+import matplotlib
+matplotlib.use("macOSX")
+import matplotlib.pyplot as plt
 
 # These parameters should all become ROS param for simulator and vehicle
 spots_data_path = '/ParkSim/data/spots_data.pickle'
@@ -196,6 +201,9 @@ class RuleBasedSimulator(object):
         # figure out which parking spaces are occupied
         car_coords = [self.dlpvis.dataset.get('obstacle', o)['coords'] for o in scene['obstacles']] if self.use_existing_obstacles else []
         self.car_corners = {}
+        grouped_corners = []
+        for _ in range(9):
+            grouped_corners.append(np.zeros((0, 2)))
         for obstacle in [self.dlpvis.dataset.get('obstacle', o) for o in scene['obstacles']]:
             coords = tuple(obstacle['coords'])
             size = obstacle['size']
@@ -206,6 +214,46 @@ class RuleBasedSimulator(object):
             # [front left, back left, back right, front right]
             state_dict['corners'] = np.array([[size[0] / 2, size[1] / 2], [-size[0] / 2, size[1] / 2], [-size[0] / 2, -size[1] / 2], [size[0] / 2, -size[1] / 2]])
             self.car_corners[coords] = get_vehicle_corners_from_dict(state_dict)
+
+            # place vehicle
+            in_spots = set()
+            for c in self.car_corners[coords]:
+                sp = self._coordinates_in_spot(c)
+                if sp is not None:
+                    in_spots.add(sp)
+            in_spots = list(in_spots)
+
+            group = None
+            if len(in_spots) == 0:
+                grouped_corners.append(self.car_corners[coords])
+            elif in_spots[0] >= 0 and in_spots[0] <= 41:
+                group = 0
+            elif in_spots[0] >= 42 and in_spots[0] <= 91:
+                group = 1
+            elif in_spots[0] >= 92 and in_spots[0] <= 133:
+                group = 2
+            elif in_spots[0] >= 134 and in_spots[0] <= 183:
+                group = 3
+            elif in_spots[0] >= 184 and in_spots[0] <= 225:
+                group = 4
+            elif in_spots[0] >= 226 and in_spots[0] <= 275:
+                group = 5
+            elif in_spots[0] >= 276 and in_spots[0] <= 317:
+                group = 6
+            elif in_spots[0] >= 318 and in_spots[0] <= 342:
+                group = 7
+            elif in_spots[0] >= 343 and in_spots[0] <= 363:
+                group = 8
+            if group is not None:
+                grouped_corners[group] = np.concatenate((grouped_corners[group], self.car_corners[coords]))
+
+        self.obstacle_As = []
+        self.obstacle_bs = []
+        for gr in grouped_corners:
+            cvx = ConvexHull(gr)
+            self.obstacle_As.append(cvx.equations[:, :2])
+            self.obstacle_bs.append(-cvx.equations[:, 2].flatten())
+
         # 1D array of booleans — are the centers of any of the cars contained within this spot's boundaries?
         occupied = np.array([any([c[0] > arr[i][2] and c[0] < arr[i][4] and c[1] < arr[i][3] and c[1] > arr[i][9] for c in car_coords]) for i in range(len(arr))])
 
@@ -216,7 +264,8 @@ class RuleBasedSimulator(object):
         Return if the coordinates are located within the boundaries of any spot
         """
         arr = self.dlpvis.parking_spaces.to_numpy()
-        return any([coords[0] > spot[2] and coords[0] < spot[4] and coords[1] < spot[3] and coords[1] > spot[9] for spot in arr])
+        decider = [i for i in range(len(arr)) if coords[0] > arr[i][2] and coords[0] < arr[i][4] and coords[1] < arr[i][3] and coords[1] > arr[i][9]]
+        return None if len(decider) == 0 else decider[0]
 
     def _gen_agents(self):
         home_path = str(Path.home())
@@ -603,7 +652,7 @@ class RuleBasedSimulator(object):
 
                 if self.loops > self.loops_before_predict:
 
-                    if self.loops % self.loops_between_predict == (self.loops_before_predict + 1) % self.loops_between_predict and (vehicle.intent is None or not self._coordinates_in_spot(vehicle.intent)):
+                    if self.loops % self.loops_between_predict == (self.loops_before_predict + 1) % self.loops_between_predict and (vehicle.intent is None or self._coordinates_in_spot(vehicle.intent) is None):
                         vehicle.predict_best_intent(self.history) 
 
                     self.intent_circles = []
@@ -613,7 +662,10 @@ class RuleBasedSimulator(object):
 
                     self.intent_circles.append((vehicle.intent, col))
 
-                    _, feas, mpc_preds = vehicle.solve_intent_control(self.time, self.timer_period, self.car_corners)
+                    if self._coordinates_in_spot(vehicle.intent) and np.linalg.norm([vehicle.state.x.x - vehicle.intent[0], vehicle.state.x.y - vehicle.intent[1]]) < 7:
+                        _, feas, mpc_preds = vehicle.solve_intent_control(self.time, self.timer_period, obstacle_corners=self.car_corners)
+                    else:
+                        _, feas, mpc_preds = vehicle.solve_intent_control(self.time, self.timer_period, obstacle_As=self.obstacle_As, obstacle_bs=self.obstacle_bs)
 
                     self.traj_pred_circles.append((mpc_preds, (0, 0, 255, 255)))
         

@@ -937,14 +937,14 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         _, self.intent = top_n[0]
         return top_n[0]
 
-    def solve_intent_control(self, time, timer_period, obstacle_corners: Dict[Tuple, np.ndarray]):
+    def solve_intent_control(self, time, timer_period, obstacle_corners: Dict[Tuple, np.ndarray] = None, obstacle_As: List[np.ndarray] = None, obstacle_bs: List[np.ndarray] = None):
         xref = []
         for i in range(10):
             xref.append([self.state.x.x + ((self.intent[0] - self.state.x.x) * i / 10), self.state.x.y + ((self.intent[1] - self.state.x.y) * i / 10), 0, 0])
         xref = np.array(xref)
 
         # solve optimal control problem
-        _, feas, xOpt, uOpt, _ = self.solve_cftoc(P=np.diag([1, 1, 0, 0]), Q=np.diag([1, 1, 0, 0]), R=np.zeros((2, 2)), N=xref.shape[0], x0=np.array([self.state.x.x, self.state.x.y, self.state.v.v, self.state.e.psi]), uL=np.array([self.vehicle_config.a_min, self.vehicle_config.delta_min]), uU=np.array([self.vehicle_config.a_max, self.vehicle_config.delta_max]), xref=xref, obstacle_corners=obstacle_corners, timer_period=timer_period)
+        _, feas, xOpt, uOpt, _ = self.solve_cftoc(P=np.diag([1, 1, 0, 0]), Q=np.diag([1, 1, 0, 0]), R=np.zeros((2, 2)), N=xref.shape[0], x0=np.array([self.state.x.x, self.state.x.y, self.state.v.v, self.state.e.psi]), uL=np.array([self.vehicle_config.a_min, self.vehicle_config.delta_min]), uU=np.array([self.vehicle_config.a_max, self.vehicle_config.delta_max]), xref=xref, timer_period=timer_period, obstacle_corners=obstacle_corners, obstacle_As=obstacle_As, obstacle_bs=obstacle_bs)
 
         # get control (is control 0 problematic because the first xref is usually just continuing at the same speed in the same direction? not sure)
         control = uOpt[:, 0]
@@ -957,7 +957,7 @@ class RuleBasedStanleyVehicle(AbstractAgent):
 
         return control, feas, mpc_preds
 
-    def solve_cftoc(self, P, Q, R, N, x0, uL, uU, xref, obstacle_corners: Dict[Tuple, np.ndarray], timer_period):
+    def solve_cftoc(self, P, Q, R, N, x0, uL, uU, xref, timer_period, obstacle_corners: Dict[Tuple, np.ndarray] = None, obstacle_As: List[np.ndarray] = None, obstacle_bs: List[np.ndarray] = None):
         model = pyo.ConcreteModel()
         model.N = N
         model.nx = 4 # x, y, v, psi
@@ -1017,27 +1017,55 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         other_As = []
         other_bs = []
 
-        nearby_radius = 5 
-        for _, v in obstacle_corners.items():
-            if any([np.linalg.norm([self.state.x.x - v[i][0], self.state.x.y - v[i][1]]) < nearby_radius for i in range(4)]):
-                A, b = rectangle_to_polytope(v)
-                other_As.append(A)
-                other_bs.append(b)
+        if obstacle_corners is not None:
+            nearby_radius = 5 
+            for _, v in obstacle_corners.items():
+                if any([np.linalg.norm([self.state.x.x - v[i][0], self.state.x.y - v[i][1]]) < nearby_radius for i in range(4)]):
+                    A, b = rectangle_to_polytope(v)
+                    other_As.append(A)
+                    other_bs.append(b)
+        else:
+            x, y = self.state.x.x, self.state.x.y
+            if y > 65:
+                other_As.append(obstacle_As[0])
+                other_bs.append(obstacle_bs[0])
+            if x < 90 and y > 40:
+                other_As.append(obstacle_As[1])
+                other_bs.append(obstacle_bs[1])
+            if x > 70 and y > 40:
+                other_As.append(obstacle_As[2])
+                other_bs.append(obstacle_bs[2])
+            if x < 90 and y > 20 and y < 55:
+                other_As.append(obstacle_As[3])
+                other_bs.append(obstacle_bs[3])
+            if x > 70 and y > 20 and y < 55:
+                other_As.append(obstacle_As[4])
+                other_bs.append(obstacle_bs[4])
+            if x < 90 and y < 40:
+                other_As.append(obstacle_As[5])
+                other_bs.append(obstacle_bs[5])
+            if x > 70 and y < 40:
+                other_As.append(obstacle_As[6])
+                other_bs.append(obstacle_bs[6])
+            if x < 90 and y < 20:
+                other_As.append(obstacle_As[7])
+                other_bs.append(obstacle_bs[7])
+            if x > 70 and y < 20:
+                other_As.append(obstacle_As[8])
+                other_bs.append(obstacle_bs[8])
 
-        other_As = np.array(other_As)
-        other_bs = np.array(other_bs)
+        if len(other_As) > 0:
 
-        if other_As.shape[0] > 0:
-
-            model.num_others = other_As.shape[0]
-            model.lam_dim, model.s_dim = other_As[0].shape # since each polytope is represented by 4 constraints, 2 variables
+            model.num_others = len(other_As)
+            model.num_halfspaces = [a.shape[0] for a in other_As]
 
             model.othervIDX = pyo.Set( initialize= range(model.num_others), ordered=True )
-            model.lamIDX = pyo.Set( initialize= range(model.lam_dim), ordered=True )
-            model.sIDX = pyo.Set( initialize= range(model.s_dim), ordered=True )
+            model.lamIDX = pyo.Set( initialize= range(G.shape[0]), ordered=True )
+            model.revLamIDX = pyo.Set( initialize= range(max(model.num_halfspaces)), ordered=True )
+            model.sIDX = pyo.Set( initialize= range(G.shape[1]), ordered=True )
 
             model.lam = pyo.Var(model.othervIDX, model.lamIDX, model.tIDX)
-            model.rev_lam = pyo.Var(model.othervIDX, model.lamIDX, model.tIDX)
+            model.rev_lam = pyo.Var(model.othervIDX, model.revLamIDX, model.tIDX)
             model.s = pyo.Var(model.othervIDX, model.sIDX, model.tIDX)
 
             model.collision_b_const = pyo.Constraint(model.othervIDX, model.tIDX, rule=lambda model, j, t: \
@@ -1046,7 +1074,7 @@ class RuleBasedStanleyVehicle(AbstractAgent):
                         G[l, 1] * (-model.x[0, t] * pyo.sin(model.x[2, t]) + model.x[1, t] * pyo.cos(model.x[2, t])) + \
                             g[l] ) \
                              * model.lam[j, l, t] for l in model.lamIDX) \
-                                 - sum(other_bs[j, l] * model.rev_lam[j, l, t] for l in model.lamIDX) >= 0.1)
+                                 - sum(other_bs[j][l] * model.rev_lam[j, l, t] for l in model.revLamIDX if l < model.num_halfspaces[j]) >= 0.1)
             model.collision_Ai1_const = pyo.Constraint(model.othervIDX, model.tIDX, rule=lambda model, j, t: \
                 sum( \
                     (pyo.cos(model.x[2, t]) * G[l, 0] - pyo.sin(model.x[2, t]) * G[l, 1]) \
@@ -1055,9 +1083,9 @@ class RuleBasedStanleyVehicle(AbstractAgent):
                 sum( \
                     (pyo.sin(model.x[2, t]) * G[l, 0] + pyo.cos(model.x[2, t]) * G[l, 1]) \
                         * model.lam[j, l, t] for l in model.lamIDX) + model.s[j, 1, t] == 0)
-            model.collision_Aj_const = pyo.Constraint(model.sIDX, model.othervIDX, model.tIDX, rule=lambda model, s, j, t: sum(other_As[j, l, s] * model.rev_lam[j, l, t] for l in model.lamIDX) - model.s[j, s, t] == 0)
+            model.collision_Aj_const = pyo.Constraint(model.sIDX, model.othervIDX, model.tIDX, rule=lambda model, s, j, t: sum(other_As[j][l, s] * model.rev_lam[j, l, t] for l in model.revLamIDX if l < model.num_halfspaces[j]) - model.s[j, s, t] == 0)
             model.collision_lam1_const = pyo.Constraint(model.othervIDX, model.lamIDX, model.tIDX, rule=lambda model, j, l, t: model.lam[j, l, t] >= 0)
-            model.collision_lam2_const = pyo.Constraint(model.othervIDX, model.lamIDX, model.tIDX, rule=lambda model, j, l, t: model.rev_lam[j, l, t] >= 0)
+            model.collision_lam2_const = pyo.Constraint(model.othervIDX, model.revLamIDX, model.tIDX, rule=lambda model, j, l, t: model.rev_lam[j, l, t] >= 0)
             model.collision_s_const = pyo.Constraint(model.othervIDX, model.tIDX, rule=lambda model, j, t: sum(model.s[j, s, t] ** 2 for s in model.sIDX) <= 1)
 
         results = self.solver.solve(model)
