@@ -335,9 +335,14 @@ class RuleBasedSimulator(object):
                 # state.x.x = self.entrance_coords[0] - vehicle_config.offset
                 # state.x.y = self.entrance_coords[1]
                 # state.e.psi = - np.pi/2
-                state.x.x = 3
-                state.x.y = 55
-                state.e.psi = -np.pi/2
+                if vehicle_id == 1:
+                    state.x.x = 20
+                    state.x.y = 65
+                    state.e.psi = 0
+                else:
+                    state.x.x = 80 
+                    state.x.y = 65
+                    state.e.psi = np.pi
 
                 vehicle.set_vehicle_state(state=state)
                 
@@ -608,6 +613,9 @@ class RuleBasedSimulator(object):
                 current_frame_states[vehicle.vehicle_id] = current_state_dict
             self.history.append(current_frame_states)
                 
+            self.intent_circles = []
+            self.traj_pred_circles = []
+
             # obtain states for all vehicles first, then solve for all vehicles (mimics ROS)
             for vehicle_id in active_vehicles:
                 vehicle = active_vehicles[vehicle_id]
@@ -653,19 +661,34 @@ class RuleBasedSimulator(object):
                 if self.loops > self.loops_before_predict:
 
                     if self.loops % self.loops_between_predict == (self.loops_before_predict + 1) % self.loops_between_predict and (vehicle.intent is None or self._coordinates_in_spot(vehicle.intent) is None):
-                        vehicle.predict_best_intent(self.history) 
+                        # vehicle.predict_best_intent(self.history) 
+                        if vehicle.vehicle_id == 1:
+                            vehicle.intent = [85, 65]
+                        else:
+                            vehicle.intent = [15, 65]
 
-                    self.intent_circles = []
-                    self.traj_pred_circles = []
+                        # offset for lane
+                        if not self._coordinates_in_spot(vehicle.intent):
+                            yaw = np.arctan2(vehicle.intent[1] - vehicle.state.x.y, vehicle.intent[0] - vehicle.state.x.x)
+                            vehicle.intent[0] += vehicle.vehicle_config.offset * np.sin(yaw)
+                            vehicle.intent[1] -= vehicle.vehicle_config.offset * np.cos(yaw)
 
                     col = (255, 0, 0, 255)
 
                     self.intent_circles.append((vehicle.intent, col))
 
-                    if self._coordinates_in_spot(vehicle.intent) and np.linalg.norm([vehicle.state.x.x - vehicle.intent[0], vehicle.state.x.y - vehicle.intent[1]]) < 7:
-                        _, feas, mpc_preds = vehicle.solve_intent_control(self.time, self.timer_period, obstacle_corners=self.car_corners)
+                    dist_to_intent = np.linalg.norm([vehicle.state.x.x - vehicle.intent[0], vehicle.state.x.y - vehicle.intent[1]])
+                    if dist_to_intent < 10:
+                        P = np.diag([1, 1, 0.5, 0])
+                        Q = np.diag([1, 1, 0.5, 0])
                     else:
-                        _, feas, mpc_preds = vehicle.solve_intent_control(self.time, self.timer_period, obstacle_As=self.obstacle_As, obstacle_bs=self.obstacle_bs)
+                        P = np.diag([1, 1, 0, 0])
+                        Q = np.diag([1, 1, 0, 0])
+
+                    if self._coordinates_in_spot(vehicle.intent) and dist_to_intent < 7:
+                        _, feas, mpc_preds = vehicle.solve_intent_control(self.time, self.timer_period, P=P, Q=Q, obstacle_corners=self.car_corners, other_vehicles=[active_vehicles[v] for v in active_vehicles if v != vehicle.vehicle_id])
+                    else:
+                        _, feas, mpc_preds = vehicle.solve_intent_control(self.time, self.timer_period, P=P, Q=Q, obstacle_As=self.obstacle_As, obstacle_bs=self.obstacle_bs, other_vehicles=[active_vehicles[v] for v in active_vehicles if v != vehicle.vehicle_id])
 
                     self.traj_pred_circles.append((mpc_preds, (0, 0, 255, 255)))
         
@@ -733,7 +756,7 @@ class RuleBasedSimulatorParams():
         self.use_existing_entrances = True # have vehicles park in spots that they parked in real life
 
         # don't use existing agents
-        self.spawn_entering_fn = lambda: 1 
+        self.spawn_entering_fn = lambda: 2
         self.spawn_exiting_fn = lambda: 0
         self.spawn_interval_mean_fn = lambda: 0 # (s)
 
