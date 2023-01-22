@@ -9,6 +9,7 @@ from collections import deque
 import torch
 
 from parksim.path_planner.offline_maneuver import OfflineManeuver
+from parksim.path_planner.offset_offline_maneuver import OffsetOfflineManeuver
 
 from parksim.agents.abstract_agent import AbstractAgent
 from parksim.controller.stanley_controller import StanleyController
@@ -134,6 +135,13 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         self.solver = pyo.SolverFactory('ipopt')
 
         self.prediction_history = {}
+        self.input_history = {}
+        self.offset_offline_maneuver = None
+        self.offset_parking_maneuver = None
+        self.intent_spot = None
+        self.intent_parking_step = None
+        self.intent_parking_origin = None # (x, y, psi)
+        self.intent_parking_start_time = None
 
         self.logger = deque(maxlen=100)
 
@@ -221,6 +229,10 @@ class RuleBasedStanleyVehicle(AbstractAgent):
     def load_maneuver(self, offline_maneuver_path: str):
         home_path = str(Path.home())
         self.offline_maneuver = OfflineManeuver(pickle_file=home_path+offline_maneuver_path)
+
+    def load_offset_maneuver(self, offline_maneuver_path: str):
+        home_path = str(Path.home())
+        self.offset_offline_maneuver = OffsetOfflineManeuver(pickle_file=home_path+offline_maneuver_path)
 
     def load_intent_model(self, model_path: str):
         """
@@ -925,6 +937,26 @@ class RuleBasedStanleyVehicle(AbstractAgent):
 
     ##### INTENT PREDICTION #####
 
+    def solve_intent(self, history, coord_spot_fn):
+        self.predict_best_intent(history) 
+
+        # offset for lane
+        in_spot = coord_spot_fn(self.intent)
+        if not in_spot:
+            yaw = np.arctan2(self.intent[1] - self.state.x.y, self.intent[0] - self.state.x.x)
+            self.intent[0] += self.vehicle_config.offset * np.sin(yaw)
+            self.intent[1] -= self.vehicle_config.offset * np.cos(yaw)
+        else:
+            self.intent_spot = in_spot
+            lane_y = self.graph.vertices[self.graph.search(self.intent)].coords[1]
+            offset = self.vehicle_config.parking_start_offset if self.state.x.y > lane_y else -self.vehicle_config.parking_start_offset
+            dir = 'east' if self.state.x.x < self.intent[0] else 'west'
+            xpos = 'left' if self.state.x.x < self.intent[0] else 'right'
+            loc = 'north' if self.state.x.y < self.intent[1] else 'south'
+            self.offset_parking_maneuver = self.offset_offline_maneuver.get_maneuver(offset=offset, driving_dir=dir, x_position=xpos, spot=loc)
+            self.intent[0] += -4 if dir == 'east' else 4
+            self.intent[1] = lane_y + offset
+
     def predict_best_intent(self, history):
         intents = self.predict_intent(self.vehicle_id, history)
         graph = WaypointsGraph()
@@ -950,10 +982,12 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         xref = np.array(xref)
 
         # solve optimal control problem
-        _, feas, xOpt, uOpt, _ = self.solve_cftoc(P=P, Q=Q, R=R, N=num_waypoints, x0=np.array([self.state.x.x, self.state.x.y, self.state.v.v, self.state.e.psi]), xL=[0, 0, self.vehicle_config.v_min, None], xU=[140, 80, self.vehicle_config.v_max, None], uL=np.array([self.vehicle_config.a_min, self.vehicle_config.delta_min]), uU=np.array([self.vehicle_config.a_max, self.vehicle_config.delta_max]), xref=xref, time=time, timer_period=timer_period, obstacle_corners=obstacle_corners, obstacle_As=obstacle_As, obstacle_bs=obstacle_bs, other_vehicles=other_vehicles)
+        _, feas, xOpt, uOpt, _ = self.solve_cftoc(P=P, Q=Q, R=R, N=num_waypoints, x0=np.array([self.state.x.x, self.state.x.y, self.state.v.v, self.state.e.psi]), xL=[0, 0, self.vehicle_config.v_min, None], xU=[140, 80, self.vehicle_config.v_max, None], uL=np.array([self.vehicle_config.a_min, self.vehicle_config.delta_min]), uU=np.array([self.vehicle_config.a_max, self.vehicle_config.delta_max]), xref=xref, time=time, timer_period=timer_period, obstacle_corners=obstacle_corners, obstacle_As=obstacle_As, obstacle_bs=obstacle_bs, other_vehicles=other_vehicles, initialize_with_previous=True)
 
         self.prediction_history[round(time * (1.0 / timer_period))] = xOpt
         self.prediction_history.pop(round(time * (1.0 / timer_period)) - 5, None) # only save 5 most recent to save space
+        self.input_history[round(time * (1.0 / timer_period))] = uOpt
+        self.input_history.pop(round(time * (1.0 / timer_period)) - 5, None) # only save 5 most recent to save space
 
         # get control (is control 0 problematic because the first xref is usually just continuing at the same speed in the same direction? not sure)
         control = uOpt[:, 0]
@@ -964,9 +998,50 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         # display predictions from optimal control problem
         mpc_preds = xOpt[[0, 1]].T
 
+        # determine if need to park
+        if self.intent_spot is not None and self.intent_parking_step is None and np.linalg.norm([self.state.x.x - self.intent[0], self.state.x.y - self.intent[1], self.state.v.v - 0]) < 0.5:
+            self.intent_parking_step = 0
+            lane_y = self.graph.vertices[self.graph.search(self.intent)].coords[1]
+            self.intent_parking_origin = (self.state.x.x + 4, self.state.x.y + (self.vehicle_config.parking_start_offset if self.intent[1] < lane_y else -self.vehicle_config.parking_start_offset), self.state.e.psi)
+            self.current_task = "PARK"
+
+        return control, feas, mpc_preds
+        
+    def solve_parking_control(self, time, timer_period, P=np.diag([1, 1, 0, 0]), Q=np.diag([1, 1, 0, 0]), R=np.zeros((2, 2)), obstacle_corners: Dict[Tuple, np.ndarray] = None, obstacle_As: List[np.ndarray] = None, obstacle_bs: List[np.ndarray] = None, other_vehicles = [], num_waypoints=10):
+        
+        x_ref = self.intent_parking_origin[0] + self.offset_parking_maneuver.x[self.intent_parking_step:self.intent_parking_step + num_waypoints]
+        y_ref = self.intent_parking_origin[1] + self.offset_parking_maneuver.y[self.intent_parking_step:self.intent_parking_step + num_waypoints]
+        v_ref = self.offset_parking_maneuver.v[self.intent_parking_step:self.intent_parking_step + num_waypoints]
+        psi_ref = self.intent_parking_origin[2] + self.offset_parking_maneuver.psi[self.intent_parking_step:self.intent_parking_step + num_waypoints]
+
+        for _ in range(len(x_ref), num_waypoints):
+            x_ref = np.append(x_ref, self.intent_parking_origin[0] + self.offset_parking_maneuver.x[-1])
+            y_ref = np.append(y_ref, self.intent_parking_origin[1] + self.offset_parking_maneuver.y[-1])
+            v_ref = np.append(v_ref, self.offset_parking_maneuver.v[-1])
+            psi_ref = np.append(psi_ref, self.intent_parking_origin[2] + self.offset_parking_maneuver.psi[-1])
+
+        xref = np.vstack((x_ref, y_ref, v_ref, psi_ref)).T
+
+        # solve optimal control problem
+        _, feas, xOpt, uOpt, _ = self.solve_cftoc(P=P, Q=Q, R=R, N=num_waypoints, x0=np.array([self.state.x.x, self.state.x.y, self.state.v.v, self.state.e.psi]), xL=[0, 0, self.vehicle_config.v_min, None], xU=[140, 80, self.vehicle_config.v_max, None], uL=np.array([self.vehicle_config.a_min, self.vehicle_config.delta_min]), uU=np.array([self.vehicle_config.a_max, self.vehicle_config.delta_max]), xref=xref, time=time, timer_period=timer_period, obstacle_corners=obstacle_corners, obstacle_As=obstacle_As, obstacle_bs=obstacle_bs, other_vehicles=other_vehicles)
+
+        # get control 
+        control = uOpt[:, 0]
+        self.state.t = time
+        self.state_hist.append(self.state.copy())
+        self.controller.step(self.state, control[0], control[1])
+
+        # display predictions from optimal control problem
+        mpc_preds = xOpt[[0, 1]].T
+
+        self.intent_parking_step = min(self.intent_parking_step + 1, len(self.offset_parking_maneuver.x))
+
+        if np.linalg.norm([self.state.x.x - (self.intent_parking_origin[0] + self.offset_parking_maneuver.x[-1]), self.state.x.y - (self.intent_parking_origin[1] + self.offset_parking_maneuver.y[-1])]) < 0.6:
+            self.current_task = "END"
+
         return control, feas, mpc_preds
 
-    def solve_cftoc(self, P, Q, R, N, x0, xL, xU, uL, uU, xref, time, timer_period, obstacle_corners: Dict[Tuple, np.ndarray] = None, obstacle_As: List[np.ndarray] = None, obstacle_bs: List[np.ndarray] = None, other_vehicles = []):
+    def solve_cftoc(self, P, Q, R, N, x0, xL, xU, uL, uU, xref, time, timer_period, obstacle_corners: Dict[Tuple, np.ndarray] = None, obstacle_As: List[np.ndarray] = None, obstacle_bs: List[np.ndarray] = None, other_vehicles = [], initialize_with_previous=False):
         model = pyo.ConcreteModel()
         model.N = N
         model.nx = 4 # x, y, v, psi
@@ -982,10 +1057,33 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         model.Q = Q
         model.R = R
         model.xref = np.vstack((x0, xref)).T
+
+        # get old predictions (None if do not exist)
+        model.last_time = round((time - timer_period) * (1 / timer_period))
         
+        # TODO: initialize using prediction history, shift it by 1 and add copy of last prediction for final one
         # Create state and input variables trajectory:
-        model.x = pyo.Var(model.xIDX, model.tIDX)
-        model.u = pyo.Var(model.uIDX, model.tIDX)
+        if model.last_time not in self.prediction_history or not initialize_with_previous:
+            model.x = pyo.Var(model.xIDX, model.tIDX)
+            model.u = pyo.Var(model.uIDX, model.tIDX)
+        else:
+            last_pred = self.prediction_history[model.last_time]
+            last_input = self.input_history[model.last_time]
+            pred_data = {}
+            input_data = {}
+            for i in model.xIDX:
+                for j in model.tIDX:
+                    pred_data[(i, j)] = last_pred[i, j]
+            for i in model.uIDX:
+                for j in model.tIDX:
+                    input_data[(i, j)] = last_input[i, j]
+            model.x = pyo.Var(model.xIDX, model.tIDX, initialize=pred_data)
+            model.u = pyo.Var(model.uIDX, model.tIDX, initialize=input_data)
+
+        # Parameters
+        model.static_distance = 0.01
+        model.varying_distance = 0.2
+        model.varying_radius = 20
     
         #Objective:
         def objective_rule(model):
@@ -1029,57 +1127,31 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         other_static_bs = []
 
         if obstacle_corners is not None:
-            nearby_radius = 5 
             for _, v in obstacle_corners.items():
-                if any([np.linalg.norm([self.state.x.x - v[i][0], self.state.x.y - v[i][1]]) < nearby_radius for i in range(4)]):
-                    A, b = rectangle_to_polytope(v)
-                    other_static_As.append(A)
-                    other_static_bs.append(b)
+                A, b = rectangle_to_polytope(v)
+                other_static_As.append(A)
+                other_static_bs.append(b)
         else:
-            x, y = self.state.x.x, self.state.x.y
-            if y > 65:
-                other_static_As.append(obstacle_As[0])
-                other_static_bs.append(obstacle_bs[0])
-            if x < 90 and y > 40:
-                other_static_As.append(obstacle_As[1])
-                other_static_bs.append(obstacle_bs[1])
-            if x > 70 and y > 40:
-                other_static_As.append(obstacle_As[2])
-                other_static_bs.append(obstacle_bs[2])
-            if x < 90 and y > 20 and y < 55:
-                other_static_As.append(obstacle_As[3])
-                other_static_bs.append(obstacle_bs[3])
-            if x > 70 and y > 20 and y < 55:
-                other_static_As.append(obstacle_As[4])
-                other_static_bs.append(obstacle_bs[4])
-            if x < 90 and y < 40:
-                other_static_As.append(obstacle_As[5])
-                other_static_bs.append(obstacle_bs[5])
-            if x > 70 and y < 40:
-                other_static_As.append(obstacle_As[6])
-                other_static_bs.append(obstacle_bs[6])
-            if x < 90 and y < 20:
-                other_static_As.append(obstacle_As[7])
-                other_static_bs.append(obstacle_bs[7])
-            if x > 70 and y < 20:
-                other_static_As.append(obstacle_As[8])
-                other_static_bs.append(obstacle_bs[8])
+            other_static_As = obstacle_As
+            other_static_bs = obstacle_bs
+
+        other_static_As = np.array(other_static_As)
+        other_static_bs = np.array(other_static_bs)
 
         other_varying_As = []
         other_varying_bs = []
 
         for v in other_vehicles:
-            if np.linalg.norm([model.xref[0, 0] - v.state.x.x, model.xref[1, 0] - v.state.x.y]) < 25:
-                last_time = round((time - timer_period) * (1 / timer_period))
-                if last_time in v.prediction_history:
+            if np.linalg.norm([model.xref[0, 0] - v.state.x.x, model.xref[1, 0] - v.state.x.y]) < model.varying_radius:
+                if model.last_time in v.prediction_history:
                     other_varying_As.append([])
                     other_varying_bs.append([])
                     for w in range(N + 1):
                         last_vehicle_state = VehicleState()
                         # for last timestep, use last available prediction
-                        last_vehicle_state.x.x = v.prediction_history[last_time][0, min(w + 1, N)]
-                        last_vehicle_state.x.y = v.prediction_history[last_time][1, min(w + 1, N)]
-                        last_vehicle_state.e.psi = v.prediction_history[last_time][3, min(w + 1, N)]
+                        last_vehicle_state.x.x = v.prediction_history[model.last_time][0, min(w + 1, N)]
+                        last_vehicle_state.x.y = v.prediction_history[model.last_time][1, min(w + 1, N)]
+                        last_vehicle_state.e.psi = v.prediction_history[model.last_time][3, min(w + 1, N)]
                         A, b = rectangle_to_polytope(get_vehicle_corners(last_vehicle_state, v.vehicle_body))
                         other_varying_As[-1].append(A)
                         other_varying_bs[-1].append(b)
@@ -1108,7 +1180,7 @@ class RuleBasedStanleyVehicle(AbstractAgent):
                         G[l, 1] * (-model.x[0, t] * pyo.sin(model.x[2, t]) + model.x[1, t] * pyo.cos(model.x[2, t])) + \
                             g[l] ) \
                              * model.lam[j, l, t] for l in model.lamIDX) \
-                                 - sum(other_static_bs[j][l] * model.rev_lam[j, l, t] for l in model.revLamIDX if l < model.num_halfspaces[j]) >= 0.1)
+                                 - sum(other_static_bs[j][l] * model.rev_lam[j, l, t] for l in model.revLamIDX if l < model.num_halfspaces[j]) >= model.static_distance)
             model.collision_Ai1_const = pyo.Constraint(model.othervIDX, model.tIDX, rule=lambda model, j, t: \
                 sum( \
                     (pyo.cos(model.x[2, t]) * G[l, 0] - pyo.sin(model.x[2, t]) * G[l, 1]) \
@@ -1126,7 +1198,7 @@ class RuleBasedStanleyVehicle(AbstractAgent):
 
                 # varying collision avoidance (all new variables except G, g, and model.tIDX)
                 model.varying_num_others = len(other_varying_As)
-                model.varying_num_halfspaces = [a.shape[0] for a in other_varying_As[0]]
+                model.varying_num_halfspaces = [a[0].shape[0] for a in other_varying_As]
 
                 model.varying_othervIDX = pyo.Set( initialize= range(model.varying_num_others), ordered=True )
                 model.varying_lamIDX = pyo.Set( initialize= range(G.shape[0]), ordered=True )
@@ -1136,14 +1208,14 @@ class RuleBasedStanleyVehicle(AbstractAgent):
                 model.varying_lam = pyo.Var(model.varying_othervIDX, model.varying_lamIDX, model.tIDX)
                 model.varying_rev_lam = pyo.Var(model.varying_othervIDX, model.varying_revLamIDX, model.tIDX)
                 model.varying_s = pyo.Var(model.varying_othervIDX, model.varying_sIDX, model.tIDX)
-                
+
                 model.varying_collision_b_const = pyo.Constraint(model.varying_othervIDX, model.tIDX, rule=lambda model, j, t: \
                     -sum( \
                         (G[l, 0] * (model.x[0, t] * pyo.cos(model.x[2, t]) + model.x[1, t] * pyo.sin(model.x[2, t])) + \
                             G[l, 1] * (-model.x[0, t] * pyo.sin(model.x[2, t]) + model.x[1, t] * pyo.cos(model.x[2, t])) + \
                                 g[l] ) \
                                 * model.varying_lam[j, l, t] for l in model.varying_lamIDX) \
-                                    - sum(other_varying_bs[j, t][l] * model.varying_rev_lam[j, l, t] for l in model.varying_revLamIDX if l < model.varying_num_halfspaces[j]) >= 1)
+                                    - sum(other_varying_bs[j, t][l] * model.varying_rev_lam[j, l, t] for l in model.varying_revLamIDX if l < model.varying_num_halfspaces[j]) >= model.varying_distance)
                 model.varying_collision_Ai1_const = pyo.Constraint(model.varying_othervIDX, model.tIDX, rule=lambda model, j, t: \
                     sum( \
                         (pyo.cos(model.x[2, t]) * G[l, 0] - pyo.sin(model.x[2, t]) * G[l, 1]) \

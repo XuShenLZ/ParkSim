@@ -57,6 +57,7 @@ import matplotlib.pyplot as plt
 # These parameters should all become ROS param for simulator and vehicle
 spots_data_path = '/ParkSim/data/spots_data.pickle'
 offline_maneuver_path = '/ParkSim/data/parking_maneuvers.pickle'
+offset_offline_maneuver_path = '/ParkSim/data/offset_parking_maneuvers.pickle'
 waypoints_graph_path = '/ParkSim/data/waypoints_graph.pickle'
 intent_model_path = '/ParkSim/data/smallRegularizedCNN_L0.068_01-29-2022_19-50-35.pth'
 
@@ -253,6 +254,17 @@ class RuleBasedSimulator(object):
             cvx = ConvexHull(gr)
             self.obstacle_As.append(cvx.equations[:, :2])
             self.obstacle_bs.append(-cvx.equations[:, 2].flatten())
+        
+        self.spot_group_corners = {}
+        self.spot_group_corners[0] = np.array([[28.53, 73.73], [28.53, 68.51], [138.42, 68.51], [138.42, 73.73]])
+        self.spot_group_corners[1] = np.array([[7.71, 61.4], [7.71, 50.4], [76.54, 50.4], [76.54, 50.4]])
+        self.spot_group_corners[2] = np.array([[83.82, 61.4], [83.82, 50.4], [138.42, 50.4], [138.42, 61.4]])
+        self.spot_group_corners[3] = np.array([[7.71, 43.24], [7.71, 31.93], [76.54, 31.93], [76.54, 43.24]])
+        self.spot_group_corners[4] = np.array([[83.82, 43.24], [83.82, 31.93], [138.42, 31.93], [138.42, 43.24]])
+        self.spot_group_corners[5] = np.array([[7.71, 24.68], [7.71, 13.51], [76.54, 13.51], [76.54, 24.68]])
+        self.spot_group_corners[6] = np.array([[83.82, 24.68], [83.82, 13.51], [138.42, 13.51], [138.42, 24.68]])
+        self.spot_group_corners[7] = np.array([[7.71, 6.48], [7.71, 0], [76.54, 0], [76.54, 6.48]])
+        self.spot_group_corners[8] = np.array([[83.82, 6.48], [83.82, 0], [138.42, 0], [138.42, 6.48]])
 
         # 1D array of booleans — are the centers of any of the cars contained within this spot's boundaries?
         occupied = np.array([any([c[0] > arr[i][2] and c[0] < arr[i][4] and c[1] < arr[i][3] and c[1] > arr[i][9] for c in car_coords]) for i in range(len(arr))])
@@ -320,6 +332,7 @@ class RuleBasedSimulator(object):
         vehicle.load_parking_spaces(spots_data_path=spots_data_path)
         vehicle.load_graph(waypoints_graph_path=waypoints_graph_path)
         vehicle.load_maneuver(offline_maneuver_path=offline_maneuver_path)
+        vehicle.load_offset_maneuver(offline_maneuver_path=offset_offline_maneuver_path)
         vehicle.load_intent_model(model_path=intent_model_path)
 
         task_profile = []
@@ -332,17 +345,17 @@ class RuleBasedSimulator(object):
                 task_profile = [cruise_task, park_task]
 
                 state = VehicleState()
-                # state.x.x = self.entrance_coords[0] - vehicle_config.offset
-                # state.x.y = self.entrance_coords[1]
-                # state.e.psi = - np.pi/2
-                if vehicle_id == 1:
-                    state.x.x = 20
-                    state.x.y = 65
-                    state.e.psi = 0
-                else:
-                    state.x.x = 80 
-                    state.x.y = 65
-                    state.e.psi = np.pi
+                state.x.x = self.entrance_coords[0] - vehicle_config.offset
+                state.x.y = self.entrance_coords[1]
+                state.e.psi = - np.pi/2
+                # if vehicle_id == 1:
+                #     state.x.x = 20
+                #     state.x.y = 65
+                #     state.e.psi = 0
+                # else:
+                #     state.x.x = 80 
+                #     state.x.y = 65
+                #     state.e.psi = np.pi
 
                 vehicle.set_vehicle_state(state=state)
                 
@@ -660,38 +673,80 @@ class RuleBasedSimulator(object):
 
                 if self.loops > self.loops_before_predict:
 
-                    if self.loops % self.loops_between_predict == (self.loops_before_predict + 1) % self.loops_between_predict and (vehicle.intent is None or self._coordinates_in_spot(vehicle.intent) is None):
-                        # vehicle.predict_best_intent(self.history) 
-                        if vehicle.vehicle_id == 1:
-                            vehicle.intent = [85, 65]
-                        else:
-                            vehicle.intent = [15, 65]
-
-                        # offset for lane
-                        if not self._coordinates_in_spot(vehicle.intent):
-                            yaw = np.arctan2(vehicle.intent[1] - vehicle.state.x.y, vehicle.intent[0] - vehicle.state.x.x)
-                            vehicle.intent[0] += vehicle.vehicle_config.offset * np.sin(yaw)
-                            vehicle.intent[1] -= vehicle.vehicle_config.offset * np.cos(yaw)
+                    if self.loops % self.loops_between_predict == (self.loops_before_predict + 1) % self.loops_between_predict and (vehicle.intent is None or vehicle.intent_spot is None):
+                        vehicle.solve_intent(self.history, self._coordinates_in_spot)
+                        # if vehicle.vehicle_id == 1:
+                        #     vehicle.intent = [85, 65]
+                        # else:
+                        #     vehicle.intent = [15, 65]
 
                     col = (255, 0, 0, 255)
 
                     self.intent_circles.append((vehicle.intent, col))
 
                     dist_to_intent = np.linalg.norm([vehicle.state.x.x - vehicle.intent[0], vehicle.state.x.y - vehicle.intent[1]])
-                    if dist_to_intent < 10:
-                        P = np.diag([1, 1, 0.5, 0])
-                        Q = np.diag([1, 1, 0.5, 0])
+                    if vehicle.intent_spot is not None:
+                        P = np.diag([1, 1, 0.5, 1])
+                        Q = np.diag([1, 1, 0.5, 1])
                     else:
                         P = np.diag([1, 1, 0, 0])
                         Q = np.diag([1, 1, 0, 0])
 
-                    if self._coordinates_in_spot(vehicle.intent) and dist_to_intent < 7:
-                        _, feas, mpc_preds = vehicle.solve_intent_control(self.time, self.timer_period, P=P, Q=Q, obstacle_corners=self.car_corners, other_vehicles=[active_vehicles[v] for v in active_vehicles if v != vehicle.vehicle_id])
+                    if vehicle.intent_parking_step is None:
+                        if self._coordinates_in_spot(vehicle.intent) and dist_to_intent < 7:
+                            _, feas, mpc_preds = vehicle.solve_intent_control(self.time, self.timer_period, P=P, Q=Q, obstacle_corners=self.car_corners, other_vehicles=[active_vehicles[v] for v in active_vehicles if v != vehicle.vehicle_id])
+                        else:
+                            # _, feas, mpc_preds = vehicle.solve_intent_control(self.time, self.timer_period, P=P, Q=Q, obstacle_As=self.obstacle_As, obstacle_bs=self.obstacle_bs, other_vehicles=[active_vehicles[v] for v in active_vehicles if v != vehicle.vehicle_id])
+                            obstacle_As = np.zeros((9, 4, 2))
+                            obstacle_bs = np.zeros((9, 4))
+                            for k, v in self.spot_group_corners.items():
+                                A, b = rectangle_to_polytope(v)
+                                obstacle_As[k] = A
+                                obstacle_bs[k] = b
+
+                            other_static_As = []
+                            other_static_bs = []
+                            x, y = vehicle.state.x.x, vehicle.state.x.y
+                            if y > 65:
+                                other_static_As.append(obstacle_As[0])
+                                other_static_bs.append(obstacle_bs[0])
+                            if x < 90 and y > 40:
+                                other_static_As.append(obstacle_As[1])
+                                other_static_bs.append(obstacle_bs[1])
+                            if x > 70 and y > 40:
+                                other_static_As.append(obstacle_As[2])
+                                other_static_bs.append(obstacle_bs[2])
+                            if x < 90 and y > 20 and y < 55:
+                                other_static_As.append(obstacle_As[3])
+                                other_static_bs.append(obstacle_bs[3])
+                            if x > 70 and y > 20 and y < 55:
+                                other_static_As.append(obstacle_As[4])
+                                other_static_bs.append(obstacle_bs[4])
+                            if x < 90 and y < 40:
+                                other_static_As.append(obstacle_As[5])
+                                other_static_bs.append(obstacle_bs[5])
+                            if x > 70 and y < 40:
+                                other_static_As.append(obstacle_As[6])
+                                other_static_bs.append(obstacle_bs[6])
+                            if x < 90 and y < 20:
+                                other_static_As.append(obstacle_As[7])
+                                other_static_bs.append(obstacle_bs[7])
+                            if x > 70 and y < 20:
+                                other_static_As.append(obstacle_As[8])
+                                other_static_bs.append(obstacle_bs[8])
+                            _, feas, mpc_preds = vehicle.solve_intent_control(self.time, self.timer_period, P=P, Q=Q, obstacle_As=np.array(other_static_As), obstacle_bs=np.array(other_static_bs), other_vehicles=[active_vehicles[v] for v in active_vehicles if v != vehicle.vehicle_id])
                     else:
-                        _, feas, mpc_preds = vehicle.solve_intent_control(self.time, self.timer_period, P=P, Q=Q, obstacle_As=self.obstacle_As, obstacle_bs=self.obstacle_bs, other_vehicles=[active_vehicles[v] for v in active_vehicles if v != vehicle.vehicle_id])
+                        # new_state = VehicleState()
+                        # new_state.x.x = vehicle.intent_parking_origin[0] + vehicle.offset_parking_maneuver.x[vehicle.intent_parking_step]
+                        # new_state.x.y = vehicle.intent_parking_origin[1] + vehicle.offset_parking_maneuver.y[vehicle.intent_parking_step]
+                        # new_state.e.psi = vehicle.intent_parking_origin[2] + vehicle.offset_parking_maneuver.psi[vehicle.intent_parking_step]
+                        # new_state.v.v = vehicle.offset_parking_maneuver.v[vehicle.intent_parking_step]
+                        # vehicle.set_vehicle_state(new_state)
+
+                        vehicle.solve_parking_control(self.time, self.timer_period, P=np.diag([1, 1, 1, 1]), Q=np.diag([1, 1, 1, 1]), obstacle_corners={}, other_vehicles=[active_vehicles[v] for v in active_vehicles if v != vehicle.vehicle_id])
 
                     self.traj_pred_circles.append((mpc_preds, (0, 0, 255, 255)))
-        
+
             self.loops += 1
             self.time += self.timer_period
 
@@ -756,7 +811,7 @@ class RuleBasedSimulatorParams():
         self.use_existing_entrances = True # have vehicles park in spots that they parked in real life
 
         # don't use existing agents
-        self.spawn_entering_fn = lambda: 2
+        self.spawn_entering_fn = lambda: 1
         self.spawn_exiting_fn = lambda: 0
         self.spawn_interval_mean_fn = lambda: 0 # (s)
 
