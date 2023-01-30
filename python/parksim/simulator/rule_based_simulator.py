@@ -174,9 +174,6 @@ class RuleBasedSimulator(object):
         self.intent_extractor = CNNDataProcessor(ds=dataset)
         self.traj_extractor = TransformerDataProcessor(ds=dataset)
 
-        self.loops_before_predict = 5
-        self.loops_between_predict = 5
-
         self.intent_circles = []
         self.traj_pred_circles = []
 
@@ -298,7 +295,7 @@ class RuleBasedSimulator(object):
 
     # goes to an anchor point
     # convention: if entering, spot_index is positive, and if exiting, it's negative
-    def add_vehicle(self, spot_index: int=None, vehicle_body: VehicleBody=VehicleBody(), vehicle_config: VehicleConfig=VehicleConfig(), vehicle_id: int=None, for_nn: bool=False):
+    def add_vehicle(self, spot_index: int=None, vehicle_body: VehicleBody=VehicleBody(), vehicle_config: VehicleConfig=VehicleConfig(), vehicle_id: int=None, for_nn: bool=False, intent_vehicle: bool=True):
         if not for_nn:
             # Start vehicle indexing from 1
             self.num_vehicles += 1
@@ -326,7 +323,8 @@ class RuleBasedSimulator(object):
             intent_extractor=self.intent_extractor,
             traj_extractor=self.traj_extractor,
             spot_detector=spot_detector,
-            electric_vehicle=self.ev_simulation
+            electric_vehicle=self.ev_simulation,
+            intent_vehicle=intent_vehicle
             )
 
         vehicle.load_parking_spaces(spots_data_path=spots_data_path)
@@ -345,17 +343,17 @@ class RuleBasedSimulator(object):
                 task_profile = [cruise_task, park_task]
 
                 state = VehicleState()
-                # state.x.x = self.entrance_coords[0] - vehicle_config.offset
-                # state.x.y = self.entrance_coords[1]
-                # state.e.psi = - np.pi/2
-                if vehicle_id == 1:
-                    state.x.x = 40
-                    state.x.y = 30
-                    state.e.psi = 0
-                else:
-                    state.x.x = 80 
-                    state.x.y = 66
-                    state.e.psi = np.pi
+                state.x.x = self.entrance_coords[0] - vehicle_config.offset
+                state.x.y = self.entrance_coords[1]
+                state.e.psi = - np.pi/2
+                # if vehicle_id == 1:
+                #     state.x.x = 40
+                #     state.x.y = 30
+                #     state.e.psi = 0
+                # else:
+                #     state.x.x = 80 
+                #     state.x.y = 66
+                #     state.e.psi = np.pi
 
                 vehicle.set_vehicle_state(state=state)
                 
@@ -457,7 +455,7 @@ class RuleBasedSimulator(object):
         if self.spawn_entering_time and current_time > self.spawn_entering_time_cumsum[0]:
             empty_spots = [i for i in range(len(self.occupied)) if not self.occupied[i]]
             chosen_spot = self.params.choose_spot(self, empty_spots, active_vehicles)
-            self.add_vehicle(chosen_spot)
+            self.add_vehicle(chosen_spot, intent_vehicle=True)
             self.occupied[chosen_spot] = True
             self.spawn_entering_time.pop(0)
             self.spawn_entering_time_cumsum.pop(0)
@@ -659,8 +657,12 @@ class RuleBasedSimulator(object):
                     self.vehicle_features[vehicle_id] = self.feature_generator.generate_features(vehicle.spot_index, [active_vehicles[id] for id in active_vehicles], self.spawn_interval_mean, self.queue_length)
 
                 if self.sim_is_running:
-                    if self.loops <= self.loops_before_predict: 
-                        vehicle.solve(time=self.time)
+                    vehicle.solve(time=self.time, timer_period=self.timer_period, other_vehicles=[active_vehicles[v] for v in active_vehicles if v is not vehicle], history=self.history, coord_spot_fn=self._coordinates_in_spot)
+    
+                    if vehicle.intent is not None:
+                        col = (255, 0, 0, 255)
+                        self.intent_circles.append((vehicle.intent, col))
+
                 elif self.write_log and len(vehicle.logger) > 0:
                     # write logs
                     log_dir_path = str(Path.home()) + self.log_path
@@ -671,87 +673,7 @@ class RuleBasedSimulator(object):
                         f.writelines('\n'.join(vehicle.logger))
                         vehicle.logger.clear()
 
-                if self.loops > self.loops_before_predict:
-
-                    if self.loops % self.loops_between_predict == (self.loops_before_predict + 1) % self.loops_between_predict and (vehicle.intent is None or vehicle.intent_spot is None):
-                        vehicle.solve_intent(self.history, self._coordinates_in_spot)
-                        # if vehicle.vehicle_id == 1:
-                        #     vehicle.intent = [85, 63.5]
-                        # else:
-                        #     vehicle.intent = [15, 66.5]
-
-                    col = (255, 0, 0, 255)
-
-                    self.intent_circles.append((vehicle.intent, col))
-
-                    # dist_to_intent = np.linalg.norm([vehicle.state.x.x - vehicle.intent[0], vehicle.state.x.y - vehicle.intent[1]])
-                    # if vehicle.intent_spot is not None:
-                    #     P = np.diag([1, 1, 0.5, 1])
-                    #     Q = np.diag([1, 1, 0.5, 1])
-                    # else:
-                    #     P = np.diag([1, 1, 0, 0])
-                    #     Q = np.diag([1, 1, 0, 0])
-
-                    if vehicle.intent_parking_step is None:
-                        # if self._coordinates_in_spot(vehicle.intent) and dist_to_intent < 7:
-                        #     _, feas, mpc_preds = vehicle.solve_intent_control(self.time, self.timer_period, P=P, Q=Q, obstacle_corners=self.car_corners, other_vehicles=[active_vehicles[v] for v in active_vehicles if v != vehicle.vehicle_id])
-                        # else:
-                            # obstacle_As = np.zeros((9, 4, 2))
-                            # obstacle_bs = np.zeros((9, 4))
-                            # for k, v in self.spot_group_corners.items():
-                            #     A, b = rectangle_to_polytope(v)
-                            #     obstacle_As[k] = A
-                            #     obstacle_bs[k] = b
-
-                            # other_static_As = []
-                            # other_static_bs = []
-                            # x, y = vehicle.state.x.x, vehicle.state.x.y
-                            # if y > 65:
-                            #     other_static_As.append(obstacle_As[0])
-                            #     other_static_bs.append(obstacle_bs[0])
-                            # if x < 90 and y > 40:
-                            #     other_static_As.append(obstacle_As[1])
-                            #     other_static_bs.append(obstacle_bs[1])
-                            # if x > 70 and y > 40:
-                            #     other_static_As.append(obstacle_As[2])
-                            #     other_static_bs.append(obstacle_bs[2])
-                            # if x < 90 and y > 20 and y < 55:
-                            #     other_static_As.append(obstacle_As[3])
-                            #     other_static_bs.append(obstacle_bs[3])
-                            # if x > 70 and y > 20 and y < 55:
-                            #     other_static_As.append(obstacle_As[4])
-                            #     other_static_bs.append(obstacle_bs[4])
-                            # if x < 90 and y < 40:
-                            #     other_static_As.append(obstacle_As[5])
-                            #     other_static_bs.append(obstacle_bs[5])
-                            # if x > 70 and y < 40:
-                            #     other_static_As.append(obstacle_As[6])
-                            #     other_static_bs.append(obstacle_bs[6])
-                            # if x < 90 and y < 20:
-                            #     other_static_As.append(obstacle_As[7])
-                            #     other_static_bs.append(obstacle_bs[7])
-                            # if x > 70 and y < 20:
-                            #     other_static_As.append(obstacle_As[8])
-                            #     other_static_bs.append(obstacle_bs[8])
-                            # _, feas, mpc_preds = vehicle.solve_intent_control(self.time, self.timer_period, P=P, Q=Q, obstacle_As=np.array(other_static_As), obstacle_bs=np.array(other_static_bs), other_vehicles=[active_vehicles[v] for v in active_vehicles if v != vehicle.vehicle_id])
-                        done = vehicle.solve_intent_control_stanley(time=self.time, other_vehicles=[v for v in active_vehicles if v is not vehicle])
-
-                        if vehicle.intent_spot is not None and vehicle.intent_parking_step is None and done:
-                            vehicle.intent_parking_step = 0
-                            lane_y = vehicle.graph.vertices[vehicle.graph.search(vehicle.intent)].coords[1]
-                            vehicle.intent_parking_origin = (vehicle.state.x.x + 4, vehicle.state.x.y - vehicle.vehicle_config.parking_start_offset, vehicle.state.e.psi)
-                            vehicle.current_task = "PARK"
-                    else:
-                        # new_state = VehicleState()
-                        # new_state.x.x = vehicle.intent_parking_origin[0] + vehicle.offset_parking_maneuver.x[vehicle.intent_parking_step]
-                        # new_state.x.y = vehicle.intent_parking_origin[1] + vehicle.offset_parking_maneuver.y[vehicle.intent_parking_step]
-                        # new_state.e.psi = vehicle.intent_parking_origin[2] + vehicle.offset_parking_maneuver.psi[vehicle.intent_parking_step]
-                        # new_state.v.v = vehicle.offset_parking_maneuver.v[vehicle.intent_parking_step]
-                        # vehicle.set_vehicle_state(new_state)
-
-                        vehicle.solve_parking_control(self.time, self.timer_period, P=np.diag([1, 1, 1, 1]), Q=np.diag([1, 1, 1, 1]), obstacle_corners={}, other_vehicles=[active_vehicles[v] for v in active_vehicles if v != vehicle.vehicle_id])
-
-                    # self.traj_pred_circles.append((mpc_preds, (0, 0, 255, 255)))
+                vehicle.loops += 1
 
             self.loops += 1
             self.time += self.timer_period
@@ -817,9 +739,9 @@ class RuleBasedSimulatorParams():
         self.use_existing_entrances = True # have vehicles park in spots that they parked in real life
 
         # don't use existing agents
-        self.spawn_entering_fn = lambda: 1
+        self.spawn_entering_fn = lambda: 2
         self.spawn_exiting_fn = lambda: 0
-        self.spawn_interval_mean_fn = lambda: 0 # (s)
+        self.spawn_interval_mean_fn = lambda: 5 # (s)
 
         self.use_existing_obstacles = True # able to park in "occupied" spots from dataset? False if yes, True if no
 

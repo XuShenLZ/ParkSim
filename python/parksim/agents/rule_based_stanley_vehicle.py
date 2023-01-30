@@ -45,7 +45,7 @@ from parksim.utils.spline import calc_spline_course
 import pyomo.environ as pyo
 
 class RuleBasedStanleyVehicle(AbstractAgent):
-    def __init__(self, vehicle_id: int, vehicle_body: VehicleBody, vehicle_config: VehicleConfig, controller: StanleyController = StanleyController(), motion_predictor: StanleyController = StanleyController(), inst_centric_generator = InstanceCentricGenerator(), intent_predictor = Predictor(), traj_model = None, intent_extractor: CNNDataProcessor = None, traj_extractor: TransformerDataProcessor = None, spot_detector: LocalDetector = None, electric_vehicle: bool = False):
+    def __init__(self, vehicle_id: int, vehicle_body: VehicleBody, vehicle_config: VehicleConfig, controller: StanleyController = StanleyController(), motion_predictor: StanleyController = StanleyController(), inst_centric_generator = InstanceCentricGenerator(), intent_predictor = Predictor(), traj_model = None, intent_extractor: CNNDataProcessor = None, traj_extractor: TransformerDataProcessor = None, spot_detector: LocalDetector = None, electric_vehicle: bool = False, intent_vehicle: bool = False):
         self.vehicle_id = vehicle_id
 
         # State and Reference Waypoints
@@ -123,6 +123,12 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         self.ev_charging_state = None # none = not ev, 0 = waiting to charge, 1 = charging, 2 = done charging TODO: make enum
 
         # intent predict
+        self.intent_vehicle = intent_vehicle
+
+        self.loops = 0
+        self.loops_before_predict = 5
+        self.loops_between_predict = 5
+
         self.intent = None
 
         self.traj_model = traj_model
@@ -757,9 +763,14 @@ class RuleBasedStanleyVehicle(AbstractAgent):
 
             if dist < radius:
                 self.nearby_vehicles.add(id)
-            
 
-    def solve(self, time=None):
+    def solve(self, time=None, timer_period=None, other_vehicles=[], history=None, coord_spot_fn=None):
+        if self.intent_vehicle:
+            self.solve_intent_driving(time=time, timer_period=timer_period, other_vehicles=other_vehicles, history=history, coord_spot_fn=coord_spot_fn)
+        else:
+            self.solve_classic(time)    
+
+    def solve_classic(self, time=None):
         """
         Having other_vehicle_objects here is just to mimic the ROS service to change values of the other vehicle. Should use this to acquire information
         """
@@ -937,11 +948,37 @@ class RuleBasedStanleyVehicle(AbstractAgent):
 
     ##### INTENT PREDICTION #####
 
-    def solve_intent(self, history, coord_spot_fn):
-        self.predict_best_intent(history) 
+    def solve_intent_driving(self, time=None, timer_period=None, other_vehicles=[], history=None, coord_spot_fn=None):
+        if self.loops <= self.loops_before_predict: 
+            self.solve_classic(time=time)
+        else:
+            if self.loops % self.loops_between_predict == (self.loops_before_predict + 1) % self.loops_between_predict and (self.intent is None or self.intent_spot is None):
+                self.solve_intent(history, coord_spot_fn)
+                # if self.vehicle_id == 1:
+                #     self.intent = [85, 63.5]
+                # else:
+                #     self.intent = [15, 66.5]
 
-        # offset for lane
-        in_spot = coord_spot_fn(self.intent)
+            if self.intent_parking_step is None:
+                done = self.solve_intent_control_stanley(time=time, other_vehicles=other_vehicles)
+
+                if self.intent_spot is not None and self.intent_parking_step is None and done:
+                    self.intent_parking_step = 0
+                    self.intent_parking_origin = (self.state.x.x + 4, self.state.x.y - self.vehicle_config.parking_start_offset, self.state.e.psi)
+                    self.current_task = "PARK"
+            else:
+                self.solve_parking_control(time, timer_period, P=np.diag([1, 1, 1, 1]), Q=np.diag([1, 1, 1, 1]), obstacle_corners={}, other_vehicles=other_vehicles)
+
+    def solve_intent(self, history, coord_spot_fn):
+        predicted_intent = self.predict_best_intent(history) 
+
+        in_spot = coord_spot_fn(predicted_intent)
+
+        if not (in_spot and self.occupancy[in_spot]):
+            self.intent = predicted_intent
+        else:
+            return # can't change intent if it would be in an occupied spot
+
         if not in_spot:
             yaw = np.arctan2(self.intent[1] - self.state.x.y, self.intent[0] - self.state.x.x)
             self.intent[0] += self.vehicle_config.offset * np.sin(yaw)
@@ -960,6 +997,8 @@ class RuleBasedStanleyVehicle(AbstractAgent):
             self.intent[0] += -4 if dir == 'east' else 4
             self.intent[1] = lane_y + offset
 
+            self.change_central_occupancy(in_spot, True)
+
     def predict_best_intent(self, history):
         intents = self.predict_intent(self.vehicle_id, history)
         graph = WaypointsGraph()
@@ -971,8 +1010,8 @@ class RuleBasedStanleyVehicle(AbstractAgent):
 
         top_n = list(zip(distributions, coordinates))
         top_n.sort(reverse=True)
-        _, self.intent = top_n[0]
-        return top_n[0]
+        _, ret = top_n[0]
+        return ret
 
     def solve_intent_control_stanley(self, time=None, other_vehicles=[]):
         """
