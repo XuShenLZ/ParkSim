@@ -764,9 +764,9 @@ class RuleBasedStanleyVehicle(AbstractAgent):
             if dist < radius:
                 self.nearby_vehicles.add(id)
 
-    def solve(self, time=None, timer_period=None, other_vehicles=[], history=None, coord_spot_fn=None):
+    def solve(self, time=None, timer_period=None, other_vehicles=[], history=None, coord_spot_fn=None, obstacle_corners={}):
         if self.intent_vehicle:
-            self.solve_intent_driving(time=time, timer_period=timer_period, other_vehicles=other_vehicles, history=history, coord_spot_fn=coord_spot_fn)
+            self.solve_intent_driving(time=time, timer_period=timer_period, other_vehicles=other_vehicles, history=history, coord_spot_fn=coord_spot_fn, obstacle_corners=obstacle_corners)
         else:
             self.solve_classic(time)    
 
@@ -948,7 +948,7 @@ class RuleBasedStanleyVehicle(AbstractAgent):
 
     ##### INTENT PREDICTION #####
 
-    def solve_intent_driving(self, time=None, timer_period=None, other_vehicles=[], history=None, coord_spot_fn=None):
+    def solve_intent_driving(self, time=None, timer_period=None, other_vehicles=[], history=None, coord_spot_fn=None, obstacle_corners={}):
         if self.loops <= self.loops_before_predict: 
             self.solve_classic(time=time)
         else:
@@ -967,7 +967,7 @@ class RuleBasedStanleyVehicle(AbstractAgent):
                     self.intent_parking_origin = (self.state.x.x + 4, self.state.x.y - self.vehicle_config.parking_start_offset, self.state.e.psi)
                     self.current_task = "PARK"
             else:
-                self.solve_parking_control(time, timer_period, P=np.diag([1, 1, 1, 1]), Q=np.diag([1, 1, 1, 1]), obstacle_corners={}, other_vehicles=other_vehicles)
+                self.solve_parking_control(time, timer_period, P=np.diag([1, 1, 1, 1]), Q=np.diag([1, 1, 1, 1]), obstacle_corners=obstacle_corners, other_vehicles=other_vehicles)
 
     def solve_intent(self, history, coord_spot_fn):
         predicted_intent = self.predict_best_intent(history) 
@@ -1277,9 +1277,11 @@ class RuleBasedStanleyVehicle(AbstractAgent):
 
         if obstacle_corners is not None:
             for _, v in obstacle_corners.items():
-                A, b = rectangle_to_polytope(v)
-                other_static_As.append(A)
-                other_static_bs.append(b)
+                if any([np.linalg.norm([c[0] - self.state.x.x, c[1] - self.state.x.y]) < 10 for c in v]):
+                    A, b = rectangle_to_polytope(v)
+                    other_static_As.append(A)
+                    other_static_bs.append(b)
+            len(other_static_As)
         else:
             other_static_As = obstacle_As
             other_static_bs = obstacle_bs
@@ -1417,10 +1419,10 @@ class RuleBasedStanleyVehicle(AbstractAgent):
                     fringe.append(child)
 
         lanes = []
-        for lane in all_lanes:
+        for i, lane in enumerate(all_lanes):
             astar_dist, astar_dir = predictor.compute_Astar_dist_dir(
                 current_state, lane.coords, global_heading)
-            heapq.heappush(lanes, (-astar_dir, astar_dist, lane.coords))
+            heapq.heappush(lanes, (-astar_dir, astar_dist, i, lane.coords)) # i is to avoid issues when two heap elements are the same
 
         return lanes
 
@@ -1435,7 +1437,7 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         scales = np.linspace(0.9, 0.1, n)
         scales /= sum(scales)
         for i in range(n):
-            _, _, coords = heapq.heappop(lanes)
+            _, _, _, coords = heapq.heappop(lanes)
             coordinates.append(coords)
             distributions.append(p_minus * scales[i])
 

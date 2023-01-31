@@ -470,7 +470,7 @@ class RuleBasedSimulator(object):
         if self.spawn_exiting_time and current_time - self.last_exit_time > self.spawn_exiting_time[0]:
             empty_spots = [i for i in range(len(self.occupied)) if not self.occupied[i]]
             chosen_spot = np.random.choice(empty_spots)
-            self.add_vehicle(-1 * chosen_spot)
+            self.add_vehicle(-1 * chosen_spot, intent_vehicle=False)
             self.occupied[chosen_spot] = True
             self.spawn_exiting_time.pop(0)
 
@@ -657,7 +657,7 @@ class RuleBasedSimulator(object):
                     self.vehicle_features[vehicle_id] = self.feature_generator.generate_features(vehicle.spot_index, [active_vehicles[id] for id in active_vehicles], self.spawn_interval_mean, self.queue_length)
 
                 if self.sim_is_running:
-                    vehicle.solve(time=self.time, timer_period=self.timer_period, other_vehicles=[active_vehicles[v] for v in active_vehicles if v is not vehicle], history=self.history, coord_spot_fn=self._coordinates_in_spot)
+                    vehicle.solve(time=self.time, timer_period=self.timer_period, other_vehicles=[active_vehicles[v] for v in active_vehicles if v is not vehicle], history=self.history, coord_spot_fn=self._coordinates_in_spot, obstacle_corners={})
     
                     if vehicle.intent is not None:
                         col = (255, 0, 0, 255)
@@ -739,7 +739,7 @@ class RuleBasedSimulatorParams():
         self.use_existing_entrances = True # have vehicles park in spots that they parked in real life
 
         # don't use existing agents
-        self.spawn_entering_fn = lambda: 2
+        self.spawn_entering_fn = lambda: 3
         self.spawn_exiting_fn = lambda: 0
         self.spawn_interval_mean_fn = lambda: 5 # (s)
 
@@ -814,7 +814,8 @@ class RuleBasedSimulatorParams():
             # else:
             #     chosen_spot = min([spot for spot in empty_spots], key=lambda spot: self.vanilla_net(SpotFeatureGenerator.generate_features(self.add_vehicle(spot_index=spot, for_nn=True), active_vehicles, self.spawn_interval_mean, simulator.queue_length)))
         else:
-            return 190
+            #return 190
+            return np.random.choice(empty_spots)
             """
             r = 0
             if r < 0.4:
