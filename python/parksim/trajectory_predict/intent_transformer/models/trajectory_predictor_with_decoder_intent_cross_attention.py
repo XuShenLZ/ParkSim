@@ -102,7 +102,8 @@ class TrajectoryPredictorWithDecoderIntentCrossAttention(BaseTransformerLightnin
 
         self.cnn = SmallRegularizedCNN()
         INTENT_MODEL_PATH = os.path.join(os.path.abspath(os.path.dirname(__file__)), '../models/smallRegularizedCNN_L0.068_01-29-2022_19-50-35.pth')
-        model_state = torch.load(INTENT_MODEL_PATH)
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        model_state = torch.load(INTENT_MODEL_PATH, map_location=torch.device(device)) # TODO: remove when pushing, or don't push
         self.cnn.load_state_dict(model_state)
         self.cnn = nn.Sequential(self.cnn.image_layer, nn.Flatten())
 
