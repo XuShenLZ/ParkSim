@@ -774,9 +774,11 @@ class RuleBasedStanleyVehicle(AbstractAgent):
 
     def solve(self, time=None, timer_period=None, other_vehicles=[], history=None, coord_spot_fn=None, obstacle_corners={}):
         if self.intent_vehicle:
-            self.solve_intent_driving(time=time, timer_period=timer_period, other_vehicles=other_vehicles, history=history, coord_spot_fn=coord_spot_fn, obstacle_corners=obstacle_corners)
+            mpc_preds = self.solve_intent_driving(time=time, timer_period=timer_period, other_vehicles=other_vehicles, history=history, coord_spot_fn=coord_spot_fn, obstacle_corners=obstacle_corners)
+            return mpc_preds
         else:
             self.solve_classic(time)    
+            return None
 
     def solve_classic(self, time=None):
         """
@@ -971,7 +973,9 @@ class RuleBasedStanleyVehicle(AbstractAgent):
                     self.intent_parking_origin = (self.state.x.x + 4, self.state.x.y - self.vehicle_config.parking_start_offset, self.state.e.psi)
                     self.current_task = "PARK"
             else:
-                self.solve_parking_control(time, timer_period, P=np.diag([1, 1, 1, 1]), Q=np.diag([1, 1, 1, 1]), obstacle_corners=obstacle_corners, other_vehicles=other_vehicles)
+                _, _, mpc_preds = self.solve_parking_control(time, timer_period, P=np.diag([1, 1, 1, 1]), Q=np.diag([1, 1, 1, 1]), obstacle_corners=obstacle_corners, other_vehicles=other_vehicles)
+                return mpc_preds
+        return None
 
     def solve_intent(self, history, coord_spot_fn):
         predicted_intent = self.predict_best_intent(history, coord_spot_fn)
@@ -983,11 +987,7 @@ class RuleBasedStanleyVehicle(AbstractAgent):
 
         in_spot = coord_spot_fn(self.intent)
 
-        if not in_spot:
-            yaw = np.arctan2(self.intent[1] - self.state.x.y, self.intent[0] - self.state.x.x)
-            self.intent[0] += self.vehicle_config.offset * np.sin(yaw)
-            self.intent[1] -= self.vehicle_config.offset * np.cos(yaw)
-        else:
+        if in_spot:
             self.intent_spot = in_spot
             nearest_waypoint = self.graph.vertices[self.graph.search(self.intent)].coords
             lane_x, lane_y = nearest_waypoint[0], nearest_waypoint[1]
@@ -1016,19 +1016,29 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         top_n = list(zip(distributions, coordinates))
         top_n.sort(reverse=True)
 
-        for _, coords in top_n:
+        valid_probs = []
+        valid_coords = []
+
+        for prob, coords in top_n:
             in_spot = coord_spot_fn(coords)
 
             # between 0 and 2pi
-            # ang = ((np.arctan2(coords[1] - self.state.x.y, coords[0] - self.state.x.x) - self.state.e.psi) + (2*np.pi)) % (2*np.pi)
-            # if ang > np.pi / 2 + np.pi / 6 and ang < 3 * np.pi / 2 - np.pi / 6: # can't have an intent behind you
-            #     continue
+            ang = ((np.arctan2(coords[1] - self.state.x.y, coords[0] - self.state.x.x) - self.state.e.psi) + (2*np.pi)) % (2*np.pi)
+            if ang > np.pi / 2 - np.pi / 6 and ang < 3 * np.pi / 2 + np.pi / 6: # can't have an intent behind you
+                continue
+            if np.linalg.norm([self.state.x.x - coords[0], self.state.x.y - coords[1]]) < 4:
+                continue
             if in_spot and self.occupancy[in_spot]: # if occupied, can't return this
                 continue
             
-            return coords
+            valid_probs.append(prob)
+            valid_coords.append(coords)
+            # return coords
 
-        return None
+        if len(valid_coords) == 0:
+            return None
+        
+        return valid_coords[np.random.choice(range(len(valid_coords)), p=np.array(valid_probs) / sum(valid_probs))]
 
     def solve_intent_control_stanley(self, time=None, other_vehicles=[]):
         """
@@ -1175,6 +1185,9 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         
     def solve_parking_control(self, time, timer_period, P=np.diag([1, 1, 0, 0]), Q=np.diag([1, 1, 0, 0]), R=np.zeros((2, 2)), obstacle_corners: Dict[Tuple, np.ndarray] = None, obstacle_As: List[np.ndarray] = None, obstacle_bs: List[np.ndarray] = None, other_vehicles = [], num_waypoints=10):
         
+        ########
+        # MPC parking
+
         x_ref = self.intent_parking_origin[0] + self.offset_parking_maneuver.x[self.intent_parking_step:self.intent_parking_step + num_waypoints]
         y_ref = self.intent_parking_origin[1] + self.offset_parking_maneuver.y[self.intent_parking_step:self.intent_parking_step + num_waypoints]
         v_ref = self.offset_parking_maneuver.v[self.intent_parking_step:self.intent_parking_step + num_waypoints]
@@ -1207,6 +1220,9 @@ class RuleBasedStanleyVehicle(AbstractAgent):
             self.current_task = "END"
 
         return control, feas, mpc_preds
+
+        ########
+        # teleport parking
 
         # x_ref = self.intent_parking_origin[0] + self.offset_parking_maneuver.x[self.intent_parking_step]
         # y_ref = self.intent_parking_origin[1] + self.offset_parking_maneuver.y[self.intent_parking_step]

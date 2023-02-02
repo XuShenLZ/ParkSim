@@ -657,11 +657,13 @@ class RuleBasedSimulator(object):
                     self.vehicle_features[vehicle_id] = self.feature_generator.generate_features(vehicle.spot_index, [active_vehicles[id] for id in active_vehicles], self.spawn_interval_mean, self.queue_length)
 
                 if self.sim_is_running:
-                    vehicle.solve(time=self.time, timer_period=self.timer_period, other_vehicles=[active_vehicles[v] for v in active_vehicles if v is not vehicle], history=self.history, coord_spot_fn=self._coordinates_in_spot, obstacle_corners={})
+                    mpc_preds = vehicle.solve(time=self.time, timer_period=self.timer_period, other_vehicles=[active_vehicles[v] for v in active_vehicles if v is not vehicle], history=self.history, coord_spot_fn=self._coordinates_in_spot, obstacle_corners={})
     
                     if vehicle.intent is not None:
                         col = (255, 0, 0, 255)
                         self.intent_circles.append((vehicle.intent, col))
+                    if mpc_preds is not None:
+                        self.traj_pred_circles.append((mpc_preds, col))
 
                 elif self.write_log and len(vehicle.logger) > 0:
                     # write logs
