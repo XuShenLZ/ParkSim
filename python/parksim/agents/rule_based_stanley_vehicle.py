@@ -253,6 +253,12 @@ class RuleBasedStanleyVehicle(AbstractAgent):
 
         if spot_index is None:
             # exiting
+            if len(graph_sol.vertices) == 0: # just point right by default
+
+                start_coords = np.array([self.state.x.x, self.state.x.y])
+                start_vertex_idx = self.graph.search(start_coords)
+                graph_sol.vertices = [Vertex(start_coords), self.graph.vertices[start_vertex_idx]]
+
             x_ref, y_ref, yaw_ref = graph_sol.compute_ref_path(offset)
         else:
 
@@ -407,9 +413,11 @@ class RuleBasedStanleyVehicle(AbstractAgent):
             # Finished all tasks
             self.current_task = "END"
     
-    def reached_target(self):
-        dist = np.linalg.norm([self.state.x.x - self.x_ref[-1], self.state.x.y - self.y_ref[-1]])
-        ang = ((np.arctan2(self.y_ref[-1] - self.state.x.y, self.x_ref[-1] - self.state.x.x) - self.state.e.psi) + (2*np.pi)) % (2*np.pi)
+    def reached_target(self, target=None):
+        if target is None:
+            target = [self.x_ref[-1], self.y_ref[-1]]
+        dist = np.linalg.norm([self.state.x.x - target[0], self.state.x.y - target[1]])
+        ang = ((np.arctan2(target[1] - self.state.x.y, target[0] - self.state.x.x) - self.state.e.psi) + (2*np.pi)) % (2*np.pi)
         reached_tgt = dist < self.vehicle_config.braking_distance/2 and ang > (np.pi / 2) and ang < (3 * np.pi / 2)
         return reached_tgt
 
@@ -954,10 +962,6 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         else:
             if self.loops % self.loops_between_predict == (self.loops_before_predict + 1) % self.loops_between_predict and (self.intent is None or self.intent_spot is None):
                 self.solve_intent(history, coord_spot_fn)
-                # if self.vehicle_id == 1:
-                #     self.intent = [85, 63.5]
-                # else:
-                #     self.intent = [15, 66.5]
 
             if self.intent_parking_step is None:
                 done = self.solve_intent_control_stanley(time=time, other_vehicles=other_vehicles)
@@ -970,14 +974,14 @@ class RuleBasedStanleyVehicle(AbstractAgent):
                 self.solve_parking_control(time, timer_period, P=np.diag([1, 1, 1, 1]), Q=np.diag([1, 1, 1, 1]), obstacle_corners=obstacle_corners, other_vehicles=other_vehicles)
 
     def solve_intent(self, history, coord_spot_fn):
-        predicted_intent = self.predict_best_intent(history) 
+        predicted_intent = self.predict_best_intent(history, coord_spot_fn)
 
-        in_spot = coord_spot_fn(predicted_intent)
-
-        if not (in_spot and self.occupancy[in_spot]):
-            self.intent = predicted_intent
+        if predicted_intent is None:
+            return
         else:
-            return # can't change intent if it would be in an occupied spot
+            self.intent = predicted_intent
+
+        in_spot = coord_spot_fn(self.intent)
 
         if not in_spot:
             yaw = np.arctan2(self.intent[1] - self.state.x.y, self.intent[0] - self.state.x.x)
@@ -993,13 +997,14 @@ class RuleBasedStanleyVehicle(AbstractAgent):
             dir = 'east' if self.state.x.x < self.intent[0] else 'west'
             xpos = 'left' if self.state.x.x < self.intent[0] else 'right'
             loc = 'north' if lane_y < self.intent[1] else 'south'
+            # TODO: what if this doesn't give the correct maneuver (e.g. you are to the left of the spot when calculating it but will approach from the right)
             self.offset_parking_maneuver = self.offset_offline_maneuver.get_maneuver(offset=offset, driving_dir=dir, x_position=xpos, spot=loc)
             self.intent[0] += -4 if dir == 'east' else 4
             self.intent[1] = lane_y + offset
 
             self.change_central_occupancy(in_spot, True)
 
-    def predict_best_intent(self, history):
+    def predict_best_intent(self, history, coord_spot_fn):
         intents = self.predict_intent(self.vehicle_id, history)
         graph = WaypointsGraph()
         graph.setup_with_vis(self.intent_extractor.vis)
@@ -1010,8 +1015,20 @@ class RuleBasedStanleyVehicle(AbstractAgent):
 
         top_n = list(zip(distributions, coordinates))
         top_n.sort(reverse=True)
-        _, ret = top_n[0]
-        return ret
+
+        for _, coords in top_n:
+            in_spot = coord_spot_fn(coords)
+
+            # between 0 and 2pi
+            # ang = ((np.arctan2(coords[1] - self.state.x.y, coords[0] - self.state.x.x) - self.state.e.psi) + (2*np.pi)) % (2*np.pi)
+            # if ang > np.pi / 2 + np.pi / 6 and ang < 3 * np.pi / 2 - np.pi / 6: # can't have an intent behind you
+            #     continue
+            if in_spot and self.occupancy[in_spot]: # if occupied, can't return this
+                continue
+            
+            return coords
+
+        return None
 
     def solve_intent_control_stanley(self, time=None, other_vehicles=[]):
         """
@@ -1025,10 +1042,10 @@ class RuleBasedStanleyVehicle(AbstractAgent):
 
         # driving control
         graph_sol = AStarPlanner(self.graph.vertices[self.graph.search([self.state.x.x, self.state.x.y])], self.graph.vertices[self.graph.search(self.intent)]).solve()
-        if len(graph_sol.vertices) == 0:
-            return True
         x_ref, y_ref, yaw_ref = self.compute_ref_path(graph_sol=graph_sol)
         self.set_ref_pose(x_ref, y_ref, yaw_ref)
+        if self.reached_target(target=self.intent):
+            return True
 
         # braking controller
         if not self.is_braking:
@@ -1190,6 +1207,19 @@ class RuleBasedStanleyVehicle(AbstractAgent):
             self.current_task = "END"
 
         return control, feas, mpc_preds
+
+        # x_ref = self.intent_parking_origin[0] + self.offset_parking_maneuver.x[self.intent_parking_step]
+        # y_ref = self.intent_parking_origin[1] + self.offset_parking_maneuver.y[self.intent_parking_step]
+        # v_ref = self.offset_parking_maneuver.v[self.intent_parking_step]
+        # psi_ref = self.offset_parking_maneuver.psi[self.intent_parking_step]
+
+        # self.state.x.x, self.state.x.y, self.state.v.v, self.state.e.psi = x_ref, y_ref, v_ref, psi_ref
+        # self.state.t = time
+        # self.state_hist.append(self.state.copy())
+
+        # self.intent_parking_step = min(self.intent_parking_step + 1, len(self.offset_parking_maneuver.x))
+        # if self.intent_parking_step == len(self.offset_parking_maneuver.x):
+        #     self.current_task = "END"
 
     def solve_cftoc(self, P, Q, R, N, x0, xL, xU, uL, uU, xref, time, timer_period, obstacle_corners: Dict[Tuple, np.ndarray] = None, obstacle_As: List[np.ndarray] = None, obstacle_bs: List[np.ndarray] = None, other_vehicles = [], initialize_with_previous=False):
         model = pyo.ConcreteModel()
