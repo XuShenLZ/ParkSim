@@ -106,7 +106,7 @@ class VehicleConfig(PythonMsg):
 
     # Decision Making Related
     offset: float = field(default=1.75) # distance off from waypoints
-    parking_start_offset: float = field(default=1.25) # distance off from waypoints to start parking maneuver
+    parking_start_offset: float = field(default=1.75) # distance off from waypoints to start parking maneuver
     look_ahead_timesteps: int = field(default=10) # how far to look ahead for crash detection
     crash_check_radius: float = field(default=15) # which vehicles to check crash
     braking_distance: float = field(default=10)

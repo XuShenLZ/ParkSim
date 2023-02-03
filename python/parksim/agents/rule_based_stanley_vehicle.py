@@ -143,6 +143,7 @@ class RuleBasedStanleyVehicle(AbstractAgent):
 
         self.prediction_history = {}
         self.input_history = {}
+        self.offset_maneuver_params = None
         self.offset_offline_maneuver = None
         self.offset_parking_maneuver = None
         self.intent_spot = None
@@ -256,9 +257,10 @@ class RuleBasedStanleyVehicle(AbstractAgent):
             # exiting
             if len(graph_sol.vertices) == 0: # just point right by default
 
-                start_coords = np.array([self.state.x.x, self.state.x.y])
-                start_vertex_idx = self.graph.search(start_coords)
-                graph_sol.vertices = [Vertex(start_coords), self.graph.vertices[start_vertex_idx]]
+                shifted_coords = np.array([self.state.x.x - np.sin(self.state.e.psi) * offset, self.state.x.y + np.cos(self.state.e.psi) * offset])
+                end_coords = np.array([self.state.x.x, self.state.x.y])
+                end_vertex_idx = self.graph.search(end_coords)
+                graph_sol.vertices = [Vertex(shifted_coords), self.graph.vertices[end_vertex_idx]]
 
             x_ref, y_ref, yaw_ref = graph_sol.compute_ref_path(offset)
         else:
@@ -982,12 +984,12 @@ class RuleBasedStanleyVehicle(AbstractAgent):
                 # determine if need to park
                 if self.intent_spot is not None and self.intent_parking_step is None and done:
                     self.intent_parking_step = 0
-                    self.intent_parking_origin = (self.state.x.x + 4, self.state.x.y - self.vehicle_config.parking_start_offset, self.state.e.psi)
+                    self.intent_parking_origin = (self.state.x.x + 4 if self.offset_maneuver_params[1] == 'left' else self.state.x.x - 4, self.state.x.y + self.vehicle_config.parking_start_offset if self.offset_maneuver_params[0] == 'east' else self.state.x.y - self.vehicle_config.parking_start_offset, self.state.e.psi)
                     self.current_task = "PARK"
             else: # if parking
-                _, _, mpc_preds = self.solve_intent_based_parking_control_mpc(time, timer_period, P=np.diag([1, 1, 1, 1]), Q=np.diag([1, 1, 1, 1]), obstacle_corners=obstacle_corners, other_vehicles=other_vehicles) # uses mpc, more robust
-                # self.solve_intent_based_parking_control_teleport(time) # just teleports vehicle, may cause vehicle to jump if not initially at correct heading
-                return mpc_preds
+                # _, _, mpc_preds = self.solve_intent_based_parking_control_mpc(time, timer_period, P=np.diag([1, 1, 1, 1]), Q=np.diag([1, 1, 1, 1]), obstacle_corners=obstacle_corners, other_vehicles=other_vehicles) # uses mpc, more robust
+                # return mpc_preds
+                self.solve_intent_based_parking_control_teleport(time) # just teleports vehicle, may cause vehicle to jump if not initially at correct heading
                 
         return None
 
@@ -995,30 +997,46 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         """
         Calculate intent from intent prediction and populate self.intent.
         """
+        # get raw intent returned from intent predictor
         predicted_intent = self.sample_valid_intent(history, coord_spot_fn)
 
-        if predicted_intent is None:
+        if predicted_intent is None: # if predictor did not return a valid intent, keep current intent
             return
         else:
             self.intent = predicted_intent
 
+        # returns None if the intent is not in a spot, else returns the spot number
         in_spot = coord_spot_fn(self.intent)
 
+        # if found a parking spot, set that to the permanent intent
         if in_spot:
             self.intent_spot = in_spot
+
+            # load y-coordinate of nearest waypoint (to tell if parking in a north or south spot)
             nearest_waypoint = self.graph.vertices[self.graph.search(self.intent)].coords
             lane_x, lane_y = nearest_waypoint[0], nearest_waypoint[1]
-            # self.vehicle_config.parking_start_offset = max(-2, min(2, round((lane_y - self.state.x.y) * 4) / 4))
-            self.vehicle_config.parking_start_offset = -1.75
-            offset = self.vehicle_config.parking_start_offset
-            dir = 'east' if self.state.x.x < self.intent[0] else 'west'
-            xpos = 'left' if self.state.x.x < self.intent[0] else 'right'
-            loc = 'north' if lane_y < self.intent[1] else 'south'
-            # TODO: what if this doesn't give the correct maneuver (e.g. you are to the left of the spot when calculating it but will approach from the right)
-            self.offset_parking_maneuver = self.offset_offline_maneuver.get_maneuver(offset=offset, driving_dir=dir, x_position=xpos, spot=loc)
-            self.intent[0] += -4 if dir == 'east' else 4
-            self.intent[1] = lane_y + offset
 
+            # determine parameters of parking maneuver
+            graph_sol = AStarPlanner(self.graph.vertices[self.graph.search([self.state.x.x, self.state.x.y])], self.graph.vertices[self.graph.search(self.intent)]).solve()
+            if len(graph_sol.vertices) <= 1:
+                dir = 'east' if self.state.x.x < self.intent[0] else 'west'
+                xpos = 'left' if self.state.x.x < self.intent[0] else 'right'
+            else:
+                approach_left = graph_sol.vertices[-1].coords[0] > graph_sol.vertices[-2].coords[0]
+                dir = 'east' if approach_left else 'west'
+                xpos = 'left' if approach_left else 'right'
+            loc = 'north' if lane_y < self.intent[1] else 'south'
+            heading = 'up'
+            self.offset_maneuver_params = (dir, xpos, loc, heading)
+
+            # load parking maneuver
+            self.offset_parking_maneuver = self.offline_maneuver.get_maneuver(driving_dir=dir, x_position=xpos, spot=loc, heading=heading)
+
+            # adjust intent for parking
+            self.intent[0] += -4 if xpos == 'left' else 4
+            self.intent[1] = lane_y
+
+            # mark this spot as full
             self.change_central_occupancy(in_spot, True)
 
     def sample_valid_intent(self, history, coord_spot_fn):
@@ -1283,7 +1301,7 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         For static obstacles: either pass in obstacle_corners (if you have the corners of the polytopes, must be rectangles) or obstacle_As and obstacle_Bs (if you have the polytopes in Ax <= b form)
         For dynamic obstacles: pass in other_vehicles
 
-        For Xu: can ignore anything related to moving obstacles (lines 1313-1324, 1396-1417, 1457-1489)
+        For Xu: can ignore anything related to moving obstacles (lines 1331-1342, 1414-1435, 1475-1507)
         """
         assert (obstacle_corners is None) or (obstacle_As is None and obstacle_bs is None), "can only pass in obstacle_corners OR obstacle_As and obstacle_bs"
 
