@@ -7,6 +7,7 @@ import time
 import array
 from collections import deque
 import torch
+import PIL
 
 from parksim.path_planner.offline_maneuver import OfflineManeuver
 from parksim.path_planner.offset_offline_maneuver import OffsetOfflineManeuver
@@ -773,14 +774,19 @@ class RuleBasedStanleyVehicle(AbstractAgent):
                 self.nearby_vehicles.add(id)
 
     def solve(self, time=None, timer_period=None, other_vehicles=[], history=None, coord_spot_fn=None, obstacle_corners={}):
+        """
+        Update the vehicle state
+        """
         if self.intent_vehicle:
-            mpc_preds = self.solve_intent_driving(time=time, timer_period=timer_period, other_vehicles=other_vehicles, history=history, coord_spot_fn=coord_spot_fn, obstacle_corners=obstacle_corners)
+            # drive according to intent prediction
+            mpc_preds = self.solve_intent_based_control(time=time, timer_period=timer_period, other_vehicles=other_vehicles, history=history, coord_spot_fn=coord_spot_fn, obstacle_corners=obstacle_corners)
             return mpc_preds
         else:
-            self.solve_classic(time)    
+            # drive according to task profile
+            self.solve_task_based_control(time)    
             return None
 
-    def solve_classic(self, time=None):
+    def solve_task_based_control(self, time=None):
         """
         Having other_vehicle_objects here is just to mimic the ROS service to change values of the other vehicle. Should use this to acquire information
         """
@@ -937,9 +943,9 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         self.state_hist.append(self.state.copy())
         self.logger.append(f't = {time}: x = {self.state.x.x:.2f}, y = {self.state.x.y:.2f}')
 
-    def predict_intent(self, vehicle_id, history):
+    def run_intent_predictor(self, vehicle_id, history):
         """
-        predict the intent of the specific vehicle
+        Predict the most likely intents of the specific vehicle.
         """
         img = self.inst_centric_generator.inst_centric(vehicle_id, history)
         return self.intent_predictor.predict(img, np.array([self.state.x.x, self.state.x.y]), self.state.e.psi, self.state.v.v, 1.0)
@@ -958,27 +964,38 @@ class RuleBasedStanleyVehicle(AbstractAgent):
 
     ##### INTENT PREDICTION #####
 
-    def solve_intent_driving(self, time=None, timer_period=None, other_vehicles=[], history=None, coord_spot_fn=None, obstacle_corners={}):
+    def solve_intent_based_control(self, time=None, timer_period=None, other_vehicles=[], history=None, coord_spot_fn=None, obstacle_corners={}):
+        """
+        Drive using intent predictions.
+        """
         if self.loops <= self.loops_before_predict: 
-            self.solve_classic(time=time)
+            # initially, just cruise to generate enough history to use intent prediction
+            self.solve_task_based_control(time=time)
         else:
+            # calculate intent every self.loops_betwen_predict steps (if haven't already decided to park)
             if self.loops % self.loops_between_predict == (self.loops_before_predict + 1) % self.loops_between_predict and (self.intent is None or self.intent_spot is None):
-                self.solve_intent(history, coord_spot_fn)
+                self.solve_intent(history, coord_spot_fn) # populates self.intent
 
-            if self.intent_parking_step is None:
-                done = self.solve_intent_control_stanley(time=time, other_vehicles=other_vehicles)
+            if self.intent_parking_step is None: # if not parking
+                done = self.solve_intent_based_control_stanley(time=time, other_vehicles=other_vehicles)
 
+                # determine if need to park
                 if self.intent_spot is not None and self.intent_parking_step is None and done:
                     self.intent_parking_step = 0
                     self.intent_parking_origin = (self.state.x.x + 4, self.state.x.y - self.vehicle_config.parking_start_offset, self.state.e.psi)
                     self.current_task = "PARK"
-            else:
-                _, _, mpc_preds = self.solve_parking_control(time, timer_period, P=np.diag([1, 1, 1, 1]), Q=np.diag([1, 1, 1, 1]), obstacle_corners=obstacle_corners, other_vehicles=other_vehicles)
+            else: # if parking
+                _, _, mpc_preds = self.solve_intent_based_parking_control_mpc(time, timer_period, P=np.diag([1, 1, 1, 1]), Q=np.diag([1, 1, 1, 1]), obstacle_corners=obstacle_corners, other_vehicles=other_vehicles) # uses mpc, more robust
+                # self.solve_intent_based_parking_control_teleport(time) # just teleports vehicle, may cause vehicle to jump if not initially at correct heading
                 return mpc_preds
+                
         return None
 
     def solve_intent(self, history, coord_spot_fn):
-        predicted_intent = self.predict_best_intent(history, coord_spot_fn)
+        """
+        Calculate intent from intent prediction and populate self.intent.
+        """
+        predicted_intent = self.sample_valid_intent(history, coord_spot_fn)
 
         if predicted_intent is None:
             return
@@ -1004,8 +1021,13 @@ class RuleBasedStanleyVehicle(AbstractAgent):
 
             self.change_central_occupancy(in_spot, True)
 
-    def predict_best_intent(self, history, coord_spot_fn):
-        intents = self.predict_intent(self.vehicle_id, history)
+    def sample_valid_intent(self, history, coord_spot_fn):
+        """
+        Find most likely feasible intents from intent predictor, then pick one.
+        """
+        # run intent predictor and load most popular intents
+
+        intents = self.run_intent_predictor(self.vehicle_id, history)
         graph = WaypointsGraph()
         graph.setup_with_vis(self.intent_extractor.vis)
         best_lanes = self.find_n_best_lanes(
@@ -1016,33 +1038,39 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         top_n = list(zip(distributions, coordinates))
         top_n.sort(reverse=True)
 
+        # find valid intents
+
         valid_probs = []
         valid_coords = []
 
         for prob, coords in top_n:
-            in_spot = coord_spot_fn(coords)
+            in_spot = coord_spot_fn(coords) # determine if intent is in a spot
 
-            # between 0 and 2pi
-            ang = ((np.arctan2(coords[1] - self.state.x.y, coords[0] - self.state.x.x) - self.state.e.psi) + (2*np.pi)) % (2*np.pi)
-            if ang > np.pi / 2 - np.pi / 6 and ang < 3 * np.pi / 2 + np.pi / 6: # can't have an intent behind you
+            # can't have an intent behind you
+            ang = ((np.arctan2(coords[1] - self.state.x.y, coords[0] - self.state.x.x) - self.state.e.psi) + (2*np.pi)) % (2*np.pi) # between 0 and 2pi
+            if ang > np.pi / 2 - np.pi / 6 and ang < 3 * np.pi / 2 + np.pi / 6:
                 continue
+
+            # intent can't be near you (to prevent stagnation)
             if np.linalg.norm([self.state.x.x - coords[0], self.state.x.y - coords[1]]) < 4:
                 continue
-            if in_spot and self.occupancy[in_spot]: # if occupied, can't return this
+
+            # can't go to already occupied space
+            if in_spot and self.occupancy[in_spot]:
                 continue
             
             valid_probs.append(prob)
             valid_coords.append(coords)
-            # return coords
 
+        # if no valid intents, return None (which leaves self.intent the same)
         if len(valid_coords) == 0:
             return None
         
         return valid_coords[np.random.choice(range(len(valid_coords)), p=np.array(valid_probs) / sum(valid_probs))]
 
-    def solve_intent_control_stanley(self, time=None, other_vehicles=[]):
+    def solve_intent_based_control_stanley(self, time=None, other_vehicles=[]):
         """
-        Having other_vehicle_objects here is just to mimic the ROS service to change values of the other vehicle. Should use this to acquire information
+        Stanley controller used for intent-based driving. Looks very similar to solve_task_based_control.
         """
         if self.current_task == "END":
             return True
@@ -1146,25 +1174,29 @@ class RuleBasedStanleyVehicle(AbstractAgent):
 
         return False
 
-    def solve_intent_control(self, time, timer_period, P=np.diag([1, 1, 0, 0]), Q=np.diag([1, 1, 0, 0]), R=np.zeros((2, 2)), obstacle_corners: Dict[Tuple, np.ndarray] = None, obstacle_As: List[np.ndarray] = None, obstacle_bs: List[np.ndarray] = None, other_vehicles = [], num_waypoints=10):
-        
+    def solve_intent_based_control_mpc(self, time, timer_period, P=np.diag([1, 1, 0, 0]), Q=np.diag([1, 1, 0, 0]), R=np.zeros((2, 2)), obstacle_corners: Dict[Tuple, np.ndarray] = None, obstacle_As: List[np.ndarray] = None, obstacle_bs: List[np.ndarray] = None, other_vehicles = [], num_waypoints=10):
+        """
+        Use MPC to follow a line from the vehicle to the calculated intent. Not used at the moment (see solve_intent_based_control_stanley).
+        """
+        # linearly interpolate from vehicle to intent
         cxs = [self.state.x.x + ((self.intent[0] - self.state.x.x) * i / 10) for i in range(num_waypoints)]
         cys = [self.state.x.y + ((self.intent[1] - self.state.x.y) * i / 10) for i in range(num_waypoints)]
 
         xref = []
         for i in range(num_waypoints):
-            xref.append([cxs[i], cys[i], 0, 0])
+            xref.append([cxs[i], cys[i], 0, 0]) # just going to follow x and y, not v and heading
         xref = np.array(xref)
 
         # solve optimal control problem
         _, feas, xOpt, uOpt, _ = self.solve_cftoc(P=P, Q=Q, R=R, N=num_waypoints, x0=np.array([self.state.x.x, self.state.x.y, self.state.v.v, self.state.e.psi]), xL=[0, 0, self.vehicle_config.v_min, None], xU=[140, 80, self.vehicle_config.v_max, None], uL=np.array([self.vehicle_config.a_min, self.vehicle_config.delta_min]), uU=np.array([self.vehicle_config.a_max, self.vehicle_config.delta_max]), xref=xref, time=time, timer_period=timer_period, obstacle_corners=obstacle_corners, obstacle_As=obstacle_As, obstacle_bs=obstacle_bs, other_vehicles=other_vehicles, initialize_with_previous=True)
 
+        # save prediction history, input history to initialize mpc variables
         self.prediction_history[round(time * (1.0 / timer_period))] = xOpt
         self.prediction_history.pop(round(time * (1.0 / timer_period)) - 5, None) # only save 5 most recent to save space
         self.input_history[round(time * (1.0 / timer_period))] = uOpt
         self.input_history.pop(round(time * (1.0 / timer_period)) - 5, None) # only save 5 most recent to save space
 
-        # get control (is control 0 problematic because the first xref is usually just continuing at the same speed in the same direction? not sure)
+        # get control
         control = uOpt[:, 0]
         self.state.t = time
         self.state_hist.append(self.state.copy())
@@ -1174,7 +1206,6 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         mpc_preds = xOpt[[0, 1]].T
 
         # determine if need to park
-        # TODO: what if we are stopped but not close enough yet? need to get it started again somehow
         if self.intent_spot is not None and self.intent_parking_step is None and np.linalg.norm([self.state.x.x - self.intent[0], self.state.x.y - self.intent[1], self.state.v.v - 0]) < 0.5:
             self.intent_parking_step = 0
             lane_y = self.graph.vertices[self.graph.search(self.intent)].coords[1]
@@ -1183,16 +1214,17 @@ class RuleBasedStanleyVehicle(AbstractAgent):
 
         return control, feas, mpc_preds
         
-    def solve_parking_control(self, time, timer_period, P=np.diag([1, 1, 0, 0]), Q=np.diag([1, 1, 0, 0]), R=np.zeros((2, 2)), obstacle_corners: Dict[Tuple, np.ndarray] = None, obstacle_As: List[np.ndarray] = None, obstacle_bs: List[np.ndarray] = None, other_vehicles = [], num_waypoints=10):
-        
-        ########
-        # MPC parking
-
+    def solve_intent_based_parking_control_mpc(self, time, timer_period, P=np.diag([1, 1, 0, 0]), Q=np.diag([1, 1, 0, 0]), R=np.zeros((2, 2)), obstacle_corners: Dict[Tuple, np.ndarray] = None, obstacle_As: List[np.ndarray] = None, obstacle_bs: List[np.ndarray] = None, other_vehicles = [], num_waypoints=10):
+        """
+        Park by following an offline maneuver using MPC.
+        """
+        # load waypoints to track based on time (e.g. if 5 timesteps after parking start, load parking maneuver steps [5, 15))
         x_ref = self.intent_parking_origin[0] + self.offset_parking_maneuver.x[self.intent_parking_step:self.intent_parking_step + num_waypoints]
         y_ref = self.intent_parking_origin[1] + self.offset_parking_maneuver.y[self.intent_parking_step:self.intent_parking_step + num_waypoints]
         v_ref = self.offset_parking_maneuver.v[self.intent_parking_step:self.intent_parking_step + num_waypoints]
         psi_ref = self.intent_parking_origin[2] + self.offset_parking_maneuver.psi[self.intent_parking_step:self.intent_parking_step + num_waypoints]
 
+        # if don't have enough waypoints (end of maneuver), add the final waypoint until have enough
         for _ in range(len(x_ref), num_waypoints):
             x_ref = np.append(x_ref, self.intent_parking_origin[0] + self.offset_parking_maneuver.x[-1])
             y_ref = np.append(y_ref, self.intent_parking_origin[1] + self.offset_parking_maneuver.y[-1])
@@ -1210,54 +1242,70 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         self.state_hist.append(self.state.copy())
         self.controller.step(self.state, control[0], control[1])
 
-        # display predictions from optimal control problem
+        # get predictions from optimal control problem
         mpc_preds = xOpt[[0, 1]].T
 
+        # update parking step
         self.intent_parking_step = min(self.intent_parking_step + 1, len(self.offset_parking_maneuver.x))
 
+        # stop when close enough to final waypoint
         # TODO: better stopping condition
         if np.linalg.norm([self.state.x.x - (self.intent_parking_origin[0] + self.offset_parking_maneuver.x[-1]), self.state.x.y - (self.intent_parking_origin[1] + self.offset_parking_maneuver.y[-1])]) < 0.6:
             self.current_task = "END"
 
         return control, feas, mpc_preds
 
-        ########
-        # teleport parking
+    def solve_intent_based_parking_control_teleport(self, time):
+        """
+        Park by teleporting according to an online maneuver.
+        """
+        # calculate where to teleport to
+        x_ref = self.intent_parking_origin[0] + self.offset_parking_maneuver.x[self.intent_parking_step]
+        y_ref = self.intent_parking_origin[1] + self.offset_parking_maneuver.y[self.intent_parking_step]
+        v_ref = self.offset_parking_maneuver.v[self.intent_parking_step]
+        psi_ref = self.offset_parking_maneuver.psi[self.intent_parking_step]
 
-        # x_ref = self.intent_parking_origin[0] + self.offset_parking_maneuver.x[self.intent_parking_step]
-        # y_ref = self.intent_parking_origin[1] + self.offset_parking_maneuver.y[self.intent_parking_step]
-        # v_ref = self.offset_parking_maneuver.v[self.intent_parking_step]
-        # psi_ref = self.offset_parking_maneuver.psi[self.intent_parking_step]
+        # teleport
+        self.state.x.x, self.state.x.y, self.state.v.v, self.state.e.psi = x_ref, y_ref, v_ref, psi_ref
+        self.state.t = time
+        self.state_hist.append(self.state.copy())
 
-        # self.state.x.x, self.state.x.y, self.state.v.v, self.state.e.psi = x_ref, y_ref, v_ref, psi_ref
-        # self.state.t = time
-        # self.state_hist.append(self.state.copy())
+        # update parking step
+        self.intent_parking_step = min(self.intent_parking_step + 1, len(self.offset_parking_maneuver.x))
 
-        # self.intent_parking_step = min(self.intent_parking_step + 1, len(self.offset_parking_maneuver.x))
-        # if self.intent_parking_step == len(self.offset_parking_maneuver.x):
-        #     self.current_task = "END"
+        # determine if done
+        if self.intent_parking_step == len(self.offset_parking_maneuver.x):
+            self.current_task = "END"
 
     def solve_cftoc(self, P, Q, R, N, x0, xL, xU, uL, uU, xref, time, timer_period, obstacle_corners: Dict[Tuple, np.ndarray] = None, obstacle_As: List[np.ndarray] = None, obstacle_bs: List[np.ndarray] = None, other_vehicles = [], initialize_with_previous=False):
+        """
+        Solve a CFTOC for use with MPC. 
+        For static obstacles: either pass in obstacle_corners (if you have the corners of the polytopes, must be rectangles) or obstacle_As and obstacle_Bs (if you have the polytopes in Ax <= b form)
+        For dynamic obstacles: pass in other_vehicles
+
+        For Xu: can ignore anything related to moving obstacles (lines 1313-1324, 1396-1417, 1457-1489)
+        """
+        assert (obstacle_corners is None) or (obstacle_As is None and obstacle_bs is None), "can only pass in obstacle_corners OR obstacle_As and obstacle_bs"
+
         model = pyo.ConcreteModel()
         model.N = N
         model.nx = 4 # x, y, v, psi
         model.nu = 2 # acceleration, delta (steering)
         
-        # length of finite optimization problem:
+        # index variables
         model.tIDX = pyo.Set( initialize= range(model.N+1), ordered=True )  
         model.xIDX = pyo.Set( initialize= range(model.nx), ordered=True )
         model.uIDX = pyo.Set( initialize= range(model.nu), ordered=True )
         
-        # these are 2d arrays:
         model.P = P
         model.Q = Q
         model.R = R
         model.xref = np.vstack((x0, xref)).T
 
-        # get old predictions (None if do not exist)
+        # get last time step, used to find old predictions (None if do not exist)
         model.last_time = round((time - timer_period) * (1 / timer_period))
         
-        # Create state and input variables trajectory:
+        # create state and input variables, initialize using old predictions/inputs if necessary
         if model.last_time not in self.prediction_history or not initialize_with_previous:
             model.x = pyo.Var(model.xIDX, model.tIDX)
             model.u = pyo.Var(model.uIDX, model.tIDX)
@@ -1276,11 +1324,12 @@ class RuleBasedStanleyVehicle(AbstractAgent):
             model.u = pyo.Var(model.uIDX, model.tIDX, initialize=input_data)
 
         # Parameters
-        model.static_distance = 0.01
-        model.varying_distance = 0.2
-        model.varying_radius = 20
+        model.static_distance = 0.01 # distance to static obstacles (e.g. parked cars)
+        model.static_radius = 10 # radius another static obstacle must be in before we include it in collision avoidance
+        model.varying_distance = 0.2 # distance to non-static obstacles (e.g. other simulated cars)
+        model.varying_radius = 20 # radius another car must be in before we include it in collision avoidance
     
-        #Objective:
+        # simple square objective
         def objective_rule(model):
             costX = 0.0
             costU = 0.0
@@ -1302,38 +1351,47 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         
         model.cost = pyo.Objective(rule = objective_rule, sense = pyo.minimize)
         
-        # Constraints:
+        # Constraints
+
+        # init constraint
         model.init_const = pyo.Constraint(model.xIDX, rule=lambda model, i: model.x[i, 0] == x0[i])
         
+        # bicycle model dynamics
         model.bike_const_x = pyo.Constraint(model.tIDX, rule=lambda model, t: model.x[0, t+1] == model.x[0, t] + timer_period * (model.x[2, t] * pyo.cos(model.x[3, t])) if t < N else pyo.Constraint.Skip)
         model.bike_const_y = pyo.Constraint(model.tIDX, rule=lambda model, t: model.x[1, t+1] == model.x[1, t] + timer_period * (model.x[2, t] * pyo.sin(model.x[3, t])) if t < N else pyo.Constraint.Skip)
         model.bike_const_v = pyo.Constraint(model.tIDX, rule=lambda model, t: model.x[2, t+1] == model.x[2, t] + timer_period * (model.u[0, t]) if t < N else pyo.Constraint.Skip)
         model.bike_const_psi = pyo.Constraint(model.tIDX, rule=lambda model, t: model.x[3, t+1] == model.x[3, t] + timer_period * (model.x[2, t] * pyo.tan(model.u[1, t]) / self.vehicle_body.wb) if t < N else pyo.Constraint.Skip)
 
+        # state/input bounds
         model.state_const_l = pyo.Constraint(model.xIDX, model.tIDX, rule=lambda model, i, t: model.x[i, t] <= xU[i] if xU[i] is not None else pyo.Constraint.Skip)
         model.state_const_u = pyo.Constraint(model.xIDX, model.tIDX, rule=lambda model, i, t: model.x[i, t] >= xL[i] if xL[i] is not None else pyo.Constraint.Skip)
         model.input_const_l = pyo.Constraint(model.uIDX, model.tIDX, rule=lambda model, i, t: model.u[i, t] <= uU[i] if t < N else pyo.Constraint.Skip)
         model.input_const_u = pyo.Constraint(model.uIDX, model.tIDX, rule=lambda model, i, t: model.u[i, t] >= uL[i] if t < N else pyo.Constraint.Skip)
-        
+
+        # this vehicle's polytope (Gx <= g)        
         G = self.vehicle_body.A
         g = self.vehicle_body.b
+
+        # find other parked cars we need to take into account
 
         other_static_As = []
         other_static_bs = []
 
         if obstacle_corners is not None:
             for _, v in obstacle_corners.items():
-                if any([np.linalg.norm([c[0] - self.state.x.x, c[1] - self.state.x.y]) < 10 for c in v]):
+                if any([np.linalg.norm([c[0] - self.state.x.x, c[1] - self.state.x.y]) < model.static_radius for c in v]):
                     A, b = rectangle_to_polytope(v)
                     other_static_As.append(A)
                     other_static_bs.append(b)
-            len(other_static_As)
         else:
             other_static_As = obstacle_As
             other_static_bs = obstacle_bs
 
         other_static_As = np.array(other_static_As)
         other_static_bs = np.array(other_static_bs)
+
+        # find other moving cars we need to take into account
+        # note: extra dimension (time), since obstacle is in a different location at each timestep
 
         other_varying_As = []
         other_varying_bs = []
@@ -1343,9 +1401,11 @@ class RuleBasedStanleyVehicle(AbstractAgent):
                 if model.last_time in v.prediction_history:
                     other_varying_As.append([])
                     other_varying_bs.append([])
+                    # determine obstacle location at each time by taking obstacle's prediction for that time
+                    # since prediction is from the last timestep, need to shift it by 1
+                    # for last timestep, repeat last prediction
                     for w in range(N + 1):
                         last_vehicle_state = VehicleState()
-                        # for last timestep, use last available prediction
                         last_vehicle_state.x.x = v.prediction_history[model.last_time][0, min(w + 1, N)]
                         last_vehicle_state.x.y = v.prediction_history[model.last_time][1, min(w + 1, N)]
                         last_vehicle_state.e.psi = v.prediction_history[model.last_time][3, min(w + 1, N)]
@@ -1356,9 +1416,10 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         other_varying_As = np.array(other_varying_As)
         other_varying_bs = np.array(other_varying_bs)
 
+        # static collision avoidance
+
         if len(other_static_As) > 0:
 
-            # static collision avoidance
             model.num_others = len(other_static_As)
             model.num_halfspaces = [a.shape[0] for a in other_static_As]
 
@@ -1391,48 +1452,53 @@ class RuleBasedStanleyVehicle(AbstractAgent):
             model.collision_lam2_const = pyo.Constraint(model.othervIDX, model.revLamIDX, model.tIDX, rule=lambda model, j, l, t: model.rev_lam[j, l, t] >= 0)
             model.collision_s_const = pyo.Constraint(model.othervIDX, model.tIDX, rule=lambda model, j, t: sum(model.s[j, s, t] ** 2 for s in model.sIDX) <= 1)
 
-            if len(other_varying_As) > 0:
+        # varying collision avoidance (all new variables except G, g, and model.tIDX)
 
-                # varying collision avoidance (all new variables except G, g, and model.tIDX)
-                model.varying_num_others = len(other_varying_As)
-                model.varying_num_halfspaces = [a[0].shape[0] for a in other_varying_As]
+        if len(other_varying_As) > 0:
 
-                model.varying_othervIDX = pyo.Set( initialize= range(model.varying_num_others), ordered=True )
-                model.varying_lamIDX = pyo.Set( initialize= range(G.shape[0]), ordered=True )
-                model.varying_revLamIDX = pyo.Set( initialize= range(max(model.varying_num_halfspaces)), ordered=True )
-                model.varying_sIDX = pyo.Set( initialize= range(G.shape[1]), ordered=True )
+            model.varying_num_others = len(other_varying_As)
+            model.varying_num_halfspaces = [a[0].shape[0] for a in other_varying_As]
 
-                model.varying_lam = pyo.Var(model.varying_othervIDX, model.varying_lamIDX, model.tIDX)
-                model.varying_rev_lam = pyo.Var(model.varying_othervIDX, model.varying_revLamIDX, model.tIDX)
-                model.varying_s = pyo.Var(model.varying_othervIDX, model.varying_sIDX, model.tIDX)
+            model.varying_othervIDX = pyo.Set( initialize= range(model.varying_num_others), ordered=True )
+            model.varying_lamIDX = pyo.Set( initialize= range(G.shape[0]), ordered=True )
+            model.varying_revLamIDX = pyo.Set( initialize= range(max(model.varying_num_halfspaces)), ordered=True )
+            model.varying_sIDX = pyo.Set( initialize= range(G.shape[1]), ordered=True )
 
-                model.varying_collision_b_const = pyo.Constraint(model.varying_othervIDX, model.tIDX, rule=lambda model, j, t: \
-                    -sum( \
-                        (G[l, 0] * (model.x[0, t] * pyo.cos(model.x[2, t]) + model.x[1, t] * pyo.sin(model.x[2, t])) + \
-                            G[l, 1] * (-model.x[0, t] * pyo.sin(model.x[2, t]) + model.x[1, t] * pyo.cos(model.x[2, t])) + \
-                                g[l] ) \
-                                * model.varying_lam[j, l, t] for l in model.varying_lamIDX) \
-                                    - sum(other_varying_bs[j, t][l] * model.varying_rev_lam[j, l, t] for l in model.varying_revLamIDX if l < model.varying_num_halfspaces[j]) >= model.varying_distance)
-                model.varying_collision_Ai1_const = pyo.Constraint(model.varying_othervIDX, model.tIDX, rule=lambda model, j, t: \
-                    sum( \
-                        (pyo.cos(model.x[2, t]) * G[l, 0] - pyo.sin(model.x[2, t]) * G[l, 1]) \
-                            * model.varying_lam[j, l, t] for l in model.varying_lamIDX) + model.varying_s[j, 0, t] == 0)
-                model.varying_collision_Ai2_const = pyo.Constraint(model.varying_othervIDX, model.tIDX, rule=lambda model, j, t: \
-                    sum( \
-                        (pyo.sin(model.x[2, t]) * G[l, 0] + pyo.cos(model.x[2, t]) * G[l, 1]) \
-                            * model.varying_lam[j, l, t] for l in model.varying_lamIDX) + model.varying_s[j, 1, t] == 0)
-                model.varying_collision_Aj_const = pyo.Constraint(model.varying_sIDX, model.varying_othervIDX, model.tIDX, rule=lambda model, s, j, t: sum(other_varying_As[j, t][l, s] * model.varying_rev_lam[j, l, t] for l in model.varying_revLamIDX if l < model.varying_num_halfspaces[j]) - model.varying_s[j, s, t] == 0)
-                model.varying_collision_lam1_const = pyo.Constraint(model.varying_othervIDX, model.varying_lamIDX, model.tIDX, rule=lambda model, j, l, t: model.varying_lam[j, l, t] >= 0)
-                model.varying_collision_lam2_const = pyo.Constraint(model.varying_othervIDX, model.varying_revLamIDX, model.tIDX, rule=lambda model, j, l, t: model.varying_rev_lam[j, l, t] >= 0)
-                model.varying_collision_s_const = pyo.Constraint(model.varying_othervIDX, model.tIDX, rule=lambda model, j, t: sum(model.varying_s[j, s, t] ** 2 for s in model.varying_sIDX) <= 1)
+            model.varying_lam = pyo.Var(model.varying_othervIDX, model.varying_lamIDX, model.tIDX)
+            model.varying_rev_lam = pyo.Var(model.varying_othervIDX, model.varying_revLamIDX, model.tIDX)
+            model.varying_s = pyo.Var(model.varying_othervIDX, model.varying_sIDX, model.tIDX)
 
+            model.varying_collision_b_const = pyo.Constraint(model.varying_othervIDX, model.tIDX, rule=lambda model, j, t: \
+                -sum( \
+                    (G[l, 0] * (model.x[0, t] * pyo.cos(model.x[2, t]) + model.x[1, t] * pyo.sin(model.x[2, t])) + \
+                        G[l, 1] * (-model.x[0, t] * pyo.sin(model.x[2, t]) + model.x[1, t] * pyo.cos(model.x[2, t])) + \
+                            g[l] ) \
+                            * model.varying_lam[j, l, t] for l in model.varying_lamIDX) \
+                                - sum(other_varying_bs[j, t][l] * model.varying_rev_lam[j, l, t] for l in model.varying_revLamIDX if l < model.varying_num_halfspaces[j]) >= model.varying_distance)
+            model.varying_collision_Ai1_const = pyo.Constraint(model.varying_othervIDX, model.tIDX, rule=lambda model, j, t: \
+                sum( \
+                    (pyo.cos(model.x[2, t]) * G[l, 0] - pyo.sin(model.x[2, t]) * G[l, 1]) \
+                        * model.varying_lam[j, l, t] for l in model.varying_lamIDX) + model.varying_s[j, 0, t] == 0)
+            model.varying_collision_Ai2_const = pyo.Constraint(model.varying_othervIDX, model.tIDX, rule=lambda model, j, t: \
+                sum( \
+                    (pyo.sin(model.x[2, t]) * G[l, 0] + pyo.cos(model.x[2, t]) * G[l, 1]) \
+                        * model.varying_lam[j, l, t] for l in model.varying_lamIDX) + model.varying_s[j, 1, t] == 0)
+            model.varying_collision_Aj_const = pyo.Constraint(model.varying_sIDX, model.varying_othervIDX, model.tIDX, rule=lambda model, s, j, t: sum(other_varying_As[j, t][l, s] * model.varying_rev_lam[j, l, t] for l in model.varying_revLamIDX if l < model.varying_num_halfspaces[j]) - model.varying_s[j, s, t] == 0)
+            model.varying_collision_lam1_const = pyo.Constraint(model.varying_othervIDX, model.varying_lamIDX, model.tIDX, rule=lambda model, j, l, t: model.varying_lam[j, l, t] >= 0)
+            model.varying_collision_lam2_const = pyo.Constraint(model.varying_othervIDX, model.varying_revLamIDX, model.tIDX, rule=lambda model, j, l, t: model.varying_rev_lam[j, l, t] >= 0)
+            model.varying_collision_s_const = pyo.Constraint(model.varying_othervIDX, model.tIDX, rule=lambda model, j, t: sum(model.varying_s[j, s, t] ** 2 for s in model.varying_sIDX) <= 1)
+
+        # solve cftoc
         results = self.solver.solve(model)
         
+        # determine feasiblity
         if str(results.solver.termination_condition) == "optimal":
             feas = True
         else:
             feas = False
-                
+
+        # return solution
+
         xOpt = np.asarray([[model.x[i,t]() for i in model.xIDX] for t in model.tIDX]).T
         uOpt = np.asarray([model.u[:,t]() for t in model.tIDX]).T
         
@@ -1440,6 +1506,7 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         
         return [model, feas, xOpt, uOpt, JOpt]
 
+    ##### INTENT PREDICTION HELPER FUNCTIONS #####
     
     def find_n_best_lanes(self, start_coords, global_heading, graph: WaypointsGraph, vis: SemanticVisualizer, predictor: Predictor, n = 3):
         current_state = np.array(start_coords + [global_heading])

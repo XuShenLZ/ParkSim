@@ -657,6 +657,7 @@ class RuleBasedSimulator(object):
                     self.vehicle_features[vehicle_id] = self.feature_generator.generate_features(vehicle.spot_index, [active_vehicles[id] for id in active_vehicles], self.spawn_interval_mean, self.queue_length)
 
                 if self.sim_is_running:
+                    # update vehicle state
                     mpc_preds = vehicle.solve(time=self.time, timer_period=self.timer_period, other_vehicles=[active_vehicles[v] for v in active_vehicles if v is not vehicle], history=self.history, coord_spot_fn=self._coordinates_in_spot, obstacle_corners={})
     
                     if vehicle.intent is not None:
