@@ -1011,7 +1011,7 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         # if found a parking spot, set that to the permanent intent
         if in_spot:
             self.intent_spot = in_spot
-
+            
             # load y-coordinate of nearest waypoint (to tell if parking in a north or south spot)
             nearest_waypoint = self.graph.vertices[self.graph.search(self.intent)].coords
             lane_x, lane_y = nearest_waypoint[0], nearest_waypoint[1]
@@ -1035,6 +1035,10 @@ class RuleBasedStanleyVehicle(AbstractAgent):
             # adjust intent for parking
             self.intent[0] += -4 if xpos == 'left' else 4
             self.intent[1] = lane_y
+
+            # save path
+            x_ref, y_ref, yaw_ref = self.compute_ref_path(graph_sol=graph_sol)
+            self.set_ref_pose(x_ref, y_ref, yaw_ref)
 
             # mark this spot as full
             self.change_central_occupancy(in_spot, True)
@@ -1096,10 +1100,12 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         # Firstly update the set of nearby_vehicles
         self.update_nearby_vehicles()
 
-        # driving control
-        graph_sol = AStarPlanner(self.graph.vertices[self.graph.search([self.state.x.x, self.state.x.y])], self.graph.vertices[self.graph.search(self.intent)]).solve()
-        x_ref, y_ref, yaw_ref = self.compute_ref_path(graph_sol=graph_sol)
-        self.set_ref_pose(x_ref, y_ref, yaw_ref)
+        # driving control (only need to recalculate path if haven't decided to park yet)
+        if self.intent_spot is None:
+            graph_sol = AStarPlanner(self.graph.vertices[self.graph.search([self.state.x.x, self.state.x.y])], self.graph.vertices[self.graph.search(self.intent)]).solve()
+            x_ref, y_ref, yaw_ref = self.compute_ref_path(graph_sol=graph_sol)
+            self.set_ref_pose(x_ref, y_ref, yaw_ref)
+
         if self.reached_target(target=self.intent):
             return True
 

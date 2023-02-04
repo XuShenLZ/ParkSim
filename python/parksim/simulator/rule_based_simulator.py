@@ -742,9 +742,9 @@ class RuleBasedSimulatorParams():
         self.use_existing_entrances = True # have vehicles park in spots that they parked in real life
 
         # don't use existing agents
-        self.spawn_entering_fn = lambda: 6
+        self.spawn_entering_fn = lambda: 5
         self.spawn_exiting_fn = lambda: 0
-        self.spawn_interval_mean_fn = lambda: 5 # (s)
+        self.spawn_interval_mean_fn = lambda: 3 # (s)
 
         self.use_existing_obstacles = True # able to park in "occupied" spots from dataset? False if yes, True if no
 
