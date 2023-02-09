@@ -598,29 +598,30 @@ class RuleBasedSimulatorParams():
     def __init__(self):
         self.seed = 0
 
-        self.num_simulations = 1 # number of simulations run (e.g. times started from scratch)
+        self.num_simulations = 10 # number of simulations run (e.g. times started from scratch)
+        self.current_simulation = 0
 
-        self.ev_simulation = True # electric vehicle (Soomin's data) sim?
+        self.ev_simulation = False # electric vehicle (Soomin's data) sim?
 
-        self.use_existing_agents = True # replay video data
+        self.use_existing_agents = False # replay video data
         self.agents_data_path = '/ParkSim/data/agents_data_ev.pickle'
 
         # should we replace where the agents park?
         self.use_existing_entrances = False # have vehicles park in spots that they parked in real life
 
         # don't use existing agents
-        self.spawn_entering_fn = lambda: np.random.randint(15, 30) 
+        self.spawn_entering_fn = lambda: 1 
         self.spawn_exiting_fn = lambda: 0
-        self.spawn_interval_mean_fn = lambda: np.random.randint(2, 5) # (s)
+        self.spawn_interval_mean_fn = lambda: 0 # (s)
 
-        self.use_existing_obstacles = True# able to park in "occupied" spots from dataset? False if yes, True if no
+        self.use_existing_obstacles = False# able to park in "occupied" spots from dataset? False if yes, True if no
 
         self.load_existing_net = True # generate a new net form scratch (and overwrite model.pickle) or use the one stored at self.spot_model_path
-        self.use_nn = True # pick spots using NN or not (irrelevant if self.use_existing_entrances is True)
+        self.use_nn = False # pick spots using NN or not (irrelevant if self.use_existing_entrances is True)
         self.train_nn = False # train NN or not
-        self.should_visualize = self.num_simulations == 1 # display simulator or not
+        self.should_visualize = True # display simulator or not
         # before changing model, don't forget to set: spot selection, loss function
-        self.spot_model_path = '/Parksim/python/parksim/spot_nn/selfish_model.pickle'
+        self.spot_model_path = '/ParkSim/python/parksim/spot_nn/new_models/0.9discount_5back.pickle'
         self.losses_csv_path = '/parksim/python/parksim/spot_nn/losses.csv' # where losses are stored
 
         # load net
@@ -637,10 +638,18 @@ class RuleBasedSimulatorParams():
             print("error: would be overwriting exisitng net. please rename existing net or set self.load_existing_net to True.")
             quit()
 
+        if self.train_nn:
+            print("training NN: is loss function, spot selection correct? (y/n)")
+            choice = input().lower()
+            if choice != 'y':
+                quit()
+
         losses = []
         average_times = []
 
         for i in range(self.num_simulations):
+            self.spot_list = [23, 17, 11, 5, 88, 82, 76, 70, 180, 174, 168, 162, 22, 16, 10, 4, 87, 81, 75, 69, 179, 173, 167, 161, 21, 15, 19, 3, 86, 80, 74, 68, 178, 172, 166, 160]
+
             self.spawn_entering = self.spawn_entering_fn()
             self.spawn_exiting = self.spawn_exiting_fn()
             self.spawn_interval_mean = self.spawn_interval_mean_fn()
@@ -654,7 +663,7 @@ class RuleBasedSimulatorParams():
             losses.append(total_loss / len(simulator.vehicle_ids_entered) if total_loss is not None else 0)
             average_times.append(sum([simulator.vehicle_non_idle_times[i] for i in simulator.vehicle_ids_entered]) / len(simulator.vehicle_ids_entered))
             print('Results: ' + (str(losses[-1]) if total_loss is not None else 'N/A') + ' average loss, ' + str(average_times[-1]) + ' average entering time')
-
+            self.current_simulation += 1
         
         with open(str(Path.home()) + self.losses_csv_path, 'w', newline='') as file:
             writer = csv.writer(file)
@@ -674,19 +683,22 @@ class RuleBasedSimulatorParams():
             # else:
             #     chosen_spot = min([spot for spot in empty_spots], key=lambda spot: self.vanilla_net(SpotFeatureGenerator.generate_features(self.add_vehicle(spot_index=spot, for_nn=True), active_vehicles, self.spawn_interval_mean, simulator.queue_length)))
         else:
-            r = 0
-            if r < 0.4:
-                return np.random.choice(empty_spots)
-            elif r < 0.8:
-                return np.random.choice([i for i in empty_spots if (i >= 46 and i <= 66) or (i >= 70 and i <= 91) or (i >= 137 and i <= 158) or (i >= 162 and i <= 183)])
-            else:
-                return min([spot for spot in empty_spots], key=lambda spot: np.linalg.norm([simulator.entrance_coords[0] - simulator.parking_spaces[spot][0], simulator.entrance_coords[1] - simulator.parking_spaces[spot][1]]))
+            # r = 0
+            # if r < 0.4:
+            #     return np.random.choice(empty_spots)
+            # elif r < 0.8:
+            #     return np.random.choice([i for i in empty_spots if (i >= 46 and i <= 66) or (i >= 70 and i <= 91) or (i >= 137 and i <= 158) or (i >= 162 and i <= 183)])
+            # else:
+            #     return min([spot for spot in empty_spots], key=lambda spot: np.linalg.norm([simulator.entrance_coords[0] - simulator.parking_spaces[spot][0], simulator.entrance_coords[1] - simulator.parking_spaces[spot][1]]))
+            # return self.spot_list.pop(0)
+            # return min([spot for spot in empty_spots], key=lambda spot: np.linalg.norm([simulator.entrance_coords[0] - simulator.parking_spaces[spot][0], simulator.entrance_coords[1] - simulator.parking_spaces[spot][1]]))
+            return self.current_simulation
 
     # target function for neural net
     def target(self, simulator: RuleBasedSimulator, vehicle_id: int, vehicles_included: List[int]):
         net_discount = 0.9
-        # return torch.FloatTensor([sum([(net_discount ** i) * simulator.vehicle_non_idle_times[vehicles_included[i]] for i in range(len(vehicles_included))])])
-        return torch.FloatTensor([simulator.vehicle_non_idle_times[vehicle_id]])
+        return torch.FloatTensor([sum([(net_discount ** i) * simulator.vehicle_non_idle_times[vehicles_included[i]] for i in range(len(vehicles_included))])])
+        # return torch.FloatTensor([simulator.vehicle_non_idle_times[vehicle_id]])
 
     # update network and return loss
     def update_net(self, simulator: RuleBasedSimulator):

@@ -555,7 +555,8 @@ class RuleBasedStanleyVehicle(AbstractAgent):
                 location = 'right' if (direction == 'east') else 'left' # we are designed to overshoot the spot
             else:
                 location = 'left' if (direction == 'east') else 'right' # we are designed to undershoot the spot
-            pointing = 'up' if np.random.rand() < 0.5 else 'down' # random for diversity
+            # pointing = 'up' if np.random.rand() < 0.5 else 'down' # random for diversity
+            pointing = 'up' if direction == 'east' else 'down'
             spot = 'north' if any([self.spot_index >= r[0] and self.spot_index <= r[1] for r in self.north_spot_idx_ranges]) else 'south'
             
             # get parking maneuver
