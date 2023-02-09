@@ -17,7 +17,6 @@ show_animation = False
 
 
 class Node:
-
     def __init__(self, x, y, cost, parent_index):
         self.x = x
         self.y = y
@@ -25,8 +24,15 @@ class Node:
         self.parent_index = parent_index
 
     def __str__(self):
-        return str(self.x) + "," + str(self.y) + "," + str(
-            self.cost) + "," + str(self.parent_index)
+        return (
+            str(self.x)
+            + ","
+            + str(self.y)
+            + ","
+            + str(self.cost)
+            + ","
+            + str(self.parent_index)
+        )
 
 
 def calc_final_path(goal_node, closed_node_set, resolution):
@@ -57,7 +63,8 @@ def calc_distance_heuristic(gx, gy, ox, oy, resolution, rr):
     oy = [ioy / resolution for ioy in oy]
 
     obstacle_map, min_x, min_y, max_x, max_y, x_w, y_w = calc_obstacle_map(
-        ox, oy, resolution, rr)
+        ox, oy, resolution, rr
+    )
 
     motion = get_motion_model()
 
@@ -81,8 +88,9 @@ def calc_distance_heuristic(gx, gy, ox, oy, resolution, rr):
             plt.plot(current.x * resolution, current.y * resolution, "xc")
             # for stopping simulation with the esc key.
             plt.gcf().canvas.mpl_connect(
-                'key_release_event',
-                lambda event: [exit(0) if event.key == 'escape' else None])
+                "key_release_event",
+                lambda event: [exit(0) if event.key == "escape" else None],
+            )
             if len(closed_set.keys()) % 10 == 0:
                 plt.pause(0.001)
 
@@ -90,9 +98,12 @@ def calc_distance_heuristic(gx, gy, ox, oy, resolution, rr):
 
         # expand search grid based on motion model
         for i, _ in enumerate(motion):
-            node = Node(current.x + motion[i][0],
-                        current.y + motion[i][1],
-                        current.cost + motion[i][2], c_id)
+            node = Node(
+                current.x + motion[i][0],
+                current.y + motion[i][1],
+                current.cost + motion[i][2],
+                c_id,
+            )
             n_id = calc_index(node, x_w, min_x, min_y)
 
             if n_id in closed_set:
@@ -104,15 +115,15 @@ def calc_distance_heuristic(gx, gy, ox, oy, resolution, rr):
             if n_id not in open_set:
                 open_set[n_id] = node  # Discover a new node
                 heapq.heappush(
-                    priority_queue,
-                    (node.cost, calc_index(node, x_w, min_x, min_y)))
+                    priority_queue, (node.cost, calc_index(node, x_w, min_x, min_y))
+                )
             else:
                 if open_set[n_id].cost >= node.cost:
                     # This path is the best until now. record it!
                     open_set[n_id] = node
                     heapq.heappush(
-                        priority_queue,
-                        (node.cost, calc_index(node, x_w, min_x, min_y)))
+                        priority_queue, (node.cost, calc_index(node, x_w, min_x, min_y))
+                    )
 
     return closed_set
 
@@ -139,8 +150,8 @@ def calc_obstacle_map(ox, oy, resolution, vr):
     max_x = round(max(ox))
     max_y = round(max(oy))
 
-    x_width = round(max_x - min_x)
-    y_width = round(max_y - min_y)
+    x_width = int(round(max_x - min_x))
+    y_width = int(round(max_y - min_y))
 
     # obstacle map generation
     obstacle_map = [[False for _ in range(y_width)] for _ in range(x_width)]
@@ -164,13 +175,15 @@ def calc_index(node, x_width, x_min, y_min):
 
 def get_motion_model():
     # dx, dy, cost
-    motion = [[1, 0, 1],
-              [0, 1, 1],
-              [-1, 0, 1],
-              [0, -1, 1],
-              [-1, -1, math.sqrt(2)],
-              [-1, 1, math.sqrt(2)],
-              [1, -1, math.sqrt(2)],
-              [1, 1, math.sqrt(2)]]
+    motion = [
+        [1, 0, 1],
+        [0, 1, 1],
+        [-1, 0, 1],
+        [0, -1, 1],
+        [-1, -1, math.sqrt(2)],
+        [-1, 1, math.sqrt(2)],
+        [1, -1, math.sqrt(2)],
+        [1, 1, math.sqrt(2)],
+    ]
 
     return motion
