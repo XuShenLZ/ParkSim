@@ -1,4 +1,4 @@
-from typing import Dict
+from typing import Dict, List
 from PIL import ImageDraw, Image
 import numpy as np
 import os
@@ -8,6 +8,7 @@ import yaml
 from yaml.loader import SafeLoader
 import matplotlib.pyplot as plt
 import pandas as pd
+from scipy import spatial
 
 from parksim.pytypes import VehicleState
 from parksim.utils.get_corners import get_vehicle_corners, get_vehicle_corners_from_dict
@@ -26,7 +27,7 @@ class InstanceCentricGenerator:
     """
     Plot the frame as semantic images
     """
-    def __init__(self, spot_margin=0.3, resolution=0.1, sensing_limit=20, steps=5, stride=5):
+    def __init__(self, spot_margin=0.3, resolution=0.1, sensing_limit=20, steps=5, stride=5, occupancy: List[bool]=None):
         """
         instantiate the semantic visualizer
         
@@ -37,6 +38,21 @@ class InstanceCentricGenerator:
         stride: the stride when getting the history. stride = 1 means plot the consecutive frames. stride = 2 means plot one in every 2 frames
         """
         self.parking_spaces = self._gen_spaces()
+
+        arr = self.parking_spaces.to_numpy()
+        self.parking_spaces_centers = np.array(
+            [
+                [
+                    round((arr[i][2] + arr[i][4]) / 2, 3),
+                    round((arr[i][3] + arr[i][9]) / 2, 3),
+                ]
+                for i in range(len(arr))
+            ]
+        )
+        self.parking_spaces_tree = spatial.KDTree(self.parking_spaces_centers)
+        
+        self.occupancy = occupancy if occupancy is not None else [False] * len(self.parking_spaces_centers)
+
         self.waypoints = self._gen_waypoints()
 
         self.map_size = MAP_SIZE
@@ -140,6 +156,12 @@ class InstanceCentricGenerator:
 
         return waypoints
 
+    def _spots_in_radius(self, center, radius: float):
+        """
+        Return the indices of all spots within a radius of center
+        """
+        return self.parking_spaces_tree.query_ball_point(center, radius)
+
     def get_history_window(self, history, num_timesteps):
         history_window = []
         index = len(history) - 1
@@ -161,7 +183,9 @@ class InstanceCentricGenerator:
         instance_timeline = self.get_history_window(history, NUM_STEPS * STRIDE_SIZE)
 
         current_state_dict = instance_timeline[-1][vehicle_index]
-        img = self.plot_frame(instance_timeline)
+        ego_center = np.array([current_state_dict['center-x'], current_state_dict['center-y']])
+
+        img = self.plot_frame(instance_timeline, ego_center)
         draw = ImageDraw.Draw(img)
 
         # Replot this specific instance with the ego color
@@ -192,43 +216,44 @@ class InstanceCentricGenerator:
 
         return img_instance
 
-    def plot_frame(self, history):
+    def plot_frame(self, history, ego_center):
 
         
         NUM_STEPS = 5
         STRIDE = 1
         
-        # Create the binary mask for all moving objects on the map -- static obstacles and moving agents
-        occupy_mask = Image.new(mode='1', size=(self.w, self.h))
-        mask_draw = ImageDraw.Draw(occupy_mask)
+        # # Create the binary mask for all moving objects on the map -- static obstacles and moving agents
+        # occupy_mask = Image.new(mode='1', size=(self.w, self.h))
+        # mask_draw = ImageDraw.Draw(occupy_mask)
 
-        # Firstly register current obstacles and agents on the binary mask
-        self.plot_obstacles(draw=mask_draw, fill=1)
-        self.plot_agents(mask_draw, 1, history[-1:], 1, 0)
+        # # Firstly register current obstacles and agents on the binary mask
+        # self.plot_obstacles(draw=mask_draw, fill=1)
+        # self.plot_agents(mask_draw, 1, history[-1:], 1, 0)
 
         img_frame = self.base_map.copy()
         img_draw = ImageDraw.Draw(img_frame)
 
         # Then plot everything on the main img
-        self.plot_spots(occupy_mask=occupy_mask, draw=img_draw, fill=self.color['spot'])
+        self.plot_spots(draw=img_draw, fill=self.color['spot'], ego_center=ego_center)
         self.plot_obstacles(draw=img_draw, fill=self.color['obstacle'])
         self.plot_agents(img_draw, self.color['agent'], history, STRIDE, NUM_STEPS)
 
 
         return img_frame
 
-    def plot_spots(self, occupy_mask, draw, fill):
+    def plot_spots(self, draw, fill, ego_center):
         """
         plot empty spots
         """
-        for _, p in self.parking_spaces.iterrows():
+        for i in self._spots_in_radius(ego_center, self.sensing_limit * np.sqrt(2)):
+            p = self.parking_spaces.iloc[i]
             p_coords_ground = p[2:10].to_numpy().reshape((4, 2))
             p_coords_pixel = (np.array(p_coords_ground) / self.res).astype('int32')
             
             # Detect whether this spot is occupied or not
             # Only plot the spot if it is empty
-            center = np.average(p_coords_pixel, axis=0).astype('int32')
-            if self.spot_available(occupy_mask, center, size=8):
+            # center = np.average(p_coords_pixel, axis=0).astype('int32')
+            if not self.occupancy[i]:
                 draw.polygon([tuple(p) for p in p_coords_pixel], fill=fill)
 
     def plot_instance(self, draw, fill, state: VehicleState):

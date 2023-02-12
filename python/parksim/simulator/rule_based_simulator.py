@@ -37,6 +37,9 @@ from parksim.trajectory_predict.intent_transformer.models.trajectory_predictor_v
 from parksim.trajectory_predict.intent_transformer.models.trajectory_predictor_with_decoder_intent_cross_attention import (
     TrajectoryPredictorWithDecoderIntentCrossAttention,
 )
+from parksim.intent_predict.cnn.visualizer.instance_centric_generator import (
+    InstanceCentricGenerator,
+)
 
 from dlp.visualizer import SemanticVisualizer
 from parksim.intent_predict.cnn.predictor import PredictionResponse, Predictor
@@ -495,6 +498,7 @@ class RuleBasedSimulator(object):
             vehicle_config=dataclasses.replace(vehicle_config),
             controller=controller,
             motion_predictor=motion_predictor,
+            inst_centric_generator=InstanceCentricGenerator(occupancy=self.occupied),
             traj_model=self.traj_model,
             intent_extractor=self.intent_extractor,
             traj_extractor=self.traj_extractor,

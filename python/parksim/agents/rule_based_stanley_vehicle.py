@@ -177,6 +177,9 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         self.spot_detector = spot_detector
         self.solver = pyo.SolverFactory("ipopt")
 
+        self.intent_graph = WaypointsGraph()
+        self.intent_graph.setup_with_vis(self.intent_extractor.vis)
+
         self.prediction_history = {}
         self.input_history = {}
         self.offset_maneuver_params = None
@@ -1440,12 +1443,10 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         # run intent predictor and load most popular intents
 
         intents = self.run_intent_predictor(self.vehicle_id, history)
-        graph = WaypointsGraph()
-        graph.setup_with_vis(self.intent_extractor.vis)
         best_lanes = self.find_n_best_lanes(
             [self.state.x.x, self.state.x.y],
             self.state.e.psi,
-            graph=graph,
+            graph=self.intent_graph,
             vis=self.intent_extractor.vis,
             predictor=self.intent_predictor,
         )
