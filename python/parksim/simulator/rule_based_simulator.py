@@ -71,7 +71,6 @@ import matplotlib.pyplot as plt
 # These parameters should all become ROS param for simulator and vehicle
 spots_data_path = "/ParkSim/data/spots_data.pickle"
 offline_maneuver_path = "/ParkSim/data/parking_maneuvers.pickle"
-offset_offline_maneuver_path = "/ParkSim/data/offset_parking_maneuvers.pickle"
 waypoints_graph_path = "/ParkSim/data/waypoints_graph.pickle"
 intent_model_path = "/ParkSim/data/smallRegularizedCNN_L0.068_01-29-2022_19-50-35.pth"
 traj_model_path = "/ParkSim/python/parksim/trajectory_predict/intent_transformer/checkpoints/TrajectoryPredictorWithDecoderIntentCrossAttention/lightning_logs/version_1/checkpoints/epoch=52-val_total_loss=0.0458.ckpt"
@@ -259,15 +258,10 @@ class RuleBasedSimulator(object):
 
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
 
-        self.traj_model = (
-            TrajectoryPredictorWithDecoderIntentCrossAttention.load_from_checkpoint(
-                str(Path.home()) + traj_model_path, torch.device(self.device)
-            )
-        )
-        self.traj_model.eval().to(self.device)
-
         self.intent_extractor = CNNDataProcessor(ds=dataset)
-        self.traj_extractor = TransformerDataProcessor(ds=dataset)
+
+        self.spot_detector = LocalDetector(spot_color_rgb=(0, 255, 0))
+        self.inst_centric_generator = InstanceCentricGenerator()
 
         self.intent_circles = []
         self.traj_pred_circles = []
@@ -490,7 +484,6 @@ class RuleBasedSimulator(object):
             vehicle_body=vehicle_body,
             vehicle_config=vehicle_config,
         )
-        spot_detector = LocalDetector(spot_color_rgb=(0, 255, 0))
 
         vehicle = RuleBasedStanleyVehicle(
             vehicle_id=vehicle_id,
@@ -498,11 +491,9 @@ class RuleBasedSimulator(object):
             vehicle_config=dataclasses.replace(vehicle_config),
             controller=controller,
             motion_predictor=motion_predictor,
-            inst_centric_generator=InstanceCentricGenerator(occupancy=self.occupied),
-            traj_model=self.traj_model,
+            inst_centric_generator=self.inst_centric_generator,
             intent_extractor=self.intent_extractor,
-            traj_extractor=self.traj_extractor,
-            spot_detector=spot_detector,
+            spot_detector=self.spot_detector,
             electric_vehicle=self.ev_simulation,
             intent_vehicle=intent_vehicle,
         )
@@ -510,7 +501,6 @@ class RuleBasedSimulator(object):
         vehicle.load_parking_spaces(spots_data_path=spots_data_path)
         vehicle.load_graph(waypoints_graph_path=waypoints_graph_path)
         vehicle.load_maneuver(offline_maneuver_path=offline_maneuver_path)
-        # vehicle.load_offset_maneuver(offline_maneuver_path=offset_offline_maneuver_path)
         vehicle.load_intent_model(model_path=intent_model_path)
 
         task_profile = []
@@ -997,7 +987,7 @@ class RuleBasedSimulator(object):
                         obstacle_corners={},
                     )
 
-                    if vehicle.intent is not None:
+                    if vehicle.intent_vehicle and vehicle.intent is not None:
                         col = (255, 0, 0, 255)
                         self.intent_circles.append((vehicle.intent, col))
                     if mpc_preds is not None:

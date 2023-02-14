@@ -27,7 +27,7 @@ class InstanceCentricGenerator:
     """
     Plot the frame as semantic images
     """
-    def __init__(self, spot_margin=0.3, resolution=0.1, sensing_limit=20, steps=5, stride=5, occupancy: List[bool]=None):
+    def __init__(self, spot_margin=0.3, resolution=0.1, sensing_limit=20, steps=5, stride=5):
         """
         instantiate the semantic visualizer
         
@@ -50,8 +50,6 @@ class InstanceCentricGenerator:
             ]
         )
         self.parking_spaces_tree = spatial.KDTree(self.parking_spaces_centers)
-        
-        self.occupancy = occupancy if occupancy is not None else [False] * len(self.parking_spaces_centers)
 
         self.waypoints = self._gen_waypoints()
 
@@ -170,7 +168,7 @@ class InstanceCentricGenerator:
             index -= 1
         return history_window
 
-    def inst_centric(self, vehicle_id, history):
+    def inst_centric(self, vehicle_id, history, occupancy: List[bool]):
         """
         crop the local region around an instance and replot it in ego color. The ego instance is always pointing towards the west
 
@@ -185,7 +183,7 @@ class InstanceCentricGenerator:
         current_state_dict = instance_timeline[-1][vehicle_index]
         ego_center = np.array([current_state_dict['center-x'], current_state_dict['center-y']])
 
-        img = self.plot_frame(instance_timeline, ego_center)
+        img = self.plot_frame(instance_timeline, ego_center, occupancy)
         draw = ImageDraw.Draw(img)
 
         # Replot this specific instance with the ego color
@@ -216,9 +214,8 @@ class InstanceCentricGenerator:
 
         return img_instance
 
-    def plot_frame(self, history, ego_center):
+    def plot_frame(self, history, ego_center, occupancy: List[bool]):
 
-        
         NUM_STEPS = 5
         STRIDE = 1
         
@@ -234,17 +231,19 @@ class InstanceCentricGenerator:
         img_draw = ImageDraw.Draw(img_frame)
 
         # Then plot everything on the main img
-        self.plot_spots(draw=img_draw, fill=self.color['spot'], ego_center=ego_center)
+        self.plot_spots(draw=img_draw, fill=self.color['spot'], ego_center=ego_center, occupancy=occupancy)
         self.plot_obstacles(draw=img_draw, fill=self.color['obstacle'])
         self.plot_agents(img_draw, self.color['agent'], history, STRIDE, NUM_STEPS)
 
 
         return img_frame
 
-    def plot_spots(self, draw, fill, ego_center):
+    def plot_spots(self, draw, fill, ego_center, occupancy: List[bool]):
         """
         plot empty spots
         """
+        occupancy = occupancy if occupancy is not None else [False] * len(self.parking_spaces_centers)
+
         for i in self._spots_in_radius(ego_center, self.sensing_limit * np.sqrt(2)):
             p = self.parking_spaces.iloc[i]
             p_coords_ground = p[2:10].to_numpy().reshape((4, 2))
@@ -253,7 +252,7 @@ class InstanceCentricGenerator:
             # Detect whether this spot is occupied or not
             # Only plot the spot if it is empty
             # center = np.average(p_coords_pixel, axis=0).astype('int32')
-            if not self.occupancy[i]:
+            if not occupancy[i]:
                 draw.polygon([tuple(p) for p in p_coords_pixel], fill=fill)
 
     def plot_instance(self, draw, fill, state: VehicleState):
