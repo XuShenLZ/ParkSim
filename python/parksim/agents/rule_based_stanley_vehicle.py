@@ -728,7 +728,7 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         # advance state of vehicle (updates x, y, yaw, velocity)
         self.controller.step(self.state, ai, di)
 
-    def update_state_parking(self, advance=True):
+    def update_state_parking(self, time, advance=True):
         if self.parking_maneuver is None:  # start parking
             # get parking parameters
             direction = (
@@ -782,7 +782,7 @@ class RuleBasedStanleyVehicle(AbstractAgent):
                 offline_maneuver, time_seq
             )
 
-            self.parking_start_time = time.time()
+            self.parking_start_time = time 
 
             self.change_central_occupancy(self.spot_index, True)
 
@@ -805,7 +805,7 @@ class RuleBasedStanleyVehicle(AbstractAgent):
             # update parking step if advancing
             self.parking_step += 1 if advance else 0
 
-    def update_state_unparking(self, advance=True):
+    def update_state_unparking(self, time, advance=True):
         if self.unparking_maneuver is None:  # start unparking
             # get unparking parameters
             direction = (
@@ -854,7 +854,7 @@ class RuleBasedStanleyVehicle(AbstractAgent):
             # set initial unparking state
             self.unparking_step = len(self.unparking_maneuver.x) - 1
 
-            self.parking_start_time = time.time()
+            self.parking_start_time = time
 
         # get step
         step = self.unparking_step
@@ -991,10 +991,10 @@ class RuleBasedStanleyVehicle(AbstractAgent):
             return mpc_preds
         else:
             # drive according to task profile
-            self.solve_task_based_control(time)
+            self.solve_task_based_control(time, coord_spot_fn=coord_spot_fn)
             return None
 
-    def solve_task_based_control(self, time=None):
+    def solve_task_based_control(self, time=None, coord_spot_fn=None):
         """
         Having other_vehicle_objects here is just to mimic the ROS service to change values of the other vehicle. Should use this to acquire information
         """
@@ -1114,12 +1114,18 @@ class RuleBasedStanleyVehicle(AbstractAgent):
                             or (
                                 self.ev and self.other_task[self.waiting_for] == "IDLE"
                             )  # TODO: hacky, need better law for waiting for idle (ie if idle vehicle parked, dont wait)
-                            or (
+                            or ((
                                 self.dist_from(self.waiting_for)
                                 > self.vehicle_config.braking_distance
                             )
                             and self.dist_from(self.waiting_for)
                             > self.last_braking_distance
+                            )
+                            or (
+                                self.other_task[self.waiting_for] == "IDLE"
+                                and self.other_state[self.waiting_for]
+                                and coord_spot_fn([self.other_state[self.waiting_for].x.x, self.other_state[self.waiting_for].x.y]) is not None
+                            )
                         ):
                             should_unbrake = True
                         elif (
@@ -1179,7 +1185,7 @@ class RuleBasedStanleyVehicle(AbstractAgent):
                     self.state.x.y
                     + self.vehicle_config.offset * np.cos(self.state.e.psi),
                 )
-            self.update_state_parking(should_go)
+            self.update_state_parking(time, should_go)
         elif (
             self.current_task == "UNPARK"
         ):  # wait for coast to be clear, then start unparking
@@ -1218,7 +1224,7 @@ class RuleBasedStanleyVehicle(AbstractAgent):
             and all([self.other_parking_progress[id] != "UNPARKING" or np.linalg.norm([self.x_ref[0] - self.other_ref_pose[id].x[0], self.y_ref[0] - self.other_ref_pose[id].y[0]]) > 10 for id in self.other_vehicles]))
             """
 
-            self.update_state_unparking(should_go)
+            self.update_state_unparking(time, should_go)
         else:
             self.update_state()
 
@@ -1256,7 +1262,7 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         """
         if self.loops <= self.loops_before_predict:
             # initially, just cruise to generate enough history to use intent prediction
-            self.solve_task_based_control(time=time)
+            self.solve_task_based_control(time=time, coord_spot_fn=coord_spot_fn)
         else:
             # calculate intent every self.loops_betwen_predict steps (if haven't already decided to park)
             if self.loops % self.loops_between_predict == (
@@ -1268,7 +1274,7 @@ class RuleBasedStanleyVehicle(AbstractAgent):
 
             if self.parking_step == -1:  # if not parking
                 done = self.solve_intent_based_control_stanley(
-                    time=time, other_vehicles=other_vehicles
+                    time=time, other_vehicles=other_vehicles, coord_spot_fn=coord_spot_fn
                 )
 
                 # determine if need to park
@@ -1293,7 +1299,7 @@ class RuleBasedStanleyVehicle(AbstractAgent):
                 #     time=time, obstacle_corners=obstacle_corners
                 # )
                 # return mpc_preds
-                self.solve_intent_based_parking_control_teleport(
+                self.solve_parking_control_teleport(
                     time
                 )  # just teleports vehicle, may cause vehicle to jump if not initially at correct heading
 
@@ -1362,7 +1368,7 @@ class RuleBasedStanleyVehicle(AbstractAgent):
             # mark this spot as full
             self.change_central_occupancy(in_spot, True)
 
-    def solve_intent_based_control_stanley(self, time=None, other_vehicles=[]):
+    def solve_intent_based_control_stanley(self, time=None, other_vehicles=[], coord_spot_fn=None):
         """
         Stanley controller used for intent-based driving. Looks very similar to solve_task_based_control.
         """
@@ -1472,12 +1478,17 @@ class RuleBasedStanleyVehicle(AbstractAgent):
                         or (
                             self.ev and self.other_task[self.waiting_for] == "IDLE"
                         )  # TODO: hacky, need better law for waiting for idle (ie if idle vehicle parked, dont wait)
-                        or (
+                        or ((
                             self.dist_from(self.waiting_for)
                             > self.vehicle_config.braking_distance
                         )
                         and self.dist_from(self.waiting_for)
                         > self.last_braking_distance
+                        )
+                        or (
+                            self.other_task[self.waiting_for] == "IDLE"
+                            and coord_spot_fn([self.other_state[self.waiting_for].x.x, self.other_state[self.waiting_for].x.y]) is not None
+                        )
                     ):
                         should_unbrake = True
                     elif (
@@ -1576,7 +1587,7 @@ class RuleBasedStanleyVehicle(AbstractAgent):
 
         return pred
 
-    def solve_intent_based_parking_control_teleport(self, time):
+    def solve_parking_control_teleport(self, time):
         """
         Park by teleporting according to an online maneuver.
         """
