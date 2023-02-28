@@ -5,7 +5,7 @@ import numpy as np
 from pathlib import Path
 
 from parksim.pytypes import VehicleState
-from parksim.agents.rule_based_stanley_vehicle import RuleBasedStanleyVehicle
+from parksim.agents.rule_based_vehicle import RuleBasedVehicle
 
 class SpotFeatureGenerator():
     def __init__(self):
@@ -15,7 +15,7 @@ class SpotFeatureGenerator():
             data = pickle.load(f)
             self.parking_spaces = data['parking_spaces']
 
-    def generate_features(self, spot_index: int, active_vehicles: List[RuleBasedStanleyVehicle], spawn_mean: int, queue: int):
+    def generate_features(self, spot_index: int, active_vehicles: List[RuleBasedVehicle], spawn_mean: int, queue: int):
         heatmap = self.generate_vehicle_heatmap(active_vehicles)
         # subtract one because you're in your own path always
         vehicles_along_path = sum([heatmap[sq] for sq in self.create_features_data['trajectory_squares'][spot_index]]) - 1
@@ -30,7 +30,7 @@ class SpotFeatureGenerator():
     def number_of_features(self):
         return 7
 
-    def generate_vehicle_heatmap(self, vehicles: List[RuleBasedStanleyVehicle]) -> List[int]:
+    def generate_vehicle_heatmap(self, vehicles: List[RuleBasedVehicle]) -> List[int]:
         heatmap = [0] * self.number_of_heatmap_squares()
         for v in vehicles:
             if v.state.x.x < 0 or v.state.x.x >= 140 or v.state.x.y < 0 or v.state.x.y >= 80:

@@ -19,7 +19,7 @@ from parksim.srv import OccupancySrv
 from parksim.pytypes import VehicleState, NodeParamTemplate
 from parksim.vehicle_types import VehicleBody, VehicleConfig, VehicleInfo, VehicleTask
 from parksim.base_node import MPClabNode
-from parksim.agents.rule_based_stanley_vehicle import RuleBasedStanleyVehicle
+from parksim.agents.rule_based_vehicle import RuleBasedVehicle
 
 class VehicleNodeParams(NodeParamTemplate):
     """
@@ -101,7 +101,7 @@ class VehicleNode(MPClabNode):
         controller = StanleyController(control_params=controller_params, vehicle_body=vehicle_body, vehicle_config=vehicle_config)
         motion_predictor = StanleyController(control_params=controller_params, vehicle_body=vehicle_body, vehicle_config=vehicle_config)
 
-        self.vehicle = RuleBasedStanleyVehicle(
+        self.vehicle = RuleBasedVehicle(
             vehicle_id=self.vehicle_id, 
             vehicle_body=vehicle_body, 
             vehicle_config=vehicle_config, 

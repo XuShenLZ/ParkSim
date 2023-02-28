@@ -17,56 +17,24 @@ from scipy.io import savemat
 from parksim.pytypes import VehicleState
 
 from parksim.vehicle_types import VehicleBody, VehicleConfig, VehicleTask
-from parksim.route_planner.graph import WaypointsGraph, Vertex
+from parksim.route_planner.graph import WaypointsGraph
 from parksim.visualizer.realtime_visualizer import RealtimeVisualizer
 
-from parksim.agents.rule_based_stanley_vehicle import RuleBasedStanleyVehicle
+from parksim.agents.rule_based_vehicle import RuleBasedVehicle
 
-from parksim.controller.stanley_controller import StanleyController, normalize_angle
+from parksim.controller.stanley_controller import StanleyController
 from parksim.controller_types import StanleyParams
 from parksim.spot_nn.spot_nn import SpotNet
 from parksim.spot_nn.feature_generator import SpotFeatureGenerator
 
 from parksim.intent_predict.cnn.data_processing.utils import CNNDataProcessor
-from parksim.trajectory_predict.data_processing.utils import TransformerDataProcessor
 
-from parksim.intent_predict.cnn.models.small_regularized_cnn import SmallRegularizedCNN
-from parksim.trajectory_predict.intent_transformer.models.trajectory_predictor_vision_transformer import (
-    TrajectoryPredictorVisionTransformer,
-)
-from parksim.trajectory_predict.intent_transformer.models.trajectory_predictor_with_decoder_intent_cross_attention import (
-    TrajectoryPredictorWithDecoderIntentCrossAttention,
-)
-from parksim.intent_predict.cnn.visualizer.instance_centric_generator import (
-    InstanceCentricGenerator,
-)
-
-from dlp.visualizer import SemanticVisualizer
-from parksim.intent_predict.cnn.predictor import PredictionResponse, Predictor
-import heapq
+from parksim.intent_predict.cnn.visualizer.instance_centric_generator import InstanceCentricGenerator
 
 from parksim.spot_detector.detector import LocalDetector
-from parksim.trajectory_predict.intent_transformer.model_utils import (
-    generate_square_subsequent_mask,
-)
-from parksim.utils.get_corners import (
-    get_vehicle_corners,
-    get_vehicle_corners_from_dict,
-    rectangle_to_polytope,
-)
+from parksim.utils.get_corners import get_vehicle_corners_from_dict
 
 from scipy.spatial import ConvexHull
-
-from typing import Tuple
-from torch import Tensor
-from torchvision import transforms
-
-from parksim.utils.spline import calc_spline_course
-import pyomo.environ as pyo
-import matplotlib
-
-# matplotlib.use("macOSX")
-import matplotlib.pyplot as plt
 
 # These parameters should all become ROS param for simulator and vehicle
 spots_data_path = "/ParkSim/data/spots_data.pickle"
@@ -228,7 +196,7 @@ class RuleBasedSimulator(object):
         self.sim_is_running = True
 
         self.num_vehicles = 0
-        self.vehicles: List[RuleBasedStanleyVehicle] = []
+        self.vehicles: List[RuleBasedVehicle] = []
 
         self.max_simulation_time = 2000
 
@@ -487,7 +455,7 @@ class RuleBasedSimulator(object):
             vehicle_config=vehicle_config,
         )
 
-        vehicle = RuleBasedStanleyVehicle(
+        vehicle = RuleBasedVehicle(
             vehicle_id=vehicle_id,
             vehicle_body=dataclasses.replace(vehicle_body),
             vehicle_config=dataclasses.replace(vehicle_config),
@@ -885,7 +853,7 @@ class RuleBasedSimulator(object):
                     )
                     self.try_spawn_existing()
 
-            active_vehicles: Dict[int, RuleBasedStanleyVehicle] = {}
+            active_vehicles: Dict[int, RuleBasedVehicle] = {}
             for vehicle in self.vehicles:
                 if not vehicle.is_all_done():
                     active_vehicles[vehicle.vehicle_id] = vehicle
@@ -1086,7 +1054,7 @@ class RuleBasedSimulatorParams:
         self.intent_simulation = True
 
         self.use_existing_agents = False  # replay video data
-        self.agents_data_path = "/ParkSim/data/agents_data_0012.pickle"
+        self.agents_data_path = "/ParkSim/data/agents_data_ev.pickle"
 
         # should we replace where the agents park?
         self.use_existing_entrances = (
@@ -1094,9 +1062,9 @@ class RuleBasedSimulatorParams:
         )
 
         # don't use existing agents
-        self.spawn_entering_fn = lambda: np.random.randint(5, 25)
-        self.spawn_exiting_fn = lambda: 0
-        self.spawn_interval_mean_fn = lambda: np.random.randint(2, 16)  # (s)
+        self.spawn_entering_fn = lambda: 10
+        self.spawn_exiting_fn = lambda: 10
+        self.spawn_interval_mean_fn = lambda: 12  # (s)
         # self.spawn_entering_fn = lambda: 24
         # self.spawn_exiting_fn = lambda: 0
         # self.spawn_interval_mean_fn = lambda: 8
@@ -1244,7 +1212,7 @@ class RuleBasedSimulatorParams:
         self,
         simulator: RuleBasedSimulator,
         empty_spots: List[int],
-        active_vehicles: List[RuleBasedStanleyVehicle],
+        active_vehicles: List[RuleBasedVehicle],
     ):
         if self.use_nn:
             # return min([spot for spot in empty_spots], key=lambda spot: self.net(self.feature_generator.generate_features(spot, active_vehicles, simulator.spawn_interval_mean, simulator.queue_length)))
