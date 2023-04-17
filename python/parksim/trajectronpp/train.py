@@ -1,0 +1,38 @@
+import torch
+import pytorch_lightning as pl
+from pytorch_lightning.callbacks.early_stopping import EarlyStopping
+from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
+from parksim.trajectronpp.dataset import MGCVAEDataModule
+from parksim.trajectronpp.models.mgcvae import TrajectoryPredictorMGCVAE
+
+MODEL_LABEL = 'Trajectron++'
+DEFAULT_CONFIG = {}
+if __name__ == '__main__':
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    print(device)
+    """
+    SPECIFY CONFIG HERE:
+    """
+    # TODO: fill in config
+    config={}
+
+    """
+    SPECIFY MODEL HERE:
+    """
+    model = TrajectoryPredictorMGCVAE(config)
+
+
+    datamodule = MGCVAEDataModule()
+    patience = 10
+    earlystopping = EarlyStopping(monitor="val_total_loss", mode="min", patience=patience)
+    checkpoint_callback = ModelCheckpoint(
+        monitor="val_total_loss",
+        filename="{epoch}-{val_total_loss:.4f}",
+        save_top_k=3,
+        mode="min",
+        every_n_epochs=1
+    )
+
+    callbacks=[earlystopping, checkpoint_callback]
+    trainer = pl.Trainer(accelerator="gpu", devices=1, default_root_dir=f"checkpoints/{MODEL_LABEL}/", callbacks=callbacks, track_grad_norm=2)
+    trainer.fit(model=model, datamodule=datamodule)
