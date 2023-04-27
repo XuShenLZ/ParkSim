@@ -198,7 +198,7 @@ class RuleBasedSimulator(object):
         self.num_vehicles = 0
         self.vehicles: List[RuleBasedVehicle] = []
 
-        self.max_simulation_time = 2000
+        self.max_simulation_time = 500 
 
         self.time = 0.0
         self.loops = 0
@@ -553,16 +553,8 @@ class RuleBasedSimulator(object):
                         )
 
             # determine which vehicles entered from the entrance for stats purposes later
-            for task in raw_tp:
-                if (
-                    task["name"] == "PARK"
-                    and "init_coords" in agent_dict
-                    and agent_dict["init_coords"][1] > self.y_bound_to_resume_spawning
-                ):
-                    vehicle.spot_index = task["target_spot_index"]
-                    self.vehicle_ids_entered.append(vehicle_id)
-                elif task["name"] == "UNPARK":
-                    break
+            if self.vehicle_entering_and_parking(vehicle_id):
+                self.vehicle_ids_entered.append(vehicle_id)
 
             if "init_spot" in agent_dict:
                 init_spot = agent_dict["init_spot"]
@@ -687,7 +679,10 @@ class RuleBasedSimulator(object):
 
         for agent in vehicles_to_add:
             # DJI 24
-            # if agent == 177 or agent == 10:
+            # if agent == 177 or agent == 10 or agent == 239: # 239 for intent
+            #     continue
+            # DJI 25
+            # if agent == 181 or agent == 10:
             #     continue
 
             # change task profile to park in nn spot if the vehicle is entering from the entrance
@@ -774,7 +769,7 @@ class RuleBasedSimulator(object):
                         already_parked = task["target_spot_index"]
                 self.agents_dict[agent]["task_profile"] = new_tp
 
-            self.add_vehicle(vehicle_id=agent, intent_vehicle=self.intent_simulation)
+            self.add_vehicle(vehicle_id=agent, intent_vehicle=self.intent_simulation and self.vehicle_entering_and_parking(agent))
 
         for added in vehicles_to_add:
             del self.agents_dict[added]
@@ -785,6 +780,19 @@ class RuleBasedSimulator(object):
             and self.agents_dict[vehicle_id]["init_coords"][1]
             > self.y_bound_to_resume_spawning
         )
+
+    def vehicle_entering_and_parking(self, vehicle_id):
+        agent_dict = self.agents_dict[vehicle_id]
+        for task in agent_dict["task_profile"]:
+            if (
+                task["name"] == "PARK"
+                and "init_coords" in agent_dict
+                and agent_dict["init_coords"][1] > self.y_bound_to_resume_spawning
+            ):
+                return True
+            elif task["name"] == "UNPARK":
+                return False
+        return False
 
     def is_electric_vehicle(self, vehicle_id):
         return (
@@ -956,6 +964,7 @@ class RuleBasedSimulator(object):
                         history=self.history,
                         coord_spot_fn=self._coordinates_in_spot,
                         obstacle_corners={},
+                        intent_use_obstacles=self.params.use_existing_obstacles,
                     )
 
                     if vehicle.intent_vehicle and vehicle.intent is not None:
@@ -1046,15 +1055,15 @@ class RuleBasedSimulatorParams:
         self.seed = 0
 
         self.num_simulations = (
-            1  # number of simulations run (e.g. times started from scratch)
+            10  # number of simulations run (e.g. times started from scratch)
         )
         self.current_sim_num = 0
 
         self.ev_simulation = False  # electric vehicle (Soomin's data) sim?
-        self.intent_simulation = True
+        self.intent_simulation = False
 
         self.use_existing_agents = False  # replay video data
-        self.agents_data_path = "/ParkSim/data/agents_data_ev.pickle"
+        self.agents_data_path = "/ParkSim/data/agents_data_25.pickle"
 
         # should we replace where the agents park?
         self.use_existing_entrances = (
@@ -1062,23 +1071,20 @@ class RuleBasedSimulatorParams:
         )
 
         # don't use existing agents
-        self.spawn_entering_fn = lambda: 10
-        self.spawn_exiting_fn = lambda: 10
-        self.spawn_interval_mean_fn = lambda: 12  # (s)
-        # self.spawn_entering_fn = lambda: 24
-        # self.spawn_exiting_fn = lambda: 0
-        # self.spawn_interval_mean_fn = lambda: 8
+        self.spawn_entering_fn = lambda: 30 
+        self.spawn_exiting_fn = lambda: 0
+        self.spawn_interval_mean_fn = lambda: 8  # (s)
 
         self.use_existing_obstacles = True  # able to park in "occupied" spots from dataset? False if yes, True if no
 
-        self.load_existing_net = False  # generate a new net form scratch (and overwrite model.pickle) or use the one stored at self.spot_model_path
+        self.load_existing_net = True  # generate a new net form scratch (and overwrite model.pickle) or use the one stored at self.spot_model_path
         self.use_nn = False  # pick spots using NN or not (irrelevant if self.use_existing_entrances is True)
         self.train_nn = False  # train NN or not
         self.should_visualize = True  # display simulator or no
 
         # before changing model, don't forget to set: spot selection, loss function
         self.spot_model_path = (
-            "/Parksim/python/parksim/spot_nn/pd_models/selfless_0.9dis_3back.pickle"
+            "/Parksim/python/parksim/spot_nn/final_pd_models/selfish_model.pickle"
         )
         self.losses_csv_path = (
             "/parksim/python/parksim/spot_nn/losses.csv"  # where losses are stored
@@ -1122,9 +1128,6 @@ class RuleBasedSimulatorParams:
             self.spawn_entering = self.spawn_entering_fn()
             self.spawn_exiting = self.spawn_exiting_fn()
             self.spawn_interval_mean = self.spawn_interval_mean_fn()
-            # self.spawn_entering = [17, 19, 6, 23, 13][i]
-            # self.spawn_exiting = [20, 5, 17, 18, 5][i]
-            # self.spawn_interval_mean = [7, 6, 4, 9, 12][i]
             simulator = RuleBasedSimulator(dataset=ds, vis=vis, params=self)
             if not self.use_existing_agents:
                 print(
@@ -1240,16 +1243,11 @@ class RuleBasedSimulatorParams:
             return np.random.choice(empty_spots)
             # closest spot
             # return min([spot for spot in empty_spots], key=lambda spot: np.linalg.norm([simulator.entrance_coords[0] - simulator.parking_spaces[spot][0], simulator.entrance_coords[1] - simulator.parking_spaces[spot][1]]))
-            """
-            r = 0
-            if r < 0.4:
-                return np.random.choice(empty_spots)
-            elif r < 0.8:
-                return np.random.choice([i for i in empty_spots if (i >= 46 and i <= 66) or (i >= 70 and i <= 91) or (i >= 137 and i <= 158) or (i >= 162 and i <= 183)])
-            else:
-                return min([spot for spot in empty_spots], key=lambda spot: np.linalg.norm([simulator.entrance_coords[0] - simulator.parking_spaces[spot][0], simulator.entrance_coords[1] - simulator.parking_spaces[spot][1]]))
-            """
-            # return self.park_spots.pop(0)
+            # hand-picked
+            # val = self.park_spots.pop(0)
+            # while val not in empty_spots:
+            #     val = self.park_spots.pop(0)
+            return val
 
     # target function for neural net
     def target(
@@ -1299,9 +1297,9 @@ def main():
     ds.load(home_path + "/dlp-dataset/data/DJI_0012")
     print("Dataset loaded.")
 
-    vis = RealtimeVisualizer(ds, VehicleBody())
-
     params = RuleBasedSimulatorParams()
+
+    vis = RealtimeVisualizer(ds, VehicleBody(), params.use_existing_obstacles)
 
     if params.seed is not None:
         np.random.seed(params.seed)

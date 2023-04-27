@@ -168,7 +168,7 @@ class InstanceCentricGenerator:
             index -= 1
         return history_window
 
-    def inst_centric(self, vehicle_id, history, occupancy: List[bool]):
+    def inst_centric(self, vehicle_id, history, occupancy: List[bool], use_obstacles: bool):
         """
         crop the local region around an instance and replot it in ego color. The ego instance is always pointing towards the west
 
@@ -183,7 +183,7 @@ class InstanceCentricGenerator:
         current_state_dict = instance_timeline[-1][vehicle_index]
         ego_center = np.array([current_state_dict['center-x'], current_state_dict['center-y']])
 
-        img = self.plot_frame(instance_timeline, ego_center, occupancy)
+        img = self.plot_frame(instance_timeline, ego_center, occupancy, use_obstacles)
         draw = ImageDraw.Draw(img)
 
         # Replot this specific instance with the ego color
@@ -214,7 +214,7 @@ class InstanceCentricGenerator:
 
         return img_instance
 
-    def plot_frame(self, history, ego_center, occupancy: List[bool]):
+    def plot_frame(self, history, ego_center, occupancy: List[bool], use_obstacles: bool):
 
         NUM_STEPS = 5
         STRIDE = 1
@@ -232,7 +232,8 @@ class InstanceCentricGenerator:
 
         # Then plot everything on the main img
         self.plot_spots(draw=img_draw, fill=self.color['spot'], ego_center=ego_center, occupancy=occupancy)
-        self.plot_obstacles(draw=img_draw, fill=self.color['obstacle'])
+        if use_obstacles:
+            self.plot_obstacles(draw=img_draw, fill=self.color['obstacle'])
         self.plot_agents(img_draw, self.color['agent'], history, STRIDE, NUM_STEPS)
 
 

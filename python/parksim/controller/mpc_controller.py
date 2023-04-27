@@ -117,7 +117,7 @@ class MPC(object):
 
             self.opti.subject_to(
                 self.opti.bounded(
-                    self.vehicle_config.a_min, self.a[k], self.vehicle_config.a_max
+                    self.vehicle_config.a_min, self.a[k], self.vehicle_config.a_max_parking
                 )
             )
             self.opti.subject_to(

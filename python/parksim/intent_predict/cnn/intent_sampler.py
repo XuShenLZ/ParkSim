@@ -28,13 +28,13 @@ class IntentSampler():
         self.intent_graph = WaypointsGraph()
         self.intent_graph.setup_with_vis(self.intent_extractor.vis)
 
-    def sample_valid_intent(self, vehicle_id: int, state: VehicleState, history, coord_spot_fn, occupancy):
+    def sample_valid_intent(self, vehicle_id: int, state: VehicleState, history, coord_spot_fn, occupancy, use_obstacles):
         """
         Find most likely feasible intents from intent predictor, then pick one.
         """
         # run intent predictor and load most popular intents
 
-        intents = self.run_intent_predictor(vehicle_id, state, history, occupancy)
+        intents = self.run_intent_predictor(vehicle_id, state, history, occupancy, use_obstacles)
         best_lanes = self.find_n_best_lanes(
             [state.x.x, state.x.y],
             state.e.psi,
@@ -80,6 +80,9 @@ class IntentSampler():
             if in_spot and occupancy[in_spot]:
                 continue
 
+            if state.x.x > 10 and state.x.x < 50 and state.x.y > 60 and state.x.y < 70 and coords[0] > 10 and coords[0] < 50 and coords[1] > 40 and coords[1] < 55:
+                continue
+
             valid_probs.append(prob)
             valid_coords.append(coords)
 
@@ -93,11 +96,11 @@ class IntentSampler():
             )
         ]
 
-    def run_intent_predictor(self, vehicle_id: int, state: VehicleState, history, occupancy: List[bool]):
+    def run_intent_predictor(self, vehicle_id: int, state: VehicleState, history, occupancy: List[bool], use_obstacles: bool):
         """
         Predict the most likely intents of the specific vehicle.
         """
-        img = self.inst_centric_generator.inst_centric(vehicle_id, history, occupancy)
+        img = self.inst_centric_generator.inst_centric(vehicle_id, history, occupancy, use_obstacles)
         return self.intent_predictor.predict(
             img,
             np.array([state.x.x, state.x.y]),

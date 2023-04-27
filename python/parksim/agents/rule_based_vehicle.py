@@ -642,6 +642,7 @@ class RuleBasedVehicle(AbstractAgent):
                 )
                 or self.other_task[id] == "IDLE"
                 or self.dist_from(id) >= 2 * self.vehicle_config.parking_radius
+                or (self.intent_vehicle and self.intent_spot in [19, 20, 21, 22, 23] and self.other_is_braking[id] and self.other_state[id].x.y < 60) # edge case for intent
                 for id in self.nearby_vehicles
             ]
         )
@@ -715,7 +716,7 @@ class RuleBasedVehicle(AbstractAgent):
                 if ang < (np.pi / 2) or ang > (3 * np.pi) / 2:
                     return False
         if parking_dist_away is not None:
-            if this_psi > np.pi / 2 and this_psi < np.pi * 3 / 2:  # facing east
+            if this_psi > np.pi / 2 and this_psi < np.pi * 3 / 2:  # facing west
                 if this_state.x.x - other_state.x.x > -parking_dist_away:
                     return False
             else:
@@ -959,7 +960,7 @@ class RuleBasedVehicle(AbstractAgent):
         return (
             self.current_task == "PARK"
             and self.parking_maneuver is not None
-            and self.parking_step > 0
+            and self.parking_step > (0 if not self.intent_vehicle else -1)
             and self.parking_step < len(self.parking_maneuver.x) - 1
         )
 
@@ -1004,6 +1005,7 @@ class RuleBasedVehicle(AbstractAgent):
         history=None,
         coord_spot_fn=None,
         obstacle_corners={},
+        intent_use_obstacles=True,
     ):
         """
         Update the vehicle state
@@ -1017,6 +1019,7 @@ class RuleBasedVehicle(AbstractAgent):
                 history=history,
                 coord_spot_fn=coord_spot_fn,
                 obstacle_corners=obstacle_corners,
+                intent_use_obstacles=intent_use_obstacles,
             )
             return mpc_preds
         else:
@@ -1266,6 +1269,7 @@ class RuleBasedVehicle(AbstractAgent):
         history=None,
         coord_spot_fn=None,
         obstacle_corners={},
+        intent_use_obstacles=True,
     ):
         """
         Drive using intent predictions.
@@ -1280,7 +1284,7 @@ class RuleBasedVehicle(AbstractAgent):
             ) % self.loops_between_predict and (
                 self.intent is None or self.intent_spot is None
             ):
-                self.solve_intent(history, coord_spot_fn)  # populates self.intent
+                self.solve_intent(history, coord_spot_fn, intent_use_obstacles)  # populates self.intent
 
             if self.parking_step == -1:  # if not parking
                 done = self.solve_intent_based_control_stanley(
@@ -1288,6 +1292,9 @@ class RuleBasedVehicle(AbstractAgent):
                 )
 
                 if done:
+                    if self.current_task != "PARK":
+                        self.current_task = "PARK"
+                        self.set_parking_start_time(time)
                     should_go = self.should_start_parking()
 
                 # determine if need to park
@@ -1297,7 +1304,6 @@ class RuleBasedVehicle(AbstractAgent):
                     and done and should_go
                 ):
                     self.parking_step = 0
-                    self.current_task = "PARK"
             else:  # if parking
                 # mpc_preds = self.solve_parking_control_mpc(
                 #     time=time, obstacle_corners=obstacle_corners
@@ -1309,12 +1315,12 @@ class RuleBasedVehicle(AbstractAgent):
 
         return None
 
-    def solve_intent(self, history, coord_spot_fn):
+    def solve_intent(self, history, coord_spot_fn, use_obstacles):
         """
         Calculate intent from intent prediction and populate self.intent.
         """
         # get raw intent returned from intent predictor
-        predicted_intent = self.intent_sampler.sample_valid_intent(self.vehicle_id, self.state, history, coord_spot_fn, self.occupancy)
+        predicted_intent = self.intent_sampler.sample_valid_intent(self.vehicle_id, self.state, history, coord_spot_fn, self.occupancy, use_obstacles)
 
         if (
             predicted_intent is None
@@ -1353,7 +1359,7 @@ class RuleBasedVehicle(AbstractAgent):
                 dir = "east" if approach_left else "west"
                 xpos = "left" if approach_left else "right"
             loc = "north" if lane_y < self.intent[1] else "south"
-            heading = "up"
+            heading = "up" if np.random.rand() < 0.5 else "down"
             self.intent_maneuver_params = (dir, xpos, loc, heading)
 
             # adjust intent for parking

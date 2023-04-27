@@ -92,8 +92,10 @@ class VehicleConfig(PythonMsg):
     # Vehicle Limits
     v_max: float = field(default=5)  # maximum velocity
     v_min: float = field(default=-5)  # minimum velocity
-    a_max: float = field(default=2)  # maximum acceleration
-    a_min: float = field(default=-2)  # minimum acceleration
+    a_max: float = field(default=10)  # maximum acceleration
+    a_min: float = field(default=-10)  # minimum acceleration
+    a_max_parking: float = field(default=2)  # maximum acceleration for parking
+    a_min_parking: float = field(default=-2)  # minimum acceleration for parking
     delta_max: float = field(default=np.deg2rad(40.0))  # maximum steering angle
     delta_min: float = field(default=-np.deg2rad(40.0))  # minimum steering angle
     d_delta_max: float = field(default=1.5)  # maximum change in steering angle over dt

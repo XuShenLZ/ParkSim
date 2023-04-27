@@ -13,7 +13,7 @@ class RealtimeVisualizer(object):
     """
     Realtime visualizer based on dearpy GUI for fast plotting in ROS
     """
-    def __init__(self, dataset: Dataset, vehicle_body: VehicleBody, width=1900, height=1000):
+    def __init__(self, dataset: Dataset, vehicle_body: VehicleBody, use_obstacles: bool, width=1900, height=1000):
         """
         width, height: the width, height of the plotting window
         """
@@ -21,6 +21,7 @@ class RealtimeVisualizer(object):
         self.dlpvis = DlpVis(dataset)
 
         self.vehicle_body = vehicle_body
+        self.use_obstacles = use_obstacles
 
         dpg.create_context()
         dpg.create_viewport(title='ParkSim Simulator', width=width, height=height)
@@ -184,7 +185,8 @@ class RealtimeVisualizer(object):
         self._draw_parking_lines()
 
         # Plot static obstacles
-        self._draw_obstacles(scene_token)
+        if self.use_obstacles:
+            self._draw_obstacles(scene_token)
 
         self._draw_grids()
 

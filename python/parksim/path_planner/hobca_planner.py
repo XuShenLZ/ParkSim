@@ -192,7 +192,7 @@ class HobcaPlanner:
             [self.region.x_min, self.region.y_min, -np.inf, self.vehicle_config.v_min]
         ).T
 
-        input_u = np.array([self.vehicle_config.a_max, self.vehicle_config.delta_max]).T
+        input_u = np.array([self.vehicle_config.a_max_parking, self.vehicle_config.delta_max]).T
         input_l = np.array([self.vehicle_config.a_min, self.vehicle_config.delta_min]).T
 
         n_obs = len(obstacles)
