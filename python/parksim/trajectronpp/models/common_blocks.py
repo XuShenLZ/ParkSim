@@ -42,29 +42,31 @@ class BaseMGCVAELightningModule(pl.LightningModule):
     
     # TODO: fill in the loss fnct from paper
     def get_loss(self, pred, label, loss_type):
-        total_loss = self.loss_fn(pred, label)
-        with torch.no_grad():
-            metrics = {
-                f"{loss_type}_total_loss" : total_loss
-            }
-            self.log_dict(metrics)
-        return total_loss, metrics
+        raise NotImplementedError
+        # total_loss = self.loss_fn(pred, label)
+        # with torch.no_grad():
+        #     metrics = {
+        #         f"{loss_type}_total_loss" : total_loss
+        #     }
+        #     self.log_dict(metrics)
+        # return total_loss, metrics
     
     # TODO: fill in training step from paper
+    # TODO: move to the mgcvae file?
     def training_step(self, batch, _batch_idx):
         ego_history, target_history, neighbor_veh_history, neighbor_ped_history, target_future, semantic_map = batch
-        pred = self(ego_history, target_history, neighbor_veh_history, neighbor_ped_history, semantic_map)
-        loss, _metrics = self.get_loss(pred, target_future, "train")
+        loss = self(ego_history, target_history, neighbor_veh_history, neighbor_ped_history, target_future, semantic_map)
+        # loss, _metrics = self.get_loss(pred, target_future, "train")
         return loss
     
     def validation_step(self, batch, batch_idx):
         ego_history, target_history, neighbor_veh_history, neighbor_ped_history, target_future, semantic_map = batch
-        pred = self(ego_history, target_history, neighbor_veh_history, neighbor_ped_history, semantic_map)
+        pred = self(ego_history, target_history, neighbor_veh_history, neighbor_ped_history, target_future, semantic_map)
         _loss, metrics = self.get_loss(pred, target_future, "val")
         return metrics
     
     def test_step(self, batch, batch_idx):
         ego_history, target_history, neighbor_veh_history, neighbor_ped_history, target_future, semantic_map = batch
-        pred = self(ego_history, target_history, neighbor_veh_history, neighbor_ped_history, semantic_map)
+        pred = self(ego_history, target_history, neighbor_veh_history, neighbor_ped_history, target_future, semantic_map)
         _loss, metrics = self.get_loss(pred, target_future, "test")
         return metrics

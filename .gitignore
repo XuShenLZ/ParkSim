@@ -24,7 +24,8 @@ runs/
 # data files
 data/
 python/parksim/trajectory_predict/intent_transformer/checkpoints/*
-python/parksim/trajectronpp/checkpoints/*
+python/parksim/trajectronpp/checkpoints/
+python/parksim/trajectronpp/data/
 *.pickle
 *.npz
 *.npy

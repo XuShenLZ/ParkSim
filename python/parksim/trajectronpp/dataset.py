@@ -35,28 +35,30 @@ class MGCVAEDataset(Dataset):
         super().__init__()
         # TODO: figure out what these numbers should be
         # (num(history), dim(state))
-        self.ego_history_shape = (10, 3)
-        self.target_history_shape = (10,3)
-        self.neighbor_veh_history_shape = (10, 3)
-        self.neighbor_ped_history_shape = (10, 3)
-        self.target_future_shape = (10, 3)
+        # for now, ego vehicle = target vehicle
+        self.ego_history_shape = (10, 4)
+        self.target_history_shape = (10,4)
+        self.neighbor_veh_history_shape = (10, 4)
+        self.neighbor_ped_history_shape = (10, 4)
+        self.target_future_shape = (10, 4)
         # TODO: are these the map dims?
-        self.map_shape = (100, 100, 3)
+        self.map_shape = (3, 400, 400)
 
         # TODO: update to read from an actual data file
         if dataset_type == "train":
-            self.data_size = 100
+            self.data_size = 380
         elif dataset_type == "val":
             self.data_size = 10
         else:
             self.data_size = 10
         
         # TODO: update to read from data file
-        self.ego_history = np.random.rand(self.data_size, *self.ego_history_shape)
-        self.target_history = np.random.rand(self.data_size, *self.target_history_shape)
-        self.neighbor_veh_history = np.random.rand(self.data_size, *self.neighbor_veh_history_shape)
-        self.neighbor_ped_history = np.random.rand(self.data_size, *self.neighbor_ped_history_shape)
-        self.target_future = np.random.rand(self.data_size, *self.target_future_shape)
+        self.ego_history = np.load("/home/nidhi/MPCLab/ParkSim/python/parksim/trajectronpp/data/all_e_saved.npy").transpose(2,1,0)[:, :10, :]
+        self.target_history = np.load("/home/nidhi/MPCLab/ParkSim/python/parksim/trajectronpp/data/all_e_saved.npy").transpose(2,1,0)[:, :10, :]
+        self.neighbor_veh_history = np.load("/home/nidhi/MPCLab/ParkSim/python/parksim/trajectronpp/data/all_v_saved.npy").transpose(2,1,0)[:, :10, :]
+        print(f"{self.neighbor_veh_history.shape=}")
+        self.neighbor_ped_history = np.load("/home/nidhi/MPCLab/ParkSim/python/parksim/trajectronpp/data/all_p_saved.npy").transpose(2,1,0)[:, :10, :]
+        self.target_future = np.load("/home/nidhi/MPCLab/ParkSim/python/parksim/trajectronpp/data/all_e_saved.npy").transpose(2,1,0)[:, 10:, :]
         self.map = np.random.rand(self.data_size, *self.map_shape)
         
         # TODO: is img transform necessary?

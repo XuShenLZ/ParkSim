@@ -14,7 +14,14 @@ if __name__ == '__main__':
     SPECIFY CONFIG HERE:
     """
     # TODO: fill in config
-    config={}
+    config={
+        'N': 1, # unclear tbh
+        'K': 25, # number of samples from z dist
+        'dec_rnn_dim': 128, # output dimension for decoder GRU
+        'GMM_components': 1, # components in decoder GMM
+        "log_p_yt_xz_max": 6, # max log prob in y dist
+        "prediction_horizon": 12, # future timesteps to predict
+    }
 
     """
     SPECIFY MODEL HERE:
@@ -34,5 +41,7 @@ if __name__ == '__main__':
     )
 
     callbacks=[earlystopping, checkpoint_callback]
-    trainer = pl.Trainer(accelerator="gpu", devices=1, default_root_dir=f"checkpoints/{MODEL_LABEL}/", callbacks=callbacks, track_grad_norm=2)
+    # trainer = pl.Trainer(accelerator="gpu", devices=1, default_root_dir=f"checkpoints/{MODEL_LABEL}/", callbacks=callbacks, track_grad_norm=2)
+    # TODO: tune these. setting max_epochs to 100 for testing
+    trainer = pl.Trainer(accelerator="gpu", devices=1, default_root_dir=f"checkpoints/{MODEL_LABEL}/", callbacks=callbacks, track_grad_norm=2, max_epochs=100)
     trainer.fit(model=model, datamodule=datamodule)
