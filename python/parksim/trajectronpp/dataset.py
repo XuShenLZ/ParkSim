@@ -39,7 +39,7 @@ class MGCVAEDataset(Dataset):
         self.ego_history_shape = (10, 4)
         self.target_history_shape = (10,4)
         self.neighbor_veh_history_shape = (10, 4)
-        self.neighbor_ped_history_shape = (10, 4)
+        self.neighbor_ped_history_shape = (10, 2)
         self.target_future_shape = (10, 4)
         # TODO: are these the map dims?
         self.map_shape = (3, 400, 400)
@@ -58,7 +58,7 @@ class MGCVAEDataset(Dataset):
         self.neighbor_veh_history = np.load("/home/nidhi/MPCLab/ParkSim/python/parksim/trajectronpp/data/all_v_saved.npy").transpose(2,1,0)[:, :10, :]
         print(f"{self.neighbor_veh_history.shape=}")
         self.neighbor_ped_history = np.load("/home/nidhi/MPCLab/ParkSim/python/parksim/trajectronpp/data/all_p_saved.npy").transpose(2,1,0)[:, :10, :]
-        self.target_future = np.load("/home/nidhi/MPCLab/ParkSim/python/parksim/trajectronpp/data/all_e_saved.npy").transpose(2,1,0)[:, 10:, :]
+        self.target_future = np.load("/home/nidhi/MPCLab/ParkSim/python/parksim/trajectronpp/data/all_e_saved.npy").transpose(2,1,0)[:, 10:, :2]
         self.map = np.random.rand(self.data_size, *self.map_shape)
         
         # TODO: is img transform necessary?

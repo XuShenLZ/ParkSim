@@ -46,6 +46,7 @@ class GMM2D(td.Distribution):
         self.one_minus_rho2 = torch.clamp(self.one_minus_rho2, min=1e-5, max=1)  # otherwise log can be nan
         self.corrs = corrs  # [..., N]
 
+        # TODO: figure out the math here to make output dim > 2?
         self.L = torch.stack([torch.stack([self.sigmas[..., 0], torch.zeros_like(self.log_pis)], dim=-1),
                               torch.stack([self.sigmas[..., 1] * self.corrs,
                                            self.sigmas[..., 1] * torch.sqrt(self.one_minus_rho2)],
@@ -73,6 +74,9 @@ class GMM2D(td.Distribution):
         :param sample_shape: Shape of the samples
         :return: Samples from the GMM.
         """
+        print(f"{self.L.shape=}")
+        multer = torch.unsqueeze(torch.randn(size=sample_shape + self.mus.shape, device=self.device),dim=-1).shape
+        print(f"{multer=}")
         mvn_samples = (self.mus +
                        torch.squeeze(
                            torch.matmul(self.L,

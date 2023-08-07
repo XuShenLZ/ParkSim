@@ -20,7 +20,7 @@ if __name__ == '__main__':
         'dec_rnn_dim': 128, # output dimension for decoder GRU
         'GMM_components': 1, # components in decoder GMM
         "log_p_yt_xz_max": 6, # max log prob in y dist
-        "prediction_horizon": 12, # future timesteps to predict
+        "prediction_horizon": 10, # future timesteps to predict
     }
 
     """
