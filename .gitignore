@@ -1,6 +1,7 @@
 # Video and images
 *.mp4
 *.png
+*.pdf
 
 # ROS
 install/
@@ -28,6 +29,7 @@ python/parksim/trajectory_predict/intent_transformer/checkpoints/*
 *.npz
 *.npy
 *.ckpt
+*.csv
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

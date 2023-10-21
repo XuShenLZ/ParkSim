@@ -29,7 +29,9 @@ from parksim.spot_nn.feature_generator import SpotFeatureGenerator
 
 from parksim.intent_predict.cnn.data_processing.utils import CNNDataProcessor
 
-from parksim.intent_predict.cnn.visualizer.instance_centric_generator import InstanceCentricGenerator
+from parksim.intent_predict.cnn.visualizer.instance_centric_generator import (
+    InstanceCentricGenerator,
+)
 
 from parksim.spot_detector.detector import LocalDetector
 from parksim.utils.get_corners import get_vehicle_corners_from_dict
@@ -46,7 +48,6 @@ traj_model_path = "/ParkSim/python/parksim/trajectory_predict/intent_transformer
 
 class RuleBasedSimulator(object):
     def __init__(self, dataset: Dataset, vis: RealtimeVisualizer, params):
-
         self.params = params
 
         self.timer_period = 0.1
@@ -198,7 +199,7 @@ class RuleBasedSimulator(object):
         self.num_vehicles = 0
         self.vehicles: List[RuleBasedVehicle] = []
 
-        self.max_simulation_time = 500 
+        self.max_simulation_time = 500
 
         self.time = 0.0
         self.loops = 0
@@ -237,7 +238,6 @@ class RuleBasedSimulator(object):
         self.traj_pred_circles = []
 
     def _gen_occupancy(self):
-
         # Spot guide (note: NOT VERTICES) — the i in parking_spaces[i]
         # 0-41 are top row
         # 42-66 are left second row top, 67-91 are left second row bottom
@@ -714,7 +714,6 @@ class RuleBasedSimulator(object):
                         and i > 0
                         and "target_spot_index" not in task
                     ):
-
                         # collect arguments to choose spot
                         active_vehicles = []
                         for vehicle in self.vehicles:
@@ -769,7 +768,11 @@ class RuleBasedSimulator(object):
                         already_parked = task["target_spot_index"]
                 self.agents_dict[agent]["task_profile"] = new_tp
 
-            self.add_vehicle(vehicle_id=agent, intent_vehicle=self.intent_simulation and self.vehicle_entering_and_parking(agent))
+            self.add_vehicle(
+                vehicle_id=agent,
+                intent_vehicle=self.intent_simulation
+                and self.vehicle_entering_and_parking(agent),
+            )
 
         for added in vehicles_to_add:
             del self.agents_dict[added]
@@ -828,7 +831,6 @@ class RuleBasedSimulator(object):
 
         # while not run out of time and we have not reached the last waypoint yet
         while self.max_simulation_time >= self.time:
-
             if self.should_visualize:
                 if not self.vis.is_running():
                     self.vis.render()
@@ -928,7 +930,7 @@ class RuleBasedSimulator(object):
                         velocities.append([s.t - st, s.v.v])
                     savemat(
                         str(Path.home())
-                        + "/ParkSim/vehicle_log/DJI_0012/simulated_vehicle_"
+                        + "/ParkSim/vehicle_log/DJI_0030/simulated_vehicle_"
                         + str(vehicle.vehicle_id)
                         + ".mat",
                         {"velocity": velocities},
@@ -991,7 +993,6 @@ class RuleBasedSimulator(object):
             self.time += self.timer_period
 
             if self.should_visualize:
-
                 # label charging spots
                 if self.ev_simulation:
                     for spot in self.charging_spots:
@@ -1006,7 +1007,6 @@ class RuleBasedSimulator(object):
 
                 # Visualize
                 for vehicle in self.vehicles:
-
                     if not vehicle.ev:
                         if vehicle.is_all_done():
                             fill = (0, 0, 0, 255)
@@ -1055,43 +1055,42 @@ class RuleBasedSimulatorParams:
         self.seed = 0
 
         self.num_simulations = (
-            1  # number of simulations run (e.g. times started from scratch)
+            10  # number of simulations run (e.g. times started from scratch)
         )
         self.current_sim_num = 0
 
         self.ev_simulation = False  # electric vehicle (Soomin's data) sim?
         self.intent_simulation = False
 
-        self.use_existing_agents = False  # replay video data
-        self.agents_data_path = "/ParkSim/data/agents_data_12.pickle"
+        self.use_existing_agents = True  # replay video data
+        self.agents_data_path = "/ParkSim/data/agents_data_0030.pickle"
 
         # should we replace where the agents park?
         self.use_existing_entrances = (
-            False  # have vehicles park in spots that they parked in real life
+            True  # have vehicles park in spots that they parked in real life
         )
 
         # don't use existing agents
-        self.spawn_entering_fn = lambda: 3 
+        self.spawn_entering_fn = lambda: 3
         self.spawn_exiting_fn = lambda: 0
         self.spawn_interval_mean_fn = lambda: 8  # (s)
 
-        self.use_existing_obstacles = False  # able to park in "occupied" spots from dataset? False if yes, True if no
+        self.use_existing_obstacles = True  # able to park in "occupied" spots from dataset? False if yes, True if no
 
-        self.load_existing_net = True  # generate a new net form scratch (and overwrite model.pickle) or use the one stored at self.spot_model_path
-        self.use_nn = True  # pick spots using NN or not (irrelevant if self.use_existing_entrances is True)
+        self.load_existing_net = False  # generate a new net form scratch (and overwrite model.pickle) or use the one stored at self.spot_model_path
+        self.use_nn = False  # pick spots using NN or not (irrelevant if self.use_existing_entrances is True)
         self.train_nn = False  # train NN or not
-        self.should_visualize = True  # display simulator or no
+        self.should_visualize = False  # display simulator or no
 
         # before changing model, don't forget to set: spot selection, loss function
         self.spot_model_path = (
-            "/Parksim/python/parksim/spot_nn/final_pd_models/selfish_model.pickle"
+            "/ParkSim/python/parksim/spot_nn/final_pd_models/selfish_model.pickle"
         )
         self.losses_csv_path = (
-            "/parksim/python/parksim/spot_nn/losses.csv"  # where losses are stored
+            "/ParkSim/python/parksim/spot_nn/losses.csv"  # where losses are stored
         )
 
         if self.use_nn or self.train_nn:
-
             # load net
             if self.load_existing_net:
                 self.net = torch.load(str(Path.home()) + self.spot_model_path)
@@ -1102,9 +1101,7 @@ class RuleBasedSimulatorParams:
 
     # run simulations, including training the net (if necessary) and saving/printing any results
     def run_simulations(self, ds, vis):
-
         if self.use_nn or self.train_nn:
-
             if (
                 os.path.isfile(str(Path.home()) + self.spot_model_path)
                 and not self.load_existing_net
@@ -1156,25 +1153,24 @@ class RuleBasedSimulatorParams:
                 )
 
             average_time = sum(
+                [
+                    simulator.vehicle_non_idle_times[i]
+                    for i in simulator.vehicle_ids_entered
+                ]
+            ) / len(simulator.vehicle_ids_entered)
+
+            if average_time < 200:  # if > 100, simulator messed up
+                average_times.append(
+                    sum(
                         [
                             simulator.vehicle_non_idle_times[i]
                             for i in simulator.vehicle_ids_entered
                         ]
-                    ) / len(simulator.vehicle_ids_entered)
-            
-            if average_time < 200: # if > 100, simulator messed up
-                average_times.append(
-                        sum(
-                            [
-                                simulator.vehicle_non_idle_times[i]
-                                for i in simulator.vehicle_ids_entered
-                            ]
-                        )
-                        / len(simulator.vehicle_ids_entered)
                     )
+                    / len(simulator.vehicle_ids_entered)
+                )
 
                 if self.use_nn or self.train_nn:
-
                     total_loss = self.update_net(simulator)
                     losses.append(
                         total_loss / len(simulator.vehicle_ids_entered)
@@ -1190,9 +1186,7 @@ class RuleBasedSimulatorParams:
                     )
                 else:
                     print(
-                        "Results: "
-                        + str(average_times[-1])
-                        + " average entering time"
+                        "Results: " + str(average_times[-1]) + " average entering time"
                     )
             else:
                 print("Bad simulation")
@@ -1235,9 +1229,19 @@ class RuleBasedSimulatorParams:
             # single spot
             # return self.current_sim_num
             # random
-            # return np.random.choice(empty_spots)
+            return np.random.choice(empty_spots)
             # closest spot
-            return min([spot for spot in empty_spots], key=lambda spot: np.linalg.norm([simulator.entrance_coords[0] - simulator.parking_spaces[spot][0], simulator.entrance_coords[1] - simulator.parking_spaces[spot][1]]))
+            # return min(
+            #     [spot for spot in empty_spots],
+            #     key=lambda spot: np.linalg.norm(
+            #         [
+            #             simulator.entrance_coords[0]
+            #             - simulator.parking_spaces[spot][0],
+            #             simulator.entrance_coords[1]
+            #             - simulator.parking_spaces[spot][1],
+            #         ]
+            #     ),
+            # )
             # hand-picked
             # val = self.park_spots.pop(0)
             # while val not in empty_spots:
@@ -1289,7 +1293,7 @@ def main():
 
     home_path = str(Path.home())
     print("Loading dataset...")
-    ds.load(home_path + "/dlp-dataset/data/DJI_0012")
+    ds.load(home_path + "/dlp-dataset/data/DJI_0030")
     print("Dataset loaded.")
 
     params = RuleBasedSimulatorParams()

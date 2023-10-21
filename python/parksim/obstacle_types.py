@@ -101,7 +101,7 @@ class BasePolytopeObstacle(BaseObstacle):
         return
 
     def plot_pyplot(self, ax):
-        p = Polygon(self.xy, color="red")
+        p = Polygon(self.xy, color="#7f7f7f")
         ax.add_patch(p)
         return
 
@@ -176,14 +176,16 @@ def demo_rectangle_obstacle():
 
     r = RectangleObstacle(xc=5, yc=10, w=4, h=2, psi=0.4)
     r.xc = 8
-    patch = Polygon(r.xy)
+    # patch = Polygon(r.xy)
 
     fig = plt.figure()
     ax = fig.add_subplot(1, 1, 1)
-    print(r.xy)
-    print(r.A)
-    print(r.b)
-    ax.add_patch(patch)
+    r.plot_pyplot(ax)
+    # print(r.xy)
+    # print(r.A)
+    # print(r.b)
+    # ax.add_patch(patch)
+
     ax.relim()
     ax.autoscale_view()
     plt.show()

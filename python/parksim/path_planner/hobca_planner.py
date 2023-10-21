@@ -458,5 +458,5 @@ def datagen():
 
 
 if __name__ == "__main__":
-    # main()
-    datagen()
+    main()
+    # datagen()

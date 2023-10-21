@@ -20,7 +20,9 @@ from parksim.utils.interpolation import interpolate_states_inputs
 from parksim.path_planner.offline_maneuver import OfflineManeuver
 
 from parksim.intent_predict.cnn.predictor import Predictor
-from parksim.intent_predict.cnn.visualizer.instance_centric_generator import InstanceCentricGenerator
+from parksim.intent_predict.cnn.visualizer.instance_centric_generator import (
+    InstanceCentricGenerator,
+)
 from parksim.intent_predict.cnn.intent_sampler import IntentSampler
 from parksim.intent_predict.cnn.data_processing.utils import CNNDataProcessor
 from parksim.spot_detector.detector import LocalDetector
@@ -85,7 +87,12 @@ class RuleBasedVehicle(AbstractAgent):
         self.intent_vehicle = intent_vehicle
 
         if self.intent_vehicle:
-            self.intent_sampler = IntentSampler(inst_centric_generator, intent_predictor, intent_extractor, spot_detector)
+            self.intent_sampler = IntentSampler(
+                inst_centric_generator,
+                intent_predictor,
+                intent_extractor,
+                spot_detector,
+            )
             self.intent = None
 
             self.intent_maneuver_params = None
@@ -112,7 +119,9 @@ class RuleBasedVehicle(AbstractAgent):
         )  # inf means haven't start parking or unparking. Anything above 0 is parking
 
         self.parking_maneuver = None
-        self.parking_step = 0 if not self.intent_vehicle else -1 # parking handled slightly differently for intent vehicle
+        self.parking_step = (
+            0 if not self.intent_vehicle else -1
+        )  # parking handled slightly differently for intent vehicle
 
         # unparking stuff
         self.unparking_maneuver = None
@@ -258,7 +267,6 @@ class RuleBasedVehicle(AbstractAgent):
         if spot_index is None:
             # exiting
             if len(graph_sol.vertices) == 0:  # just point right by default
-
                 shifted_coords = np.array(
                     [
                         self.state.x.x - np.sin(self.state.e.psi) * offset,
@@ -274,9 +282,7 @@ class RuleBasedVehicle(AbstractAgent):
 
             x_ref, y_ref, yaw_ref = graph_sol.compute_ref_path(offset)
         else:
-
             if len(graph_sol.vertices) == 0:  # just point right by default
-
                 start_coords = np.array([self.state.x.x, self.state.x.y])
                 start_vertex_idx = self.graph.search(start_coords)
                 last_x, last_y = self.graph.vertices[start_vertex_idx].coords
@@ -286,12 +292,10 @@ class RuleBasedVehicle(AbstractAgent):
                 ]
 
             elif len(graph_sol.vertices) == 1:  # just point right by default
-
                 last_x, last_y = graph_sol.vertices[0].coords
                 graph_sol.vertices.append([Vertex(np.array([last_x + 4, last_y]))])
 
             else:
-
                 # parking
                 last_edge = graph_sol.edges[-1]
                 pointed_right = last_edge.v2.coords[0] - last_edge.v1.coords[0] > 0
@@ -344,7 +348,6 @@ class RuleBasedVehicle(AbstractAgent):
         return x_ref, y_ref, yaw_ref
 
     def cruise_planning(self, task: VehicleTask):
-
         assert self.parking_spaces is not None, "Please run load_parking_spaces first."
         # assert self.spot_index is not None, "Please run set_spot_idx first."
         assert self.graph is not None, "Please run load_graph first."
@@ -597,6 +600,9 @@ class RuleBasedVehicle(AbstractAgent):
                 self.nearby_vehicles, other_look_ahead_states
             ):
                 if id not in will_crash_with:  # for efficiency
+                    if not self.other_ref_pose[id].x:
+                        continue
+
                     self.motion_predictor.set_ref_pose(
                         self.other_ref_pose[id].x,
                         self.other_ref_pose[id].y,
@@ -642,11 +648,15 @@ class RuleBasedVehicle(AbstractAgent):
                 )
                 or self.other_task[id] == "IDLE"
                 or self.dist_from(id) >= 2 * self.vehicle_config.parking_radius
-                or (self.intent_vehicle and self.intent_spot in [19, 20, 21, 22, 23] and self.other_is_braking[id] and self.other_state[id].x.y < 60) # edge case for intent
+                or (
+                    self.intent_vehicle
+                    and self.intent_spot in [19, 20, 21, 22, 23]
+                    and self.other_is_braking[id]
+                    and self.other_state[id].x.y < 60
+                )  # edge case for intent
                 for id in self.nearby_vehicles
             ]
         )
-
 
     def should_go_before(self, other_id):
         """
@@ -1187,10 +1197,7 @@ class RuleBasedVehicle(AbstractAgent):
 
         else:  # waiting / braking
             # parking
-            if (
-                self.waiting_for != 0
-                and self.other_task[self.waiting_for] == "PARK"
-            ):
+            if self.waiting_for != 0 and self.other_task[self.waiting_for] == "PARK":
                 if self.waiting_for not in self.nearby_vehicles:
                     self.unbrake()
 
@@ -1219,17 +1226,24 @@ class RuleBasedVehicle(AbstractAgent):
                         or (
                             self.ev and self.other_task[self.waiting_for] == "IDLE"
                         )  # TODO: hacky, need better law for waiting for idle (ie if idle vehicle parked, dont wait)
-                        or ((
-                            self.dist_from(self.waiting_for)
-                            > self.vehicle_config.braking_distance
-                        )
-                        and self.dist_from(self.waiting_for)
-                        > self.last_braking_distance
+                        or (
+                            (
+                                self.dist_from(self.waiting_for)
+                                > self.vehicle_config.braking_distance
+                            )
+                            and self.dist_from(self.waiting_for)
+                            > self.last_braking_distance
                         )
                         or (
                             self.other_task[self.waiting_for] == "IDLE"
                             and self.other_state[self.waiting_for]
-                            and coord_spot_fn([self.other_state[self.waiting_for].x.x, self.other_state[self.waiting_for].x.y]) is not None
+                            and coord_spot_fn(
+                                [
+                                    self.other_state[self.waiting_for].x.x,
+                                    self.other_state[self.waiting_for].x.y,
+                                ]
+                            )
+                            is not None
                         )
                     ):
                         should_unbrake = True
@@ -1284,11 +1298,15 @@ class RuleBasedVehicle(AbstractAgent):
             ) % self.loops_between_predict and (
                 self.intent is None or self.intent_spot is None
             ):
-                self.solve_intent(history, coord_spot_fn, intent_use_obstacles)  # populates self.intent
+                self.solve_intent(
+                    history, coord_spot_fn, intent_use_obstacles
+                )  # populates self.intent
 
             if self.parking_step == -1:  # if not parking
                 done = self.solve_intent_based_control_stanley(
-                    time=time, other_vehicles=other_vehicles, coord_spot_fn=coord_spot_fn
+                    time=time,
+                    other_vehicles=other_vehicles,
+                    coord_spot_fn=coord_spot_fn,
                 )
 
                 if done:
@@ -1301,7 +1319,8 @@ class RuleBasedVehicle(AbstractAgent):
                 if (
                     self.intent_spot is not None
                     and self.parking_step == -1
-                    and done and should_go
+                    and done
+                    and should_go
                 ):
                     self.parking_step = 0
             else:  # if parking
@@ -1310,7 +1329,7 @@ class RuleBasedVehicle(AbstractAgent):
                 # )
                 # return mpc_preds
                 self.solve_parking_control_teleport(time)
-                if self.parking_maneuver is None: # done
+                if self.parking_maneuver is None:  # done
                     self.current_task = "END"
 
         return None
@@ -1320,7 +1339,14 @@ class RuleBasedVehicle(AbstractAgent):
         Calculate intent from intent prediction and populate self.intent.
         """
         # get raw intent returned from intent predictor
-        predicted_intent = self.intent_sampler.sample_valid_intent(self.vehicle_id, self.state, history, coord_spot_fn, self.occupancy, use_obstacles)
+        predicted_intent = self.intent_sampler.sample_valid_intent(
+            self.vehicle_id,
+            self.state,
+            history,
+            coord_spot_fn,
+            self.occupancy,
+            use_obstacles,
+        )
 
         if (
             predicted_intent is None
@@ -1373,7 +1399,9 @@ class RuleBasedVehicle(AbstractAgent):
             # mark this spot as full
             self.change_central_occupancy(in_spot, True)
 
-    def solve_intent_based_control_stanley(self, time=None, other_vehicles=[], coord_spot_fn=None):
+    def solve_intent_based_control_stanley(
+        self, time=None, other_vehicles=[], coord_spot_fn=None
+    ):
         """
         Stanley controller used for intent-based driving. Looks very similar to solve_task_based_control.
         """
@@ -1406,7 +1434,11 @@ class RuleBasedVehicle(AbstractAgent):
                 self.state.e.psi,
             ]
             offline_maneuver = self.offline_maneuver.get_maneuver(
-                xy_offset=origin, driving_dir=self.intent_maneuver_params[0], x_position=self.intent_maneuver_params[1], spot=self.intent_maneuver_params[2], heading=self.intent_maneuver_params[3]
+                xy_offset=origin,
+                driving_dir=self.intent_maneuver_params[0],
+                x_position=self.intent_maneuver_params[1],
+                spot=self.intent_maneuver_params[2],
+                heading=self.intent_maneuver_params[3],
             )
             time_seq = np.arange(
                 start=offline_maneuver.t[0],
@@ -1440,7 +1472,7 @@ class RuleBasedVehicle(AbstractAgent):
         """
         Park by following an offline maneuver using MPC
         """
-        if self.parking_start_time == float('inf'):
+        if self.parking_start_time == float("inf"):
             self.set_parking_start_time(time)
 
         parking_time = time - self.parking_start_time
@@ -1484,14 +1516,8 @@ class RuleBasedVehicle(AbstractAgent):
         if (
             np.linalg.norm(
                 [
-                    self.state.x.x
-                    - (
-                        self.parking_maneuver.x[-1]
-                    ),
-                    self.state.x.y
-                    - (
-                        self.parking_maneuver.y[-1]
-                    ),
+                    self.state.x.x - (self.parking_maneuver.x[-1]),
+                    self.state.x.y - (self.parking_maneuver.y[-1]),
                 ]
             )
             < 0.3
